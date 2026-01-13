@@ -1,0 +1,74 @@
+#include "wonapi.h"
+#include "wonstatus.h"
+#include "wonsocket/queuesocket.h"
+#include "wonsocket/acceptop.h"
+#include "wonsocket/recvbytesop.h"
+#include "wondb/getprofileop.h"
+#include "wondb/setprofileop.h"
+#include "wondb/createaccountop.h"
+#include "wonmisc/detectfirewallop.h"
+#include "wonsocket/socketthread.h"
+
+
+using namespace std;
+using namespace WONAPI;
+
+
+
+WONAPICore gAPI(true,true);
+
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+void ConnectCompletion(AsyncOpPtr theOp)
+{
+	WONStatus aStatus = theOp->GetStatus();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+void CloseCompletion(AsyncOpPtr theOp)
+{
+	WONStatus aStatus = theOp->GetStatus();
+	printf("Socket closed: %s\n",WONStatusToString(aStatus));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+void RecvCompletion(AsyncOpPtr theOp)
+{
+	RecvBytesOp *anOp = (RecvBytesOp*)theOp.get();
+	if(!anOp->Succeeded())
+		return;
+
+	ByteBufferPtr aBuf = anOp->GetBytes();
+	unsigned short aShort = *(unsigned short*)aBuf->data();
+	printf("%d\n",aShort);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+void AcceptCompletion(AsyncOpPtr theOp)
+{
+	AcceptOp *anOp = (AcceptOp*)theOp.get();
+	if(!anOp->Succeeded())
+		return;
+
+	QueueSocket *aSocket = (QueueSocket*)anOp->GetAcceptedSocket();
+	aSocket->SetRepeatCompletion(new OpCompletion(RecvCompletion));
+	aSocket->SetCloseCompletion(new OpCompletion(CloseCompletion));
+	aSocket->SetRepeatOp(new RecvBytesOp(2));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+void main()
+{
+	QueueSocketPtr aListenSocket = new QueueSocket(AsyncSocket::TCP);
+	aListenSocket->Bind(8888);
+	aListenSocket->Listen();
+	aListenSocket->SetRepeatCompletion(new OpCompletion(AcceptCompletion));
+	aListenSocket->SetRepeatOp(new AcceptOp);
+
+	getch();
+}
