@@ -42,6 +42,8 @@ target_sources (
 	${PROJECT_NAME}
 	PRIVATE
 		diligent_render.cpp
+		rendertarget.cpp
+		rendertargetmgr.cpp
 )
 
 target_link_libraries (

@@ -41,20 +41,11 @@ target_compile_definitions (
 		$<$<CONFIG:DEBUG>:D3D_DEBUG_INFO>
 )
 
-if (LTJS_USE_DILIGENT_RENDER)
-	target_compile_definitions (
-		${PROJECT_NAME}
-		PRIVATE
-			LTJS_USE_DILIGENT_RENDER
-	)
-else ()
-	target_compile_definitions (
-		${PROJECT_NAME}
-		PRIVATE
-			__D3D
-			__D3DREND
-	)
-endif ()
+target_compile_definitions (
+	${PROJECT_NAME}
+	PRIVATE
+		LTJS_USE_DILIGENT_RENDER
+)
 
 if (LTJS_USE_FFMPEG_VIDEO_MGR)
 	target_compile_definitions (
@@ -200,11 +191,7 @@ if (MINGW)
 	)
 endif ()
 
-if (LTJS_USE_DILIGENT_RENDER)
-	set (ltjs_render_lib ltjs_lib_diligent_render)
-else ()
-	set (ltjs_render_lib ltjs_lib_d3d_render)
-endif ()
+set (ltjs_render_lib ltjs_lib_diligent_render)
 
 target_link_libraries (
 	${PROJECT_NAME}
@@ -253,7 +240,7 @@ target_include_directories (
 		../../model/src
 		../../mpm/src
 		../../physics/src
-		../../render_a/src/sys/d3d
+		../../render_a/src/sys/diligent
 		../../render_b/src
 		../../server/src
 		../../shared/src
