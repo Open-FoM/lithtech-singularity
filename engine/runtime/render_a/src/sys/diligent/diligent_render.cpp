@@ -14,10 +14,12 @@
 #include "Graphics/GraphicsEngine/interface/PipelineState.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/Shader.h"
+#include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "ltrenderstyle.h"
 
+#include <array>
 #include <cstring>
 #include <unordered_map>
 
@@ -201,6 +203,109 @@ private:
 };
 
 DiligentPsoCache g_pso_cache;
+
+using DiligentTextureArray = std::array<SharedTexture*, 4>;
+
+DiligentTextureArray diligent_resolve_textures(const RenderPassOp& pass, SharedTexture** texture_list)
+{
+	DiligentTextureArray textures{};
+	if (!texture_list)
+	{
+		return textures;
+	}
+
+	for (uint32 stage_index = 0; stage_index < 4; ++stage_index)
+	{
+		switch (pass.TextureStages[stage_index].TextureParam)
+		{
+			case RENDERSTYLE_USE_TEXTURE1:
+				textures[stage_index] = texture_list[0];
+				break;
+			case RENDERSTYLE_USE_TEXTURE2:
+				textures[stage_index] = texture_list[1];
+				break;
+			case RENDERSTYLE_USE_TEXTURE3:
+				textures[stage_index] = texture_list[2];
+				break;
+			case RENDERSTYLE_USE_TEXTURE4:
+				textures[stage_index] = texture_list[3];
+				break;
+			default:
+				textures[stage_index] = nullptr;
+				break;
+		}
+	}
+
+	return textures;
+}
+
+struct DiligentSrbKey
+{
+	const Diligent::IPipelineState* pipeline_state = nullptr;
+	DiligentTextureArray textures{};
+
+	bool operator==(const DiligentSrbKey& other) const
+	{
+		return pipeline_state == other.pipeline_state && textures == other.textures;
+	}
+};
+
+struct DiligentSrbKeyHash
+{
+	size_t operator()(const DiligentSrbKey& key) const noexcept
+	{
+		uint64 hash = 0;
+		hash = diligent_hash_combine(hash, static_cast<uint64>(reinterpret_cast<uintptr_t>(key.pipeline_state)));
+		for (const auto* texture : key.textures)
+		{
+			hash = diligent_hash_combine(hash, static_cast<uint64>(reinterpret_cast<uintptr_t>(texture)));
+		}
+		return static_cast<size_t>(hash);
+	}
+};
+
+class DiligentSrbCache
+{
+public:
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> GetOrCreate(
+		Diligent::IPipelineState* pipeline_state,
+		const DiligentTextureArray& textures)
+	{
+		if (!pipeline_state)
+		{
+			return {};
+		}
+
+		DiligentSrbKey key;
+		key.pipeline_state = pipeline_state;
+		key.textures = textures;
+
+		auto it = cache_.find(key);
+		if (it != cache_.end())
+		{
+			return it->second;
+		}
+
+		Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+		pipeline_state->CreateShaderResourceBinding(&srb, true);
+		if (srb)
+		{
+			cache_.emplace(key, srb);
+		}
+
+		return srb;
+	}
+
+	void Reset()
+	{
+		cache_.clear();
+	}
+
+private:
+	std::unordered_map<DiligentSrbKey, Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding>, DiligentSrbKeyHash> cache_;
+};
+
+DiligentSrbCache g_srb_cache;
 
 void diligent_UpdateWindowHandles(const RenderStructInit* init)
 {
@@ -767,6 +872,7 @@ void diligent_Term(bool)
 	g_immediate_context.Release();
 	g_render_device.Release();
 	g_pso_cache.Reset();
+	g_srb_cache.Reset();
 	g_engine_factory = nullptr;
 	g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND
