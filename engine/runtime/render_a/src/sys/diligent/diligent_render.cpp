@@ -11,9 +11,15 @@
 #include "Common/interface/RefCntAutoPtr.hpp"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
+#include "Graphics/GraphicsEngine/interface/PipelineState.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
+#include "Graphics/GraphicsEngine/interface/Shader.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
+#include "ltrenderstyle.h"
+
+#include <cstring>
+#include <unordered_map>
 
 #ifndef __WINDOWS_H__
 #include <windows.h>
@@ -43,6 +49,158 @@ HWND g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND
 SDL_Window* g_sdl_window = nullptr;
 #endif
+
+struct DiligentPsoKey
+{
+	uint64 render_pass_hash = 0;
+	uint32 input_layout_hash = 0;
+	int vertex_shader_id = 0;
+	int pixel_shader_id = 0;
+	uint32 color_format = 0;
+	uint32 depth_format = 0;
+	uint32 topology = 0;
+
+	bool operator==(const DiligentPsoKey& other) const
+	{
+		return render_pass_hash == other.render_pass_hash &&
+			input_layout_hash == other.input_layout_hash &&
+			vertex_shader_id == other.vertex_shader_id &&
+			pixel_shader_id == other.pixel_shader_id &&
+			color_format == other.color_format &&
+			depth_format == other.depth_format &&
+			topology == other.topology;
+	}
+};
+
+uint64 diligent_hash_combine(uint64 seed, uint64 value)
+{
+	return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+}
+
+uint32 diligent_float_bits(float value)
+{
+	uint32 bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
+
+uint64 diligent_hash_texture_stage(const TextureStageOps& stage)
+{
+	uint64 hash = 0;
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.TextureParam));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.ColorOp));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.ColorArg1));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.ColorArg2));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.AlphaOp));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.AlphaArg1));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.AlphaArg2));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.UVSource));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.UAddress));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.VAddress));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(stage.TexFilter));
+	hash = diligent_hash_combine(hash, stage.UVTransform_Enable ? 1u : 0u);
+	hash = diligent_hash_combine(hash, stage.ProjectTexCoord ? 1u : 0u);
+	hash = diligent_hash_combine(hash, stage.TexCoordCount);
+	return hash;
+}
+
+uint64 diligent_hash_render_pass(const RenderPassOp& pass)
+{
+	uint64 hash = 0;
+	for (uint32 i = 0; i < 4; ++i)
+	{
+		hash = diligent_hash_combine(hash, diligent_hash_texture_stage(pass.TextureStages[i]));
+	}
+
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.BlendMode));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.ZBufferMode));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.CullMode));
+	hash = diligent_hash_combine(hash, pass.TextureFactor);
+	hash = diligent_hash_combine(hash, pass.AlphaRef);
+	hash = diligent_hash_combine(hash, pass.DynamicLight ? 1u : 0u);
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.ZBufferTestMode));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.AlphaTestMode));
+	hash = diligent_hash_combine(hash, static_cast<uint64>(pass.FillMode));
+	hash = diligent_hash_combine(hash, pass.bUseBumpEnvMap ? 1u : 0u);
+	hash = diligent_hash_combine(hash, pass.BumpEnvMapStage);
+	hash = diligent_hash_combine(hash, diligent_float_bits(pass.fBumpEnvMap_Scale));
+	hash = diligent_hash_combine(hash, diligent_float_bits(pass.fBumpEnvMap_Offset));
+	return hash;
+}
+
+DiligentPsoKey diligent_make_pso_key(
+	const RenderPassOp& pass,
+	const RSD3DRenderPass& d3d_pass,
+	uint32 input_layout_hash,
+	Diligent::TEXTURE_FORMAT color_format,
+	Diligent::TEXTURE_FORMAT depth_format,
+	Diligent::PRIMITIVE_TOPOLOGY topology)
+{
+	DiligentPsoKey key;
+	key.render_pass_hash = diligent_hash_render_pass(pass);
+	key.input_layout_hash = input_layout_hash;
+	key.vertex_shader_id = d3d_pass.VertexShaderID;
+	key.pixel_shader_id = d3d_pass.PixelShaderID;
+	key.color_format = static_cast<uint32>(color_format);
+	key.depth_format = static_cast<uint32>(depth_format);
+	key.topology = static_cast<uint32>(topology);
+	return key;
+}
+
+struct DiligentPsoKeyHash
+{
+	size_t operator()(const DiligentPsoKey& key) const noexcept
+	{
+		uint64 hash = 0;
+		hash = diligent_hash_combine(hash, key.render_pass_hash);
+		hash = diligent_hash_combine(hash, key.input_layout_hash);
+		hash = diligent_hash_combine(hash, static_cast<uint64>(key.vertex_shader_id));
+		hash = diligent_hash_combine(hash, static_cast<uint64>(key.pixel_shader_id));
+		hash = diligent_hash_combine(hash, key.color_format);
+		hash = diligent_hash_combine(hash, key.depth_format);
+		hash = diligent_hash_combine(hash, key.topology);
+		return static_cast<size_t>(hash);
+	}
+};
+
+class DiligentPsoCache
+{
+public:
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> GetOrCreate(
+		const DiligentPsoKey& key,
+		const Diligent::GraphicsPipelineStateCreateInfo& create_info)
+	{
+		if (!g_render_device)
+		{
+			return {};
+		}
+
+		auto it = cache_.find(key);
+		if (it != cache_.end())
+		{
+			return it->second;
+		}
+
+		Diligent::RefCntAutoPtr<Diligent::IPipelineState> pipeline_state;
+		g_render_device->CreatePipelineState(create_info, &pipeline_state);
+		if (pipeline_state)
+		{
+			cache_.emplace(key, pipeline_state);
+		}
+
+		return pipeline_state;
+	}
+
+	void Reset()
+	{
+		cache_.clear();
+	}
+
+private:
+	std::unordered_map<DiligentPsoKey, Diligent::RefCntAutoPtr<Diligent::IPipelineState>, DiligentPsoKeyHash> cache_;
+};
+
+DiligentPsoCache g_pso_cache;
 
 void diligent_UpdateWindowHandles(const RenderStructInit* init)
 {
@@ -608,6 +766,7 @@ void diligent_Term(bool)
 	g_swap_chain.Release();
 	g_immediate_context.Release();
 	g_render_device.Release();
+	g_pso_cache.Reset();
 	g_engine_factory = nullptr;
 	g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND

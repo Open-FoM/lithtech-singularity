@@ -69,7 +69,7 @@
 - [x] Define device-loss / window-resize handling strategy (swapchain recreation on missing swapchain + resize on size change).
 
 ## Phase 4 — Core Rendering Pipeline
-- [ ] Implement PSO cache (keyed by render state + shader + input layout).
+- [x] Implement PSO cache (keyed by render state + shader + input layout) with Diligent-side key+cache scaffolding.
 - [ ] Implement SRB creation + resource binding strategy.
 - [ ] Implement texture/buffer creation + lifetime management.
 - [ ] Implement render target management (`rendertarget.*`) using Diligent textures/views.
