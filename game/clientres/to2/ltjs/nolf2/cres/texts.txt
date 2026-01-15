@@ -1,8 +1,0 @@
-/*
-LTJS
-NOLF2 CRES
-Texts
-*/
-
-CREDITS "credits.txt"
-INTRO "intro.txt"
