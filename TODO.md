@@ -71,7 +71,7 @@
 ## Phase 4 — Core Rendering Pipeline
 - [x] Implement PSO cache (keyed by render state + shader + input layout) with Diligent-side key+cache scaffolding.
 - [x] Implement SRB creation + resource binding strategy with Diligent-side SRB cache and texture-stage resolution.
-- [ ] Implement texture/buffer creation + lifetime management.
+- [x] Implement texture/buffer creation + lifetime management with Diligent SharedTexture-backed GPU texture creation and release hooks.
 - [ ] Implement render target management (`rendertarget.*`) using Diligent textures/views.
 
 ## Phase 5 — DrawPrim & 2D/Overlay

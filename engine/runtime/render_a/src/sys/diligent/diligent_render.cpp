@@ -3,6 +3,7 @@
 #include "ltbasedefs.h"
 #include "ltbasetypes.h"
 #include "pixelformat.h"
+#include "dtxmgr.h"
 
 #ifdef LTJS_SDL_BACKEND
 #include "ltjs_main_window_descriptor.h"
@@ -11,6 +12,7 @@
 #include "Common/interface/RefCntAutoPtr.hpp"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
+#include "Graphics/GraphicsEngine/interface/Buffer.h"
 #include "Graphics/GraphicsEngine/interface/PipelineState.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/Shader.h"
@@ -22,6 +24,7 @@
 #include <array>
 #include <cstring>
 #include <unordered_map>
+#include <vector>
 
 #ifndef __WINDOWS_H__
 #include <windows.h>
@@ -306,6 +309,203 @@ private:
 };
 
 DiligentSrbCache g_srb_cache;
+
+struct DiligentRenderTexture
+{
+	Diligent::RefCntAutoPtr<Diligent::ITexture> texture;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> srv;
+	TextureData* texture_data = nullptr;
+	uint32 width = 0;
+	uint32 height = 0;
+	BPPIdent format = BPP_32;
+};
+
+SharedTexture* g_drawprim_texture = nullptr;
+
+Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
+{
+	switch (format)
+	{
+		case BPP_32:
+			return Diligent::TEX_FORMAT_RGBA8_UNORM;
+		case BPP_24:
+			return Diligent::TEX_FORMAT_RGB8_UNORM;
+		case BPP_16:
+			return Diligent::TEX_FORMAT_B5G6R5_UNORM;
+		case BPP_S3TC_DXT1:
+			return Diligent::TEX_FORMAT_BC1_UNORM;
+		case BPP_S3TC_DXT3:
+			return Diligent::TEX_FORMAT_BC2_UNORM;
+		case BPP_S3TC_DXT5:
+			return Diligent::TEX_FORMAT_BC3_UNORM;
+		default:
+			return Diligent::TEX_FORMAT_UNKNOWN;
+	}
+}
+
+uint32 diligent_get_mip_count(const TextureData* texture_data)
+{
+	if (!texture_data)
+	{
+		return 0;
+	}
+
+	uint32 mip_count = texture_data->m_Header.m_nMipmaps;
+	if (mip_count == 0)
+	{
+		mip_count = 1;
+	}
+
+	return LTMIN(mip_count, static_cast<uint32>(MAX_DTX_MIPMAPS));
+}
+
+void diligent_release_render_texture(SharedTexture* shared_texture)
+{
+	if (!shared_texture)
+	{
+		return;
+	}
+
+	auto* render_texture = static_cast<DiligentRenderTexture*>(shared_texture->m_pRenderData);
+	if (!render_texture)
+	{
+		return;
+	}
+
+	delete render_texture;
+	shared_texture->m_pRenderData = nullptr;
+}
+
+DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture, bool texture_changed)
+{
+	if (!shared_texture)
+	{
+		return nullptr;
+	}
+
+	auto* render_texture = static_cast<DiligentRenderTexture*>(shared_texture->m_pRenderData);
+	if (render_texture && !texture_changed)
+	{
+		return render_texture;
+	}
+
+	diligent_release_render_texture(shared_texture);
+
+	if (!g_render_struct || !g_render_device)
+	{
+		return nullptr;
+	}
+
+	TextureData* texture_data = g_render_struct->GetTexture(shared_texture);
+	if (!texture_data)
+	{
+		return nullptr;
+	}
+
+	const auto mip_count = diligent_get_mip_count(texture_data);
+	if (mip_count == 0)
+	{
+		return nullptr;
+	}
+
+	const auto format = diligent_map_texture_format(texture_data->m_Header.GetBPPIdent());
+	if (format == Diligent::TEX_FORMAT_UNKNOWN)
+	{
+		return nullptr;
+	}
+
+	const auto& base_mip = texture_data->m_Mips[0];
+	if (base_mip.m_Width == 0 || base_mip.m_Height == 0)
+	{
+		return nullptr;
+	}
+
+	auto* new_render_texture = new DiligentRenderTexture();
+	new_render_texture->texture_data = texture_data;
+	new_render_texture->format = texture_data->m_Header.GetBPPIdent();
+
+	Diligent::TextureDesc desc;
+	desc.Name = "ltjs_shared_texture";
+	desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	desc.Width = base_mip.m_Width;
+	desc.Height = base_mip.m_Height;
+	desc.MipLevels = mip_count;
+	desc.Format = format;
+	desc.Usage = Diligent::USAGE_DEFAULT;
+	desc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+
+	std::vector<Diligent::TextureSubResData> subresources;
+	subresources.reserve(mip_count);
+	for (uint32 level = 0; level < mip_count; ++level)
+	{
+		const auto& mip = texture_data->m_Mips[level];
+		if (!mip.m_Data)
+		{
+			break;
+		}
+
+		Diligent::TextureSubResData subresource;
+		subresource.pData = mip.m_Data;
+		subresource.Stride = static_cast<Diligent::Uint64>(mip.m_Pitch);
+		subresource.DepthStride = 0;
+		subresources.push_back(subresource);
+	}
+
+	Diligent::TextureData init_data{
+		subresources.data(),
+		static_cast<Diligent::Uint32>(subresources.size())};
+
+	g_render_device->CreateTexture(desc, &init_data, &new_render_texture->texture);
+	if (!new_render_texture->texture)
+	{
+		delete new_render_texture;
+		return nullptr;
+	}
+
+	new_render_texture->srv = new_render_texture->texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	new_render_texture->width = desc.Width;
+	new_render_texture->height = desc.Height;
+
+	shared_texture->m_pRenderData = new_render_texture;
+	return new_render_texture;
+}
+
+Diligent::ITextureView* diligent_get_texture_view(SharedTexture* shared_texture, bool texture_changed)
+{
+	auto* render_texture = diligent_get_render_texture(shared_texture, texture_changed);
+	return render_texture ? render_texture->srv.RawPtr() : nullptr;
+}
+
+Diligent::RefCntAutoPtr<Diligent::IBuffer> diligent_create_buffer(
+	uint32 size,
+	Diligent::BIND_FLAGS bind_flags,
+	const void* data,
+	uint32 stride)
+{
+	if (!g_render_device || size == 0)
+	{
+		return {};
+	}
+
+	Diligent::BufferDesc desc;
+	desc.Name = "ltjs_buffer";
+	desc.Size = size;
+	desc.BindFlags = bind_flags;
+	desc.Usage = data ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DEFAULT;
+	desc.CPUAccessFlags = Diligent::CPU_ACCESS_NONE;
+	desc.ElementByteStride = stride;
+
+	Diligent::BufferData buffer_data;
+	if (data)
+	{
+		buffer_data.pData = data;
+		buffer_data.DataSize = size;
+	}
+
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> buffer;
+	g_render_device->CreateBuffer(desc, data ? &buffer_data : nullptr, &buffer);
+	return buffer;
+}
 
 void diligent_UpdateWindowHandles(const RenderStructInit* init)
 {
@@ -731,12 +931,14 @@ void diligent_DeleteContext(HRENDERCONTEXT context)
 	}
 }
 
-void diligent_BindTexture(SharedTexture*, bool)
+void diligent_BindTexture(SharedTexture* texture, bool texture_changed)
 {
+	diligent_get_texture_view(texture, texture_changed);
 }
 
-void diligent_UnbindTexture(SharedTexture*)
+void diligent_UnbindTexture(SharedTexture* texture)
 {
+	diligent_release_render_texture(texture);
 }
 
 uint32 diligent_GetTextureFormat1(BPPIdent, uint32)
@@ -759,8 +961,10 @@ bool diligent_ConvertTexDataToDD(uint8*, PFormat*, uint32, uint32, uint8*, PForm
 	return false;
 }
 
-void diligent_DrawPrimSetTexture(SharedTexture*)
+void diligent_DrawPrimSetTexture(SharedTexture* texture)
 {
+	g_drawprim_texture = texture;
+	diligent_get_texture_view(texture, false);
 }
 
 void diligent_DrawPrimDisableTextures()
@@ -874,6 +1078,7 @@ void diligent_Term(bool)
 	g_pso_cache.Reset();
 	g_srb_cache.Reset();
 	g_engine_factory = nullptr;
+	g_drawprim_texture = nullptr;
 	g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND
 	g_sdl_window = nullptr;
