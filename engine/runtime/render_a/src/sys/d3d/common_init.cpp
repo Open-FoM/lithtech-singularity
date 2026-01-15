@@ -72,7 +72,7 @@ void d3d_BlitFromScreen(BlitRequest *pRequest);
 bool d3d_WarpToScreen(BlitRequest *pRequest);
 void d3d_MakeScreenShot(const char *pFilename);
 void d3d_MakeCubicEnvMap(const char* pszPrefix, uint32 nSize, const SceneDesc& InSceneDesc);
-LPDIRECT3DDEVICE9 d3d_GetD3DDevice();
+void* d3d_GetD3DDevice();
 bool d3d_SetLightGroupColor(uint32 nID, const LTVector &vColor);
 LTRESULT d3d_SetOccluderEnabled(uint32 nID, bool bEnabled);
 LTRESULT d3d_GetOccluderEnabled(uint32 nID, bool *pEnabled);
@@ -359,6 +359,28 @@ bool d3d_LoadWorldData(ILTStream *pStream)
 	return g_Device.LoadWorldData(pStream);
 }
 
+namespace Diligent
+{
+	class IRenderDevice;
+	class IDeviceContext;
+	class ISwapChain;
+}
+
+Diligent::IRenderDevice* d3d_GetRenderDevice()
+{
+	return nullptr;
+}
+
+Diligent::IDeviceContext* d3d_GetImmediateContext()
+{
+	return nullptr;
+}
+
+Diligent::ISwapChain* d3d_GetSwapChain()
+{
+	return nullptr;
+}
+
 void d3d_GetRenderInfo(RenderInfoStruct* pStruct)
 {
 	if (pStruct) 
@@ -405,6 +427,9 @@ void rdll_RenderDLLSetup(RenderStruct *pStruct)
 	pStruct->Init						= d3d_Init;
 	pStruct->Term						= d3d_Term;
 	pStruct->GetD3DDevice				= d3d_GetD3DDevice;
+	pStruct->GetRenderDevice			= d3d_GetRenderDevice;
+	pStruct->GetImmediateContext		= d3d_GetImmediateContext;
+	pStruct->GetSwapChain				= d3d_GetSwapChain;
 	pStruct->BindTexture				= d3d_BindTexture;
 	pStruct->UnbindTexture				= d3d_UnbindTexture;
 	pStruct->QueryDDSupport				= CTextureManager::QueryDDSupport;

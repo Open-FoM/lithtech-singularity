@@ -15,14 +15,16 @@
 #include "clientmgr.h"
 #include "interface_helpers.h"
 #include "colorops.h"
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 #include <d3d9.h>
+#endif
 
 #include "dshowvideomgrimpl.h"
 
 #include "../../../../libs/mfcstub/mfcs_macros.h"
 
 
-#ifdef LTJS_USE_DIRECTSHOW
+#if defined(LTJS_USE_DIRECTSHOW) && !defined(LTJS_USE_DILIGENT_RENDER)
 
 
 //----------------------------------------------------------------------------
@@ -680,7 +682,7 @@ LTRESULT DShowVideoInst::UpdateOnScreen()
 
 
 	// We want to get the rendering device
-	IDirect3DDevice9* pD3DDevice = r_GetRenderStruct()->GetD3DDevice();
+	auto* pD3DDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 
 	// make sure we have a device
 	if ( !pD3DDevice )
@@ -917,7 +919,7 @@ HRESULT CTextureRenderer::SetMediaType(const CMediaType *pmt)
 	m_lVidHeight = abs(pviBmp->bmiHeader.biHeight);
 	m_lVidPitch  = (m_lVidWidth * 3 + 3) & ~(3); // We are forcing RGB24
 
-	IDirect3DDevice9* pD3DDevice = r_GetRenderStruct()->GetD3DDevice();
+	auto* pD3DDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 
 	//make sure that the device is properly setup
 	if (!pD3DDevice)

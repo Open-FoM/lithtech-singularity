@@ -44,6 +44,20 @@ class CClientMgr;
 // Better be initialized...
 inline RenderStruct* r_GetRenderStruct() {return &g_Render;}
 
+inline Diligent::IRenderDevice* r_GetRenderDevice()
+{
+	return g_Render.GetRenderDevice ? g_Render.GetRenderDevice() : nullptr;
+}
+
+inline Diligent::IDeviceContext* r_GetImmediateContext()
+{
+	return g_Render.GetImmediateContext ? g_Render.GetImmediateContext() : nullptr;
+}
+
+inline Diligent::ISwapChain* r_GetSwapChain()
+{
+	return g_Render.GetSwapChain ? g_Render.GetSwapChain() : nullptr;
+}
 
 inline LTBOOL r_IsRenderInitted() {return g_Render.m_bInitted;}
 

@@ -37,11 +37,24 @@ target_compile_definitions (
 		DE_CLIENT_COMPILE
 		DSNDMGR_NO_MFC
 		DIRECTENGINE_COMPILE
-		__D3D
-		__D3DREND
 		MODEL_SUPPORT_ABC
 		$<$<CONFIG:DEBUG>:D3D_DEBUG_INFO>
 )
+
+if (LTJS_USE_DILIGENT_RENDER)
+	target_compile_definitions (
+		${PROJECT_NAME}
+		PRIVATE
+			LTJS_USE_DILIGENT_RENDER
+	)
+else ()
+	target_compile_definitions (
+		${PROJECT_NAME}
+		PRIVATE
+			__D3D
+			__D3DREND
+	)
+endif ()
 
 if (LTJS_USE_FFMPEG_VIDEO_MGR)
 	target_compile_definitions (
@@ -187,12 +200,18 @@ if (MINGW)
 	)
 endif ()
 
+if (LTJS_USE_DILIGENT_RENDER)
+	set (ltjs_render_lib ltjs_lib_diligent_render)
+else ()
+	set (ltjs_render_lib ltjs_lib_d3d_render)
+endif ()
+
 target_link_libraries (
 	${PROJECT_NAME}
 	PRIVATE
 		bibendovsky_spul_lib
 		ltjs::audio
-		ltjs_lib_d3d_render
+		${ltjs_render_lib}
 		ltjs_lib_lt_mem
 		ltjs_lib_rez_mgr
 		ltjs_lib_std_lith
@@ -208,6 +227,9 @@ target_include_directories (
 	PRIVATE
 		.
 		../../../../libs/DirectXMath/Inc
+		../../../../libs/diligent/DiligentCore
+		../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
+		../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
 		../../../../libs/lith
 		../../../../libs/mfcstub
 		../../../../libs/stdlith

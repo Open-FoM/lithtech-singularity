@@ -764,12 +764,12 @@ bool CTextureManager::QueryDDSupport(PFormat* Format)
 }
 
 // Figures out what format we'll use based on the flags...
-D3DFORMAT CTextureManager::QueryDDFormat1(BPPIdent BPP, uint32 iFlags)
+uint32 CTextureManager::QueryDDFormat1(BPPIdent BPP, uint32 iFlags)
 {
 	uint32 iFormat = NULL;				// Pick a texture format.
 
 	if (d3d_ShouldUseS3TC(BPP)) 
-		return g_TextureManager.S3TCFormatConv(BPP);
+		return static_cast<uint32>(g_TextureManager.S3TCFormatConv(BPP));
 
 	//handle bumpmap formats first, then normal texture formats
 	if (iFlags & DTX_LUMBUMPMAP)
@@ -789,15 +789,15 @@ D3DFORMAT CTextureManager::QueryDDFormat1(BPPIdent BPP, uint32 iFlags)
 
 	//see if we stumbled across an invalid format
 	if(!g_TextureManager.m_TextureFormats[iFormat].m_bValid)
-		return D3DFMT_UNKNOWN;
+		return static_cast<uint32>(D3DFMT_UNKNOWN);
 
-	return g_TextureManager.m_TextureFormats[iFormat].m_PF;
+	return static_cast<uint32>(g_TextureManager.m_TextureFormats[iFormat].m_PF);
 }
 
 bool CTextureManager::ConvertTexDataToDD(uint8* pSrcData, PFormat* SrcFormat, uint32 SrcWidth, uint32 SrcHeight, uint8* pDstData, PFormat* DstFormat, BPPIdent eDstType, uint32 nDstFlags, uint32 DstWidth, uint32 DstHeight)
 {
  	D3DFORMAT D3DSrcFormat = d3d_PFormatToD3DFormat(SrcFormat); assert(D3DSrcFormat != D3DFMT_UNKNOWN);
-	D3DFORMAT D3DDstFormat = QueryDDFormat1(eDstType, nDstFlags); assert(D3DDstFormat != D3DFMT_UNKNOWN);
+	D3DFORMAT D3DDstFormat = static_cast<D3DFORMAT>(QueryDDFormat1(eDstType, nDstFlags)); assert(D3DDstFormat != D3DFMT_UNKNOWN);
 	
 	// Create a quick little surface to convert into....
 	LPDIRECT3DSURFACE9 pD3DDstSurface = NULL; LPDIRECT3DTEXTURE9 pD3DDstTexture = NULL;

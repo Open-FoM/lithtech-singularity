@@ -6,7 +6,9 @@
 #include "clientmgr.h"
 #include "interface_helpers.h"
 #include "colorops.h"
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 #include <d3d9.h>
+#endif
 
 //this needs to come last since the bink headers cause conflicts with a lot of other headers
 #include "binkvideomgrimpl.h"
@@ -23,7 +25,7 @@
 // 	Also requires bink32.dll in your path when running 
 //
 
-#if defined( IHAVEPURCHASEDBINK )
+#if defined(IHAVEPURCHASEDBINK) && !defined(LTJS_USE_DILIGENT_RENDER)
 
 
 //--------------------------------------------------------------------------------
@@ -316,7 +318,7 @@ LTRESULT BinkVideoInst::InitScreen()
 	}
 
 	// We want to get the rendering device and create a texture that will fit the movie
-	IDirect3DDevice9* pD3DDevice = r_GetRenderStruct()->GetD3DDevice();
+	auto* pD3DDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	//make sure that the device is properly setup
 	if(!pD3DDevice)
 	{ 
@@ -327,7 +329,7 @@ LTRESULT BinkVideoInst::InitScreen()
 	uint32 nTexWidth  = GetTextureDim(m_bnk->Width);
 	uint32 nTexHeight = GetTextureDim(m_bnk->Height);
 
-	D3DFORMAT TexFormat = r_GetRenderStruct()->GetTextureDDFormat1(BPP_32, 0);
+	D3DFORMAT TexFormat = static_cast<D3DFORMAT>(r_GetRenderStruct()->GetTextureDDFormat1(BPP_32, 0));
 
 	//now try and actually allocate this texture
 	if(FAILED(pD3DDevice->CreateTexture(nTexWidth, nTexHeight, 1, 0, TexFormat, D3DPOOL_MANAGED, &m_pTexture, NULL)))
@@ -433,7 +435,7 @@ LTRESULT BinkVideoInst::UpdateOnScreen()
 	}
 
 	// We want to get the rendering device
-	IDirect3DDevice9* pD3DDevice = r_GetRenderStruct()->GetD3DDevice();
+	auto* pD3DDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	//make sure that the device is properly setup
 	if(!pD3DDevice)
 	{ 

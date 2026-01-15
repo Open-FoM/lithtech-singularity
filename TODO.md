@@ -28,34 +28,45 @@
 - Buffers → `IRenderDevice::CreateBuffer` with explicit usage/bind flags
 
 ## Decisions to Lock Early
-- [x] Target backends: Vulkan (Windows/Linux) + Metal (macOS); optional D3D11 for Windows debugging.
-- [ ] Decide Diligent integration strategy (submodule vs vendored vs external build).
-- [ ] Define shader strategy: reuse existing HLSL + add translations where needed.
-- [ ] Define new renderer-facing interface (replace `GetD3DDevice`).
+- [x] Target backends: Vulkan (Windows/Linux) + Metal (macOS; requires commercial Diligent license) with Vulkan/MoltenVK fallback; optional D3D11 for Windows debugging.
+- [x] Decide Diligent integration strategy: use git submodule under `libs/diligent/` and add via CMake.
+- [x] Define shader strategy: keep HLSL sources; compile via Diligent `ShaderCreateInfo` (`SHADER_SOURCE_LANGUAGE_HLSL`), add shim shaders for fixed‑function paths as needed.
+- [x] Define new renderer-facing interface: replace `GetD3DDevice` with `GetRenderDevice`, `GetImmediateContext`, `GetSwapChain` returning Diligent interfaces.
 
 ---
 
 ## Phase 0 — Preparation & Inventory
-- [ ] Confirm all DX9 touchpoints beyond `sys/d3d` (grep for `IDirect3DDevice9`, `d3d9.h`, `D3D*`).
-- [ ] Identify all RenderStruct callbacks used by client/kernel and map to Diligent equivalents.
-- [ ] Enumerate D3D-specific data structures that must be replaced (renderstruct, formats, device caps).
+- [x] Confirm all DX9 touchpoints beyond `sys/d3d` (grep for `IDirect3DDevice9`, `d3d9.h`, `D3D*`).
+- [x] Identify all RenderStruct callbacks used by client/kernel and map to Diligent equivalents.
+- [x] Enumerate D3D-specific data structures that must be replaced (renderstruct, formats, device caps).
+
+### Inventory Findings (initial)
+- `engine/runtime/shared/src/sys/win/renderstruct.h`: `d3d9.h` include, `GetD3DDevice`, `D3DFORMAT` return types.
+- `engine/runtime/shared/src/sys/win/d3dddstructs.h`: D3D9 type definitions.
+- `engine/runtime/kernel/src/sys/win/binkvideomgrimpl.cpp`: `IDirect3DDevice9`, `IDirect3DSurface9`, `D3DFORMAT`, `GetD3DDevice`.
+- `engine/runtime/kernel/src/sys/win/dshowvideomgrimpl.cpp`: `IDirect3DDevice9`, `IDirect3DSurface9`, `GetD3DDevice`.
+- `engine/runtime/kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.cpp`: `GetD3DDevice` usage.
+- `engine/runtime/kernel/src/sys/win/ltrendermgr_impl.cpp`: D3D surfaces + `D3DFORMAT` usage.
+- `engine/runtime/client/src/sys/win/winclientde_impl.cpp`: `d3d9.h` include + device caps queries.
+- `engine/runtime/shared/src/dtxmgr.cpp`: `GetTextureDDFormat2` + `ConvertTexDataToDD` usage (texture conversion path).
 
 ## Phase 1 — Build & Dependency Integration
-- [ ] Add Diligent Engine to the build system (CMake include paths, libs, compile defs).
-- [ ] Add Diligent include directories where renderer code lives.
-- [ ] Validate Diligent sample code compiles within the repo toolchain.
+- [x] Add Diligent Engine to the build system (CMake include paths, libs, compile defs).
+- [x] Add Diligent include directories where renderer code lives.
+- [x] Validate Diligent sample code compiles within the repo toolchain (built `Tutorial01_HelloTriangle`).
 
 ## Phase 2 — Renderer Interface Redesign
-- [ ] Replace `RenderStruct::GetD3DDevice` with new accessors (e.g., `GetRenderDevice`, `GetDeviceContext`, `GetSwapChain`).
-- [ ] Remove D3D types from `renderstruct.h` and replace with engine-defined types.
-- [ ] Update kernel/client consumers of RenderStruct to use new accessors.
+- [x] Replace `RenderStruct::GetD3DDevice` with new accessors (D3D handle compiled only for D3D builds; Diligent builds gate D3D-only video paths).
+- [x] Remove D3D types from `renderstruct.h` and replace with engine-defined types.
+- [x] Update kernel/client consumers of RenderStruct to handle the new device handle signature.
 
 ## Phase 3 — Diligent RenderDLL Skeleton
-- [ ] Create new renderer implementation directory (e.g., `sys/diligent/` or replace `sys/d3d`).
-- [ ] Implement `rdll_RenderDLLSetup` to wire Diligent-backed callbacks.
-- [ ] Implement `Init/Term` using Diligent device+swapchain creation.
-- [ ] Implement `SwapBuffers`, `Clear`, `Start3D/End3D` using Diligent context.
-- [ ] Define device-loss / window-resize handling strategy (swapchain recreation).
+- [x] Create new renderer implementation directory (`engine/runtime/render_a/src/sys/diligent`).
+- [x] Implement `rdll_RenderDLLSetup` to wire Diligent-backed callbacks.
+- [x] Implement `Init/Term` using Diligent device+swapchain creation.
+- [x] Implement `SwapBuffers`, `Clear`, `Start3D/End3D` using Diligent context.
+- [x] Add `LTJS_USE_DILIGENT_RENDER` CMake option and conditional link.
+- [x] Define device-loss / window-resize handling strategy (swapchain recreation on missing swapchain + resize on size change).
 
 ## Phase 4 — Core Rendering Pipeline
 - [ ] Implement PSO cache (keyed by render state + shader + input layout).
@@ -95,5 +106,5 @@
 
 ## Immediate Next Actions
 - [x] Choose initial backends: Vulkan (Windows/Linux) + Metal (macOS); optional D3D11 for debugging.
-- [ ] Define the new RenderStruct accessors and update all call sites.
-- [ ] Scaffold Diligent renderer with minimal swapchain + clear.
+- [x] Define the new RenderStruct accessors and update all call sites.
+- [x] Scaffold Diligent renderer with minimal swapchain + clear.

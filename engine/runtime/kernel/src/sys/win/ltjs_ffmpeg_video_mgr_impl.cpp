@@ -1,7 +1,7 @@
 #include "bdefs.h"
 
 
-#ifdef LTJS_USE_FFMPEG_VIDEO_MGR
+#if defined(LTJS_USE_FFMPEG_VIDEO_MGR) && !defined(LTJS_USE_DILIGENT_RENDER)
 
 
 #include "ltjs_ffmpeg_video_mgr_impl.h"
@@ -546,7 +546,7 @@ LTRESULT FfmpegVideoInst::Impl::init_screen()
 		RETURN_ERROR(1, FfmpegVideoInst::Impl::init_screen, LT_NOTINITIALIZED);
 	}
 
-	auto d3d9_device = ::r_GetRenderStruct()->GetD3DDevice();
+	auto* d3d9_device = static_cast<IDirect3DDevice9*>(::r_GetRenderStruct()->GetD3DDevice());
 
 	if (!d3d9_device)
 	{
@@ -596,7 +596,7 @@ LTRESULT FfmpegVideoInst::Impl::update_on_screen(
 		RETURN_ERROR(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTINITIALIZED);
 	}
 
-	auto d3d9_device = ::r_GetRenderStruct()->GetD3DDevice();
+	auto* d3d9_device = static_cast<IDirect3DDevice9*>(::r_GetRenderStruct()->GetD3DDevice());
 
 	if (!d3d9_device)
 	{

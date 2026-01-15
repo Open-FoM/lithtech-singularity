@@ -128,7 +128,7 @@ LTRESULT CD3DDrawPrim::BeginDrawPrim()
 	if(m_nBlockCount++ > 0)
 		return LT_OK;
 
-	PushRenderStates(r_GetRenderStruct()->GetD3DDevice());
+	PushRenderStates(static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice()));
 
 	//success
 	return LT_OK;
@@ -148,7 +148,7 @@ LTRESULT CD3DDrawPrim::EndDrawPrim()
 	if(m_nBlockCount == 1)
 	{
 		//we indeed are
-		PopRenderStates(r_GetRenderStruct()->GetD3DDevice());
+		PopRenderStates(static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice()));
 	}
 
 	//decrement our count
@@ -170,7 +170,7 @@ LTRESULT CD3DDrawPrim::EndDrawPrim()
 	{																	\
 		(Value) = (SetVal);												\
 		if(m_nBlockCount > 0)											\
-			(Func)(r_GetRenderStruct()->GetD3DDevice());				\
+			(Func)(static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice()));				\
 	}																	\
 	return LT_OK;														\
 }
@@ -798,7 +798,7 @@ void CD3DDrawPrim::RestoreViewport( void )
 
 // Draw primitive calls (triangles)
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT3 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -856,7 +856,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT3 *pPrim, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYFT3 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -936,7 +936,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYFT3 *pPrim, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYG3 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -990,7 +990,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYG3 *pPrim, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYF3 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1065,7 +1065,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYF3 *pPrim, uint32 nCount) {
 
 // Draw primitive calls (quadrilaterals)
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT4 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1164,7 +1164,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT4 *pPrim, uint32 nCount) {
 
 // special version added by adam s. for optimized wide font rendering
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT4 **ppPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1262,7 +1262,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYGT4 **ppPrim, uint32 nCount) {
 
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYFT4 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1307,7 +1307,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYFT4 *pPrim, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYG4 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1347,7 +1347,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYG4 *pPrim, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYF4 *pPrim, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1392,7 +1392,7 @@ LTRESULT CD3DDrawPrim::DrawPrim(LT_POLYF4 *pPrim, uint32 nCount) {
 // Draw primitives using lines (Note: nCount is Line count).
 LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEGT *pPrim, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1444,7 +1444,7 @@ LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEGT *pPrim, uint32 nCount)
 
 LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEFT *pPrim, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1514,7 +1514,7 @@ LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEFT *pPrim, uint32 nCount)
 
 LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEG *pPrim, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1564,7 +1564,7 @@ LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEG *pPrim, uint32 nCount)
 
 LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEF *pPrim, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1631,7 +1631,7 @@ LTRESULT CD3DDrawPrim::DrawPrim (LT_LINEF *pPrim, uint32 nCount)
 // Draw primitives using points (Note: nCount is Point count).
 LTRESULT CD3DDrawPrim::DrawPrimPoint (LT_VERTGT *pVerts, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1678,7 +1678,7 @@ LTRESULT CD3DDrawPrim::DrawPrimPoint (LT_VERTGT *pVerts, uint32 nCount)
 
 LTRESULT CD3DDrawPrim::DrawPrimPoint (LT_VERTG *pVerts, uint32 nCount)
 {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1723,7 +1723,7 @@ LTRESULT CD3DDrawPrim::DrawPrimPoint (LT_VERTG *pVerts, uint32 nCount)
 
 // Draw primitive calls using triangle fans
 LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTGT *pVerts, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1774,7 +1774,7 @@ LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTGT *pVerts, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTFT *pVerts, uint32 nCount, LT_VERTRGBA rgba) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1845,7 +1845,7 @@ LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTFT *pVerts, uint32 nCount, LT_VERTRGBA
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTG *pVerts, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1894,7 +1894,7 @@ LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTG *pVerts, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTF *pVerts, uint32 nCount, LT_VERTRGBA rgba) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -1962,7 +1962,7 @@ LTRESULT CD3DDrawPrim::DrawPrimFan(LT_VERTF *pVerts, uint32 nCount, LT_VERTRGBA 
 
 // Draw primitive calls using triangle strips
 LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTGT *pVerts, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -2006,7 +2006,7 @@ LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTGT *pVerts, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTFT *pVerts, uint32 nCount, LT_VERTRGBA rgba) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -2063,7 +2063,7 @@ LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTFT *pVerts, uint32 nCount, LT_VERTRG
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTG *pVerts, uint32 nCount) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 
@@ -2106,7 +2106,7 @@ LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTG *pVerts, uint32 nCount) {
 }
 
 LTRESULT CD3DDrawPrim::DrawPrimStrip(LT_VERTF *pVerts, uint32 nCount, LT_VERTRGBA rgba) {
-	LPDIRECT3DDEVICE9 pDevice = r_GetRenderStruct()->GetD3DDevice();
+	LPDIRECT3DDEVICE9 pDevice = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
 	if (!pDevice) return LT_ERROR;
 	CAutoDrawPrimBlock AutoDPBlock(this);
 

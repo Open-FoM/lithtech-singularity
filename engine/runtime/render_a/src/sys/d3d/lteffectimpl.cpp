@@ -140,7 +140,8 @@ bool  LTEffectImpl::Recreate()
 	
 	LTEffectInclude includeHandler;
 	includeHandler.SetParentFilename(m_FileName);
-	hr = D3DXCreateEffect(r_GetRenderStruct()->GetD3DDevice(),
+	auto* d3d_device = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
+	hr = D3DXCreateEffect(d3d_device,
 		m_pByteCode,
 		m_ByteCodeSize,
 		NULL,

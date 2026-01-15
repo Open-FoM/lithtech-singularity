@@ -14,7 +14,7 @@
 #define __DSHOWVIDEOMGRIMPL_H__
 
 
-#ifdef LTJS_USE_DIRECTSHOW
+#if defined(LTJS_USE_DIRECTSHOW) && !defined(LTJS_USE_DILIGENT_RENDER)
 
 
 #ifndef __VIDEOMGR_H__

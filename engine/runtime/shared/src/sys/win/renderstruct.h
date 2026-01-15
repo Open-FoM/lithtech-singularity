@@ -5,17 +5,14 @@
 #include "pixelformat.h"
 #endif
 
-#ifndef __D3D9_H__
-#include <d3d9.h>
-#define __D3D9_H__
-#endif
-
-#ifndef __D3DDDSTRUCTS_H__
-#include "d3dddstructs.h"
-#endif
 
 #ifndef __LIGHTMAPDEFS_H__
 #include "lightmapdefs.h"
+#endif
+
+#ifndef LTRGBColorANDLTRGB
+#define LTRGBColorANDLTRGB
+union LTRGBColor { LTRGB rgb; uint32 dwordVal; };
 #endif
 
 class SharedTexture;
@@ -54,7 +51,12 @@ typedef void* HLTBUFFER;
 #define DRAWMODE_NORMAL     1   // Render normally.
 #define DRAWMODE_OBJECTLIST 2   // Only render the objects in m_pObjectList.
 
-struct IDirect3DDevice9;
+namespace Diligent
+{
+	class IRenderDevice;
+	class IDeviceContext;
+	class ISwapChain;
+}
 
 // This is passed in when rendering a scene.
 struct SceneDesc
@@ -216,16 +218,24 @@ struct RenderStruct
         int             (*Init)(RenderStructInit *pInit);   // Returns RENDER_OK for success, or an error code.
         void            (*Term)(bool bFullTerm);
 
-        IDirect3DDevice9* (*GetD3DDevice)(); // Note: In spring the renderer will link directly with the engine.
-                            //  RenderStruct will go away - the renderer will be the only thing that
-                            //  needs d3d. The DrawPrim interface lives in the engine for now (and it needs the Device).
+#if !defined(LTJS_USE_DILIGENT_RENDER)
+		void* (*GetD3DDevice)(); // Note: In spring the renderer will link directly with the engine.
+							//  RenderStruct will go away - the renderer will be the only thing that
+							//  needs d3d. The DrawPrim interface lives in the engine for now (and it needs the Device).
+#endif
+
+		Diligent::IRenderDevice* (*GetRenderDevice)();
+		Diligent::IDeviceContext* (*GetImmediateContext)();
+		Diligent::ISwapChain* (*GetSwapChain)();
+
 
         // Any textures you expect the renderer to use must be bound and unbound.
         // If bTextureChanged is TRUE, the renderer should reinitialize its data for the texture
         // even if it's already bound.
         void            (*BindTexture)(SharedTexture *pTexture, bool bTextureChanged);
         void            (*UnbindTexture)(SharedTexture *pTexture);
-        D3DFORMAT       (*GetTextureDDFormat1)(BPPIdent BPP, uint32 iFlags);
+		uint32          (*GetTextureDDFormat1)(BPPIdent BPP, uint32 iFlags);
+
         bool            (*QueryDDSupport)(PFormat* Format);
         bool            (*GetTextureDDFormat2)(BPPIdent BPP, uint32 iFlags, PFormat* pFormat);
         bool            (*ConvertTexDataToDD)(uint8* pSrcData, PFormat* SrcFormat, uint32 SrcWidth, uint32 SrcHeight, uint8* pDstData, PFormat* DstFormat, BPPIdent eDstType, uint32 nDstFlags, uint32 DstWidth, uint32 DstHeight);

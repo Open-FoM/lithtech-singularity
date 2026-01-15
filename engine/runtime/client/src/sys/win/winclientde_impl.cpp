@@ -10,7 +10,9 @@
 #include "bindmgr.h"
 #include "client_ticks.h"
 #include "ltgraphicscaps.h"
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 #include <d3d9.h>
+#endif
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -1694,9 +1696,13 @@ static LTRESULT cis_GetEngineHook(const char *pName, void **pData)
 	}
 	else if(stricmp(pName, "d3ddevice")==0)
 	{
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 		//IDirect3DDevice9*
 		*pData = (void*)r_GetRenderStruct()->GetD3DDevice();
 		return LT_OK;
+#else
+		return LT_ERROR;
+#endif
 	}
 #ifdef LTJS_SDL_BACKEND
 	else if (stricmp(pName, "system_event_handler_mgr") == 0)
@@ -1711,18 +1717,23 @@ static LTRESULT cis_GetEngineHook(const char *pName, void **pData)
 
 static LTRESULT cis_QueryGraphicDevice(LTGraphicsCaps* pCaps)
 {
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	static_cast<void>(pCaps);
+	return LT_ERROR;
+#else
 	if(!r_GetRenderStruct())
 	{
 		return LT_ERROR;
 	}
 
-	if(!r_GetRenderStruct()->GetD3DDevice())
+	auto* d3d_device = static_cast<IDirect3DDevice9*>(r_GetRenderStruct()->GetD3DDevice());
+	if(!d3d_device)
 	{
 		return LT_ERROR;
 	}
 
 	D3DCAPS9 caps;
-	HRESULT hres = r_GetRenderStruct()->GetD3DDevice()->GetDeviceCaps(&caps);
+	HRESULT hres = d3d_device->GetDeviceCaps(&caps);
 
 	if(hres != D3D_OK)
 	{
@@ -1734,6 +1745,7 @@ static LTRESULT cis_QueryGraphicDevice(LTGraphicsCaps* pCaps)
 	
 
 	return LT_OK;
+#endif
 }
 
 

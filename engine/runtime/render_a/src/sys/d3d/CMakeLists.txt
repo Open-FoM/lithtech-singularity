@@ -52,6 +52,9 @@ target_include_directories (
 	PRIVATE
 		.
 		../../../../../../libs/DirectXMath/Inc
+		../../../../../../libs/diligent/DiligentCore
+		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
+		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
 		../../../../../../libs/stdlith
 		../../../../../sdk/inc
 		../../../../../sdk/inc/physics

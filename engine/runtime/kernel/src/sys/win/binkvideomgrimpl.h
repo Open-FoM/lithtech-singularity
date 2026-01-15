@@ -11,7 +11,7 @@
 //    From the SDK you purchased from bink place bink.h rad.h radbase.h and smack.h into the Engine/runtime/kernel/src/sys/win directory.
 // 	Also requires bink32.dll in your path when running 
 //
-#if defined( IHAVEPURCHASEDBINK )
+#if defined(IHAVEPURCHASEDBINK) && !defined(LTJS_USE_DILIGENT_RENDER)
 
 //
 //
