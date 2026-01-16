@@ -69,6 +69,7 @@ constexpr uint32 kDiligentSurfaceFlagOptimized = 1u << 0;
 constexpr uint32 kDiligentSurfaceFlagDirty = 1u << 1;
 
 static ConVar<int> g_CV_ScreenGlow_DrawCanvases("ScreenGlow_DrawCanvases", 1);
+static ConVar<int> g_CV_ScreenGlowBlurMultiTap("ScreenGlowBlurMultiTap", 1);
 
 struct DiligentSurface
 {
@@ -7697,15 +7698,52 @@ bool diligent_glow_render_blur_pass(
 		return false;
 	}
 
+	const float uv_scale = g_CV_ScreenGlowUVScale.m_Val;
+	const float width = static_cast<float>(g_diligent_glow_state.texture_width);
+	const float height = static_cast<float>(g_diligent_glow_state.texture_height);
+
+	if (!g_CV_ScreenGlowBlurMultiTap.m_Val)
+	{
+		bool first_pass = true;
+		for (uint32 index = 0; index < g_diligent_glow_state.filter_size; ++index)
+		{
+			const auto& element = g_diligent_glow_state.filter[index];
+			if (element.weight <= 0.0f)
+			{
+				continue;
+			}
+
+			const float u_offset = uv_scale * element.tex_offset * u_weight / width;
+			const float v_offset = uv_scale * element.tex_offset * v_weight / height;
+			const float u0 = 0.0f + u_offset;
+			const float u1 = 1.0f + u_offset;
+			const float v0 = 0.0f + v_offset;
+			const float v1 = 1.0f + v_offset;
+			if (!diligent_glow_draw_fullscreen_quad(
+				source_view,
+				dest_target.GetRenderTargetView(),
+				dest_target.GetDepthStencilView(),
+				u0,
+				v0,
+				u1,
+				v1,
+				element.weight,
+				first_pass ? LTSURFACEBLEND_SOLID : LTSURFACEBLEND_ADD))
+			{
+				return false;
+			}
+
+			first_pass = false;
+		}
+
+		return true;
+	}
+
 	auto* pipeline = diligent_get_glow_blur_pipeline(LTSURFACEBLEND_SOLID);
 	if (!pipeline)
 	{
 		return false;
 	}
-
-	const float uv_scale = g_CV_ScreenGlowUVScale.m_Val;
-	const float width = static_cast<float>(g_diligent_glow_state.texture_width);
-	const float height = static_cast<float>(g_diligent_glow_state.texture_height);
 
 	bool first_pass = true;
 	uint32 index = 0;
