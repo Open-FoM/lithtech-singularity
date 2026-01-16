@@ -7579,6 +7579,9 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 		diligent_glow_draw_fullscreen_quad(glow_srv, backbuffer_rtv, backbuffer_dsv, u0, v0, u1, v1, 1.0f, LTSURFACEBLEND_ADD);
 	}
 
+	g_ViewParams = saved_view;
+	g_visible_render_blocks = saved_blocks;
+
 	if (g_CV_ScreenGlowShowTexture.m_Val || g_CV_ScreenGlowShowFilter.m_Val)
 	{
 		diligent_set_viewport_rect(left, top, width, height);
@@ -7592,8 +7595,6 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 		}
 	}
 
-	g_ViewParams = saved_view;
-	g_visible_render_blocks = saved_blocks;
 	return true;
 }
 
