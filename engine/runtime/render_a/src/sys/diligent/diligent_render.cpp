@@ -100,6 +100,7 @@ struct DiligentOptimized2DResources
 	Diligent::RefCntAutoPtr<Diligent::IShader> vertex_shader;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader;
 	std::unordered_map<int32, DiligentOptimized2DPipeline> pipelines;
+	std::unordered_map<int32, DiligentOptimized2DPipeline> clamped_pipelines;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> vertex_buffer;
 	uint32 vertex_buffer_size = 0;
 };
@@ -920,7 +921,15 @@ uint32 g_diligent_num_world_dynamic_lights = 0;
 constexpr uint32 kDiligentGlowMinTextureSize = 16;
 constexpr uint32 kDiligentGlowMaxTextureSize = 512;
 constexpr uint32 kDiligentGlowMaxFilterSize = 64;
+constexpr uint32 kDiligentGlowBlurBatchSize = 8;
 constexpr float kDiligentGlowMinElementWeight = 0.01f;
+static_assert(kDiligentGlowBlurBatchSize == 8, "Update glow blur shader tap count.");
+
+struct DiligentGlowBlurConstants
+{
+	std::array<std::array<float, 4>, kDiligentGlowBlurBatchSize> taps{};
+	float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+};
 
 struct DiligentGlowElement
 {
@@ -940,6 +949,23 @@ struct DiligentGlowState
 };
 
 DiligentGlowState g_diligent_glow_state;
+
+struct DiligentGlowBlurPipeline
+{
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> pipeline_state;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+};
+
+struct DiligentGlowBlurResources
+{
+	Diligent::RefCntAutoPtr<Diligent::IShader> vertex_shader;
+	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> constant_buffer;
+	DiligentGlowBlurPipeline pipeline_solid;
+	DiligentGlowBlurPipeline pipeline_add;
+};
+
+DiligentGlowBlurResources g_diligent_glow_blur_resources;
 
 struct DiligentSceneDescScope
 {
@@ -1907,6 +1933,29 @@ const char* diligent_get_optimized_2d_vertex_shader_source()
 		"}\n";
 }
 
+const char* diligent_get_glow_blur_vertex_shader_source()
+{
+	return
+		"struct VSInput\n"
+		"{\n"
+		"    float2 position : ATTRIB0;\n"
+		"    float4 color : ATTRIB1;\n"
+		"    float2 uv : ATTRIB2;\n"
+		"};\n"
+		"struct VSOutput\n"
+		"{\n"
+		"    float4 position : SV_POSITION;\n"
+		"    float2 uv : TEXCOORD0;\n"
+		"};\n"
+		"VSOutput VSMain(VSInput input)\n"
+		"{\n"
+		"    VSOutput output;\n"
+		"    output.position = float4(input.position, 0.0f, 1.0f);\n"
+		"    output.uv = input.uv;\n"
+		"    return output;\n"
+		"}\n";
+}
+
 const char* diligent_get_optimized_2d_pixel_shader_source()
 {
 	return
@@ -1923,6 +1972,39 @@ const char* diligent_get_optimized_2d_pixel_shader_source()
 		"{\n"
 		"    float4 texel = g_Texture.Sample(g_Texture_sampler, input.uv);\n"
 		"    return texel * input.color;\n"
+		"}\n";
+}
+
+const char* diligent_get_glow_blur_pixel_shader_source()
+{
+	return
+		"#define GLOW_MAX_TAPS 8\n"
+		"Texture2D g_Texture;\n"
+		"SamplerState g_Texture_sampler;\n"
+		"cbuffer GlowBlurConstants\n"
+		"{\n"
+		"    float4 g_Taps[GLOW_MAX_TAPS];\n"
+		"    float4 g_Params;\n"
+		"};\n"
+		"struct PSInput\n"
+		"{\n"
+		"    float4 position : SV_POSITION;\n"
+		"    float2 uv : TEXCOORD0;\n"
+		"};\n"
+		"float4 PSMain(PSInput input) : SV_TARGET\n"
+		"{\n"
+		"    int tapCount = (int)g_Params.x;\n"
+		"    float3 color = float3(0.0f, 0.0f, 0.0f);\n"
+		"    float alpha = 0.0f;\n"
+		"    for (int i = 0; i < tapCount; ++i)\n"
+		"    {\n"
+		"        float2 offset = g_Taps[i].xy;\n"
+		"        float weight = g_Taps[i].z;\n"
+		"        float4 texel = g_Texture.Sample(g_Texture_sampler, input.uv + offset);\n"
+		"        color += texel.rgb * weight;\n"
+		"        alpha += texel.a * weight;\n"
+		"    }\n"
+		"    return float4(color, alpha);\n"
 		"}\n";
 }
 
@@ -2031,10 +2113,11 @@ bool diligent_ensure_optimized_2d_vertex_buffer(uint32 size)
 	return true;
 }
 
-DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend blend)
+DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend blend, bool clamp_sampler)
 {
-	auto it = g_optimized_2d_resources.pipelines.find(static_cast<int32>(blend));
-	if (it != g_optimized_2d_resources.pipelines.end())
+	auto& pipelines = clamp_sampler ? g_optimized_2d_resources.clamped_pipelines : g_optimized_2d_resources.pipelines;
+	auto it = pipelines.find(static_cast<int32>(blend));
+	if (it != pipelines.end())
 	{
 		return &it->second;
 	}
@@ -2093,6 +2176,9 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc.Desc.AddressU = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc.Desc.AddressV = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc.Desc.AddressW = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc.TextureName = "g_Texture";
 	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
@@ -2105,8 +2191,239 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	}
 
 	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
-	auto result = g_optimized_2d_resources.pipelines.emplace(static_cast<int32>(blend), std::move(pipeline));
+	auto result = pipelines.emplace(static_cast<int32>(blend), std::move(pipeline));
 	return result.second ? &result.first->second : nullptr;
+}
+
+bool diligent_ensure_glow_blur_resources()
+{
+	if (g_diligent_glow_blur_resources.vertex_shader && g_diligent_glow_blur_resources.pixel_shader &&
+		g_diligent_glow_blur_resources.constant_buffer)
+	{
+		return true;
+	}
+
+	if (!g_render_device)
+	{
+		return false;
+	}
+
+	Diligent::ShaderCreateInfo shader_info;
+	shader_info.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_HLSL;
+
+	if (!g_diligent_glow_blur_resources.vertex_shader)
+	{
+		Diligent::ShaderDesc vertex_desc;
+		vertex_desc.Name = "ltjs_glow_blur_vs";
+		vertex_desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+		shader_info.Desc = vertex_desc;
+		shader_info.EntryPoint = "VSMain";
+		shader_info.Source = diligent_get_glow_blur_vertex_shader_source();
+		g_render_device->CreateShader(shader_info, &g_diligent_glow_blur_resources.vertex_shader);
+	}
+
+	if (!g_diligent_glow_blur_resources.pixel_shader)
+	{
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.Name = "ltjs_glow_blur_ps";
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		shader_info.Desc = pixel_desc;
+		shader_info.EntryPoint = "PSMain";
+		shader_info.Source = diligent_get_glow_blur_pixel_shader_source();
+		g_render_device->CreateShader(shader_info, &g_diligent_glow_blur_resources.pixel_shader);
+	}
+
+	if (!g_diligent_glow_blur_resources.constant_buffer)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_glow_blur_constants";
+		desc.Size = sizeof(DiligentGlowBlurConstants);
+		desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		g_render_device->CreateBuffer(desc, nullptr, &g_diligent_glow_blur_resources.constant_buffer);
+	}
+
+	return g_diligent_glow_blur_resources.vertex_shader && g_diligent_glow_blur_resources.pixel_shader &&
+		g_diligent_glow_blur_resources.constant_buffer;
+}
+
+DiligentGlowBlurPipeline* diligent_get_glow_blur_pipeline(LTSurfaceBlend blend)
+{
+	if (!diligent_ensure_glow_blur_resources())
+	{
+		return nullptr;
+	}
+
+	if (!g_render_device || !g_swap_chain)
+	{
+		return nullptr;
+	}
+
+	DiligentGlowBlurPipeline* pipeline = (blend == LTSURFACEBLEND_SOLID)
+		? &g_diligent_glow_blur_resources.pipeline_solid
+		: &g_diligent_glow_blur_resources.pipeline_add;
+
+	if (pipeline->pipeline_state && pipeline->srb)
+	{
+		return pipeline;
+	}
+
+	Diligent::TEXTURE_FORMAT color_format = g_swap_chain->GetDesc().ColorBufferFormat;
+	Diligent::TEXTURE_FORMAT depth_format = g_swap_chain->GetDesc().DepthBufferFormat;
+	if (g_diligent_glow_state.glow_target)
+	{
+		auto* rtv = g_diligent_glow_state.glow_target->GetRenderTargetView();
+		if (rtv && rtv->GetTexture())
+		{
+			color_format = rtv->GetTexture()->GetDesc().Format;
+		}
+		auto* dsv = g_diligent_glow_state.glow_target->GetDepthStencilView();
+		if (dsv && dsv->GetTexture())
+		{
+			depth_format = dsv->GetTexture()->GetDesc().Format;
+		}
+	}
+
+	Diligent::GraphicsPipelineStateCreateInfo pipeline_info;
+	pipeline_info.PSODesc.Name = "ltjs_glow_blur";
+	pipeline_info.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pipeline_info.GraphicsPipeline.NumRenderTargets = 1;
+	pipeline_info.GraphicsPipeline.RTVFormats[0] = color_format;
+	pipeline_info.GraphicsPipeline.DSVFormat = depth_format;
+	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+	Diligent::LayoutElement layout_elements[] =
+	{
+		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false}
+	};
+
+	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
+	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
+	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+
+	diligent_fill_optimized_2d_blend_desc(blend, pipeline_info.GraphicsPipeline.BlendDesc.RenderTargets[0]);
+
+	pipeline_info.pVS = g_diligent_glow_blur_resources.vertex_shader;
+	pipeline_info.pPS = g_diligent_glow_blur_resources.pixel_shader;
+
+	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+
+	Diligent::ShaderResourceVariableDesc variables[] = {
+		{Diligent::SHADER_TYPE_PIXEL, "g_Texture", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+	pipeline_info.PSODesc.ResourceLayout.Variables = variables;
+	pipeline_info.PSODesc.ResourceLayout.NumVariables = static_cast<uint32>(std::size(variables));
+
+	Diligent::ImmutableSamplerDesc sampler_desc;
+	sampler_desc.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.TextureName = "g_Texture";
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+
+	g_render_device->CreateGraphicsPipelineState(pipeline_info, &pipeline->pipeline_state);
+	if (!pipeline->pipeline_state)
+	{
+		return nullptr;
+	}
+
+	auto* ps_constants = pipeline->pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "GlowBlurConstants");
+	if (ps_constants)
+	{
+		ps_constants->Set(g_diligent_glow_blur_resources.constant_buffer);
+	}
+
+	pipeline->pipeline_state->CreateShaderResourceBinding(&pipeline->srb, true);
+	return pipeline->pipeline_state && pipeline->srb ? pipeline : nullptr;
+}
+
+bool diligent_update_glow_blur_constants(const DiligentGlowBlurConstants& constants)
+{
+	if (!g_immediate_context || !g_diligent_glow_blur_resources.constant_buffer)
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_immediate_context->MapBuffer(g_diligent_glow_blur_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_immediate_context->UnmapBuffer(g_diligent_glow_blur_resources.constant_buffer, Diligent::MAP_WRITE);
+	return true;
+}
+
+bool diligent_draw_glow_blur_quad(
+	DiligentGlowBlurPipeline* pipeline,
+	Diligent::ITextureView* texture_view,
+	Diligent::ITextureView* render_target,
+	Diligent::ITextureView* depth_target)
+{
+	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb || !texture_view || !render_target)
+	{
+		return false;
+	}
+
+	constexpr uint32 kVertexCount = 4;
+	const uint32 data_size = kVertexCount * sizeof(DiligentOptimized2DVertex);
+	if (!diligent_ensure_optimized_2d_vertex_buffer(data_size))
+	{
+		return false;
+	}
+
+	DiligentOptimized2DVertex vertices[kVertexCount];
+	vertices[0] = {{-1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}};
+	vertices[1] = {{1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}};
+	vertices[2] = {{-1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}};
+	vertices[3] = {{1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}};
+
+	void* mapped_vertices = nullptr;
+	g_immediate_context->MapBuffer(g_optimized_2d_resources.vertex_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_vertices);
+	if (!mapped_vertices)
+	{
+		return false;
+	}
+	std::memcpy(mapped_vertices, vertices, sizeof(vertices));
+	g_immediate_context->UnmapBuffer(g_optimized_2d_resources.vertex_buffer, Diligent::MAP_WRITE);
+
+	auto* texture_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture");
+	if (texture_var)
+	{
+		texture_var->Set(texture_view);
+	}
+
+	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_immediate_context->SetPipelineState(pipeline->pipeline_state);
+
+	Diligent::IBuffer* buffers[] = {g_optimized_2d_resources.vertex_buffer};
+	Diligent::Uint64 offsets[] = {0};
+	g_immediate_context->SetVertexBuffers(
+		0,
+		1,
+		buffers,
+		offsets,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::DrawAttribs draw_attribs;
+	draw_attribs.NumVertices = kVertexCount;
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_immediate_context->Draw(draw_attribs);
+	return true;
 }
 
 bool diligent_build_surface_upload_data(
@@ -2242,7 +2559,7 @@ bool diligent_draw_optimized_2d_vertices(
 		return false;
 	}
 
-	auto* pipeline = diligent_get_optimized_2d_pipeline(blend);
+	auto* pipeline = diligent_get_optimized_2d_pipeline(blend, false);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 	{
 		return false;
@@ -2289,7 +2606,8 @@ bool diligent_draw_optimized_2d_vertices_to_target(
 	LTSurfaceBlend blend,
 	Diligent::ITextureView* texture_view,
 	Diligent::ITextureView* render_target,
-	Diligent::ITextureView* depth_target)
+	Diligent::ITextureView* depth_target,
+	bool clamp_sampler)
 {
 	if (!vertices || vertex_count == 0 || !texture_view || !render_target)
 	{
@@ -2307,7 +2625,7 @@ bool diligent_draw_optimized_2d_vertices_to_target(
 		return false;
 	}
 
-	auto* pipeline = diligent_get_optimized_2d_pipeline(blend);
+	auto* pipeline = diligent_get_optimized_2d_pipeline(blend, clamp_sampler);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 	{
 		return false;
@@ -7226,7 +7544,7 @@ bool diligent_glow_draw_fullscreen_quad(
 	vertices[1] = {{1.0f, 1.0f}, {color, color, color, color}, {u1, v0}};
 	vertices[2] = {{-1.0f, -1.0f}, {color, color, color, color}, {u0, v1}};
 	vertices[3] = {{1.0f, -1.0f}, {color, color, color, color}, {u1, v1}};
-	return diligent_draw_optimized_2d_vertices_to_target(vertices, 4, blend, texture_view, render_target, depth_target);
+	return diligent_draw_optimized_2d_vertices_to_target(vertices, 4, blend, texture_view, render_target, depth_target, true);
 }
 
 bool diligent_glow_draw_debug_quad(
@@ -7379,36 +7697,65 @@ bool diligent_glow_render_blur_pass(
 		return false;
 	}
 
+	auto* pipeline = diligent_get_glow_blur_pipeline(LTSURFACEBLEND_SOLID);
+	if (!pipeline)
+	{
+		return false;
+	}
+
 	const float uv_scale = g_CV_ScreenGlowUVScale.m_Val;
 	const float width = static_cast<float>(g_diligent_glow_state.texture_width);
 	const float height = static_cast<float>(g_diligent_glow_state.texture_height);
-	for (uint32 index = 0; index < g_diligent_glow_state.filter_size; ++index)
+
+	bool first_pass = true;
+	uint32 index = 0;
+	while (index < g_diligent_glow_state.filter_size)
 	{
-		const auto& element = g_diligent_glow_state.filter[index];
-		if (element.weight <= 0.0f)
+		DiligentGlowBlurConstants constants{};
+		uint32 tap_count = 0;
+		while (index < g_diligent_glow_state.filter_size && tap_count < kDiligentGlowBlurBatchSize)
+		{
+			const auto& element = g_diligent_glow_state.filter[index++];
+			if (element.weight <= 0.0f)
+			{
+				continue;
+			}
+
+			const float u_offset = uv_scale * element.tex_offset * u_weight / width;
+			const float v_offset = uv_scale * element.tex_offset * v_weight / height;
+			const float weight = element.weight;
+			constants.taps[tap_count] = {u_offset, v_offset, weight, 0.0f};
+			++tap_count;
+		}
+
+		if (tap_count == 0)
 		{
 			continue;
 		}
 
-		const float u_offset = uv_scale * element.tex_offset * u_weight / width;
-		const float v_offset = uv_scale * element.tex_offset * v_weight / height;
-		const float u0 = 0.0f + u_offset;
-		const float u1 = 1.0f + u_offset;
-		const float v0 = 0.0f + v_offset;
-		const float v1 = 1.0f + v_offset;
-		if (!diligent_glow_draw_fullscreen_quad(
-			source_view,
-			dest_target.GetRenderTargetView(),
-			dest_target.GetDepthStencilView(),
-			u0,
-			v0,
-			u1,
-			v1,
-			element.weight,
-			LTSURFACEBLEND_ADD))
+		constants.params[0] = static_cast<float>(tap_count);
+		if (!diligent_update_glow_blur_constants(constants))
 		{
 			return false;
 		}
+
+		const LTSurfaceBlend blend = first_pass ? LTSURFACEBLEND_SOLID : LTSURFACEBLEND_ADD;
+		pipeline = diligent_get_glow_blur_pipeline(blend);
+		if (!pipeline)
+		{
+			return false;
+		}
+
+		if (!diligent_draw_glow_blur_quad(
+			pipeline,
+			source_view,
+			dest_target.GetRenderTargetView(),
+			dest_target.GetDepthStencilView()))
+		{
+			return false;
+		}
+
+		first_pass = false;
 	}
 
 	return true;
@@ -8211,10 +8558,18 @@ void diligent_Term(bool)
 	g_debug_white_texture_srv.Release();
 	g_debug_white_texture.Release();
 	g_optimized_2d_resources.pipelines.clear();
+	g_optimized_2d_resources.clamped_pipelines.clear();
 	g_optimized_2d_resources.vertex_shader.Release();
 	g_optimized_2d_resources.pixel_shader.Release();
 	g_optimized_2d_resources.vertex_buffer.Release();
 	g_optimized_2d_resources.vertex_buffer_size = 0;
+	g_diligent_glow_blur_resources.vertex_shader.Release();
+	g_diligent_glow_blur_resources.pixel_shader.Release();
+	g_diligent_glow_blur_resources.constant_buffer.Release();
+	g_diligent_glow_blur_resources.pipeline_solid.srb.Release();
+	g_diligent_glow_blur_resources.pipeline_solid.pipeline_state.Release();
+	g_diligent_glow_blur_resources.pipeline_add.srb.Release();
+	g_diligent_glow_blur_resources.pipeline_add.pipeline_state.Release();
 	g_engine_factory = nullptr;
 	g_drawprim_texture = nullptr;
 	g_native_window_handle = nullptr;
