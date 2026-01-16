@@ -243,11 +243,11 @@ void CD3DVAMesh::UpdateVA(Model* pModel, AnimTimeRef* pAnimTimeRef)
 
 void CD3DVAMesh::Render(ModelInstance *pInstance, D3DMATRIX& WorldTransform, CD3DRenderStyle* pRenderStyle, uint32 iRenderPass)
 {
-	RSD3DOptions rsD3DOptions;
-	pRenderStyle->GetDirect3D_Options(&rsD3DOptions);
+	RSRenderStyleOptions rsD3DOptions;
+	pRenderStyle->GetRenderStyleOptions(&rsD3DOptions);
 
 	// If this pass has a vertex shader, use it.
-	RSD3DRenderPass *pPass = pRenderStyle->GetRenderPass_D3DOptions(iRenderPass);
+	RSRenderPassShaders *pPass = pRenderStyle->GetRenderPassShaders(iRenderPass);
 	if (NULL != pPass &&
 	    pPass->bUseVertexShader &&
 		pPass->VertexShaderID != LTVertexShader::VERTEXSHADER_INVALID)

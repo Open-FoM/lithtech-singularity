@@ -212,7 +212,7 @@ void CD3DRigidMesh::Render(ModelInstance *pInstance, D3DMATRIX& WorldTransform,C
 void CD3DRigidMesh::BeginRender(D3DMATRIX& pD3DTransforms, CD3DRenderStyle* pRenderStyle, uint32 iRenderPass)
 {
 	// If this pass has a vertex shader, use it.
-	RSD3DRenderPass *pPass = pRenderStyle->GetRenderPass_D3DOptions(iRenderPass);
+	RSRenderPassShaders *pPass = pRenderStyle->GetRenderPassShaders(iRenderPass);
 
 	if (NULL != pPass &&
 	    pPass->bUseVertexShader &&

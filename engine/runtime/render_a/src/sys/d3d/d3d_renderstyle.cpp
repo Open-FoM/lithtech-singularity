@@ -22,10 +22,10 @@ define_holder(ILTRenderStyles, g_pRenderStylesInterface);
 CD3DRenderStyle::CD3DRenderStyle()
 {
 	m_pD3DOptions												= NULL;
-	m_pD3DOptions = new RSD3DOptions;
+	m_pD3DOptions = new RSRenderStyleOptions;
 	if(m_pD3DOptions)
 	{
-		memset(m_pD3DOptions, 0, sizeof(RSD3DOptions));
+		memset(m_pD3DOptions, 0, sizeof(RSRenderStyleOptions));
 	}
 
 
@@ -57,7 +57,7 @@ CD3DRenderStyle::~CD3DRenderStyle()
 	}
 }
 
-bool CD3DRenderStyle::SetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3DRenderPass)
+bool CD3DRenderStyle::SetRenderPassShaders(uint32 iPass,RSRenderPassShaders* pD3DRenderPass)
 {
 	list<CD3DRenderPass>::iterator it = m_RenderPasses.begin(); uint32 i = 0;
 	while ((i < iPass) && (it != m_RenderPasses.end()))
@@ -81,7 +81,7 @@ bool CD3DRenderStyle::SetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3
 
 		if (!it->pD3DRenderPass)
 		{
-			LT_MEM_TRACK_ALLOC(it->pD3DRenderPass = new RSD3DRenderPass,LT_MEM_TYPE_RENDERER);
+			LT_MEM_TRACK_ALLOC(it->pD3DRenderPass = new RSRenderPassShaders,LT_MEM_TYPE_RENDERER);
 		}
 
 		*(it->pD3DRenderPass) = *pD3DRenderPass;
@@ -122,7 +122,7 @@ bool CD3DRenderStyle::Load_LTBData(ILTStream* pFileStream)
 		{
 			RenderPassOp RenderPass;
 			uint8 iHasRSD3DRP;
-			RSD3DRenderPass D3DRenderPass;
+			RSRenderPassShaders D3DRenderPass;
 
 			pFileStream->Read(&RenderPass,sizeof(RenderPass));
 			pFileStream->Read(&iHasRSD3DRP,sizeof(iHasRSD3DRP));
@@ -142,18 +142,18 @@ bool CD3DRenderStyle::Load_LTBData(ILTStream* pFileStream)
 				pFileStream->Read(&D3DRenderPass.bUsePixelShader, sizeof(D3DRenderPass.bUsePixelShader));
 				pFileStream->Read(&D3DRenderPass.PixelShaderID, sizeof(D3DRenderPass.PixelShaderID));
 
-				if (!SetRenderPass_D3DOptions(j, &D3DRenderPass))
+				if (!SetRenderPassShaders(j, &D3DRenderPass))
 				{
 					return false;
 				}
 			}
 		}
 
-		RSD3DOptions rsD3DOptions;
+		RSRenderStyleOptions rsD3DOptions;
 		LTRESULT hresult = pFileStream->Read(&rsD3DOptions,sizeof(rsD3DOptions));
 		if(hresult != LT_ERROR)
 		{
-			SetDirect3D_Options(rsD3DOptions);
+			SetRenderStyleOptions(rsD3DOptions);
 		}
 		else
 		{
@@ -221,7 +221,7 @@ bool CD3DRenderStyle::CopyRenderStyle(CRenderStyle* pSrcRenderStyle)
 	m_LightingMaterial		= pSrcD3DRenderStyle->m_LightingMaterial;
 
 	//
-	pSrcRenderStyle->GetDirect3D_Options(m_pD3DOptions);
+	pSrcRenderStyle->GetRenderStyleOptions(m_pD3DOptions);
 
 	// Render Passes...
 	for (list<CD3DRenderPass>::iterator it = pSrcD3DRenderStyle->m_RenderPasses.begin(); it != pSrcD3DRenderStyle->m_RenderPasses.end(); ++it)
@@ -229,7 +229,7 @@ bool CD3DRenderStyle::CopyRenderStyle(CRenderStyle* pSrcRenderStyle)
 		m_RenderPasses.push_back(*it);
 		if (it->pD3DRenderPass)
 		{
-			LT_MEM_TRACK_ALLOC(m_RenderPasses.back().pD3DRenderPass	= new RSD3DRenderPass,LT_MEM_TYPE_RENDERER);
+			LT_MEM_TRACK_ALLOC(m_RenderPasses.back().pD3DRenderPass	= new RSRenderPassShaders,LT_MEM_TYPE_RENDERER);
 			*m_RenderPasses.back().pD3DRenderPass				= *(it->pD3DRenderPass);
 		}
 		else

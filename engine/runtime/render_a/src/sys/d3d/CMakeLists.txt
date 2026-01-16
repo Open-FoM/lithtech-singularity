@@ -51,6 +51,7 @@ target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
 		.
+		..
 		../../../../../../libs/DirectXMath/Inc
 		../../../../../../libs/diligent/DiligentCore
 		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
@@ -157,7 +158,7 @@ target_sources (
 		../../../../world/src/worldtreehelper.h
 		../shadows/d3dshadowtexture.h
 		3d_ops.h
-		aabb.h
+		../aabb.h
 		clipline.h
 		common_draw.h
 		common_init.h
@@ -186,7 +187,7 @@ target_sources (
 		d3d_surface.h
 		d3d_texture.h
 		d3d_utils.h
-		d3d_viewparams.h
+		../viewparams.h
 		d3dmeshrendobj_rigid.h
 		d3dmeshrendobj_skel.h
 		d3dmeshrendobj_vertanim.h
@@ -241,7 +242,7 @@ target_sources (
 	PRIVATE
 		../shadows/d3dshadowtexture.cpp
 		3d_ops.cpp
-		aabb.cpp
+		../aabb.cpp
 		common_draw.cpp
 		common_init.cpp
 		common_stuff.cpp
@@ -266,7 +267,7 @@ target_sources (
 		d3d_surface.cpp
 		d3d_texture.cpp
 		d3d_utils.cpp
-		d3d_viewparams.cpp
+		../viewparams.cpp
 		d3dmeshrendobj_rigid.cpp
 		d3dmeshrendobj_skel.cpp
 		d3dmeshrendobj_vertanim.cpp

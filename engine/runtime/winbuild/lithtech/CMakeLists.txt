@@ -240,6 +240,7 @@ target_include_directories (
 		../../model/src
 		../../mpm/src
 		../../physics/src
+		../../render_a/src/sys
 		../../render_a/src/sys/diligent
 		../../render_b/src
 		../../server/src
@@ -432,7 +433,7 @@ target_sources (
 		../../render_a/src/sys/d3d/d3d_renderstyle.h
 		../../render_a/src/sys/d3d/d3d_utils.h
 		../../render_b/src/gendrawprim.h
-		../../render_b/src/sys/d3d/d3ddrawprim.h
+		../../render_b/src/sys/diligent/diligentdrawprim.h
 		../../render_b/src/sys/d3d/d3dtexinterface.h
 		../../render_b/src/sysdrawprim.h
 		../../server/src/classmgr.h
@@ -636,7 +637,7 @@ target_sources (
 		../../model/src/modelallocations.cpp
 		../../model/src/sys/d3d/d3d_model_load.cpp
 		../../model/src/transformmaker.cpp
-		../../render_b/src/sys/d3d/d3ddrawprim.cpp
+		../../render_b/src/sys/diligent/diligentdrawprim.cpp
 		../../render_b/src/sys/d3d/d3dtexinterface.cpp
 		../../server/src/classmgr.cpp
 		../../server/src/game_serialize.cpp

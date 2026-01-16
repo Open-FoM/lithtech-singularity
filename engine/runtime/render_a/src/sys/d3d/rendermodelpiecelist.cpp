@@ -432,8 +432,8 @@ void CRenderModelPieceList::RenderPieceList(float fAlpha)
 			}
 		}
 
-		RSD3DOptions rsD3DOptions;
-		pCurrRenderStyle->GetDirect3D_Options(&rsD3DOptions);
+		RSRenderStyleOptions rsD3DOptions;
+		pCurrRenderStyle->GetRenderStyleOptions(&rsD3DOptions);
 		if(rsD3DOptions.bUseEffectShader)
 		{
 			//TODO

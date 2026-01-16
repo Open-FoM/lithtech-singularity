@@ -20,7 +20,7 @@ define_holder(IClientShell, i_client_shell);
 
 #include "d3ddrawprim.h"
 #include "d3d_draw.h"
-#include "d3d_viewparams.h"
+#include "viewparams.h"
 #include "common_draw.h"
 #include "lteffectimpl.h"
 #include "lteffectshadermgr.h"

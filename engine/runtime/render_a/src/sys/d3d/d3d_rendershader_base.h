@@ -11,7 +11,7 @@
 #include "d3d_rendershader_glow.h"
 #include "d3d_rendershader_dynamiclight.h"
 #include "d3d_texture.h"
-#include "d3d_viewparams.h"
+#include "viewparams.h"
 #include "common_draw.h"
 #include "iaggregateshader.h"
 #include "texturescriptinstance.h"

@@ -5,7 +5,7 @@
 
 #include "d3d_renderworld_occluder.h"
 
-#include "d3d_viewparams.h"
+#include "viewparams.h"
 #include "d3d_renderblock.h"
 
 #include "d3d_convar.h"

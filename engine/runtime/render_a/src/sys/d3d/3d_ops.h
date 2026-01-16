@@ -9,8 +9,8 @@
 #	include "rendererconsolevars.h"
 #endif
 
-#ifndef __D3D_VIEWPARAMS_H__
-#include "d3d_viewparams.h"
+#ifndef __VIEWPARAMS_H__
+#include "viewparams.h"
 #endif
 
 // DEFINES

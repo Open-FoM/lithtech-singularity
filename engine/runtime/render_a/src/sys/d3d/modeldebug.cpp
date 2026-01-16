@@ -336,8 +336,8 @@ void NModelDebug::DrawModelVertexNormals(ModelInstance* pInstance)
 //pInstance->m_Rotation
 				if (pRenderStyle)
 				{
-					RSD3DOptions options;
-					pRenderStyle->GetDirect3D_Options(&options);
+					RSRenderStyleOptions options;
+					pRenderStyle->GetRenderStyleOptions(&options);
 					if(options.bUseEffectShader)
 					{
 #if LTJS_USE_D3DX9

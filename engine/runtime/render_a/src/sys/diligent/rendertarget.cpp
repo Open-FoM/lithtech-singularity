@@ -108,6 +108,13 @@ LTRESULT CRenderTarget::Recreate()
 		return LT_ERROR;
 	}
 
+	m_render_target_srv = m_render_target->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!m_render_target_srv)
+	{
+		dsi_ConsolePrint("Failed to create render target SRV: CRenderTarget::Recreate()");
+		return LT_ERROR;
+	}
+
 	auto ds_format = GetDiligentFormatFromDSFormat(m_RenderTargetParams.DS_Format);
 	if (ds_format == Diligent::TEX_FORMAT_UNKNOWN)
 	{
@@ -144,6 +151,7 @@ LTRESULT CRenderTarget::Recreate()
 LTRESULT CRenderTarget::Term()
 {
 	m_render_target_view.Release();
+	m_render_target_srv.Release();
 	m_render_target.Release();
 	m_depth_stencil_view.Release();
 	m_depth_stencil.Release();

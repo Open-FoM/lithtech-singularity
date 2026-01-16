@@ -75,15 +75,44 @@
 - [x] Implement render target management (`rendertarget.*`) using Diligent textures/views.
 
 ## Phase 5 — DrawPrim & 2D/Overlay
-- [ ] Rewrite `render_b` DrawPrim to use Diligent draw calls and PSOs.
-- [ ] Replace D3D fixed-function states with equivalent shader paths.
-- [ ] Implement optimized 2D path (if needed) using a dedicated PSO.
+- [x] Rewrite `render_b` DrawPrim to use Diligent draw calls and PSOs.
+- [x] Replace D3D fixed-function states with equivalent shader paths.
+- [x] Implement optimized 2D path (if needed) using a dedicated PSO.
 
 ## Phase 6 — World & Model Rendering
 - [ ] Port `render_a` draw path: world rendering, lighting, shadowing, fog, glow.
+  - [x] Share view/frustum math for Diligent drawprim.
+  - [x] Add minimal unlit world pass with culling.
+  - [x] Cache per-block world GPU buffers.
+  - [x] Add base texture + lightmap pass (UV1 modulate).
+  - [x] Cache per-section lightmap textures/SRVs.
+  - [x] Add dynamic lightmap updates from light groups.
+  - [x] Add fog + camera data to world/model constant buffers.
+  - [x] Collect world dynamic lights for Diligent frames.
+  - [x] Add additive world dynamic light pass (distance-based).
+  - [x] Implement screen glow render pass (offscreen blur + composite).
+  - [x] Honor `MHF_NOGLOW` in glow render-style mapping.
+  - [x] Add glow debug overlays for `ScreenGlowShowTexture`/`ScreenGlowShowFilter`.
 - [ ] Translate D3D shader usage to Diligent shader compilation (HLSL).
+- [x] Add in-depth glow handoff document.
+  - [x] Map PC shader codes to Diligent pipeline modes.
+  - [x] Add lightmap-only shader path for ePCShader_Lightmap.
+  - [x] Add dual-texture shader paths for dual and lightmap-dual.
+  - [x] Bind dual-texture SRVs in world draw loop.
+  - [x] Extend world shaders for dynamic light constants/output.
+  - [x] Apply distance-based fog in world/model shaders.
 - [ ] Replace D3D vertex declarations with Diligent input layouts.
+  - [x] Move vertex stream flags and blend types to shared header.
+  - [x] Build Diligent mesh input layouts for rigid meshes.
 - [ ] Port model render objects and render styles to Diligent PSO/SRB.
+  - [x] Replace D3D render pass shader structs with renderer-agnostic versions.
+  - [x] Add Diligent rigid mesh render object (load + GPU buffers).
+  - [x] Wire Diligent model draw path into `diligent_RenderScene`.
+  - [x] Implement Diligent render-style PSO creation for model passes.
+  - [x] Draw models in normal render mode via world-tree visibility.
+  - [x] Iterate all render passes for model render styles.
+  - [x] Add Diligent skeletal mesh render object with CPU skinning.
+  - [x] Add Diligent vertex-animated mesh render object with dynamic updates.
 
 ## Phase 7 — UI + Video Managers
 - [ ] Port `ui/src/sys/d3d` UI rendering to Diligent.
@@ -94,6 +123,7 @@
 - [ ] Remove DX9 headers, libs, and CMake targets for D3D.
 - [ ] Delete `sys/d3d` source trees after Diligent renderer is functional.
 - [ ] Purge D3D-specific renderstruct fields, helpers, and wrappers.
+- [ ] Rename any d3d_ prefixed structure
 
 ## Phase 9 — Validation & Stabilization
 - [ ] Render a minimal scene (triangle) using Diligent.

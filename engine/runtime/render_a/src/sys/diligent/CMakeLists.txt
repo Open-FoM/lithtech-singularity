@@ -36,12 +36,17 @@ target_include_directories (
 		../../../../shared/src
 		../../../../shared/src/sys/win
 		../../../../world/src
-)
+		..
+	)
+
 
 target_sources (
 	${PROJECT_NAME}
 	PRIVATE
 		diligent_render.cpp
+		../aabb.cpp
+		../viewparams.cpp
+		../viewfrustum.cpp
 		rendertarget.cpp
 		rendertargetmgr.cpp
 )

@@ -4,8 +4,8 @@
 // This module performs all the sky rendering.
 
 
-#ifndef __D3D_VIEWPARAMS_H__
-#include "d3d_viewparams.h"
+#ifndef __VIEWPARAMS_H__
+#include "viewparams.h"
 #endif
 
 // Draw the sky to a specified set of extents

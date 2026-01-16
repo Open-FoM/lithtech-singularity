@@ -28,12 +28,16 @@ public:
 	LTRESULT	InstallOnDevice();
 	LTRESULT	StretchRectToSurface(Diligent::ITextureView* dest_view);
 	Diligent::ITexture* GetRenderTargetTexture() { return m_render_target; }
+	Diligent::ITextureView* GetRenderTargetView() { return m_render_target_view; }
+	Diligent::ITextureView* GetDepthStencilView() { return m_depth_stencil_view; }
+	Diligent::ITextureView* GetShaderResourceView() { return m_render_target_srv; }
 	const RenderTargetParams& GetRenderTargetParams() { return m_RenderTargetParams; }
 
 protected:
 	RenderTargetParams			m_RenderTargetParams;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> m_render_target;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> m_render_target_view;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> m_render_target_srv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> m_depth_stencil;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> m_depth_stencil_view;
 };

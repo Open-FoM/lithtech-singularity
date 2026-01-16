@@ -6,9 +6,13 @@
     #include "sys/null/nulldrawprim.h"
 #else
 
-	#ifdef __D3DREND
+	#if defined(LTJS_USE_DILIGENT_RENDER)
+	#include "sys/diligent/diligentdrawprim.h"
+	#else
+		#ifdef __D3DREND
     #include "sys/d3d/d3ddrawprim.h"
     #endif
+	#endif
 
 	#ifdef __XBOXREND
 	#include "sys/xbox/xbox_drawprim.h"

@@ -41,7 +41,7 @@ class CD3DRenderPass
 public:
 	CD3DRenderPass()				{ pD3DRenderPass = NULL; }
 	RenderPassOp					RenderPass;
-	RSD3DRenderPass*				pD3DRenderPass;
+	RSRenderPassShaders*				pD3DRenderPass;
 };
 
 class CD3DRenderStyle : public CRenderStyle{
@@ -138,11 +138,11 @@ public:
 	virtual uint32					GetRenderPassCount()									{ return m_RenderPasses.size(); }
 
 	// Platform Options: Direct3D...
-	virtual bool					SetDirect3D_Options(RSD3DOptions& Options)
+	virtual bool					SetRenderStyleOptions(RSRenderStyleOptions& Options)
 	{
 		if (!m_pD3DOptions)
 		{
-			LT_MEM_TRACK_ALLOC(m_pD3DOptions = new RSD3DOptions, LT_MEM_TYPE_RENDERER);
+			LT_MEM_TRACK_ALLOC(m_pD3DOptions = new RSRenderStyleOptions, LT_MEM_TYPE_RENDERER);
 		}
 
 		if (m_pD3DOptions)
@@ -156,7 +156,7 @@ public:
 		}
 	}
 
-	virtual bool					GetDirect3D_Options(RSD3DOptions* pOptions)
+	virtual bool					GetRenderStyleOptions(RSRenderStyleOptions* pOptions)
 	{
 		if (m_pD3DOptions)
 		{
@@ -167,9 +167,9 @@ public:
 		return false;
 	}
 
-	virtual bool					SetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3DRenderPass);
+	virtual bool					SetRenderPassShaders(uint32 iPass,RSRenderPassShaders* pD3DRenderPass);
 
-	virtual bool					GetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3DRenderPass)
+	virtual bool					GetRenderPassShaders(uint32 iPass,RSRenderPassShaders* pD3DRenderPass)
 	{
 		list<CD3DRenderPass>::iterator it = m_RenderPasses.begin();
 		uint32 i = 0;
@@ -193,9 +193,9 @@ public:
 		return false;
 	}
 
-	RSD3DRenderPass*				GetRenderPass_D3DOptions(uint32 iPass)
+	RSRenderPassShaders*				GetRenderPassShaders(uint32 iPass)
 	{
-		RSD3DRenderPass *pPass = NULL;
+		RSRenderPassShaders *pPass = NULL;
 
 		list<CD3DRenderPass>::iterator it = m_RenderPasses.begin();
 		uint32 i = 0;
@@ -232,7 +232,7 @@ protected:
 	list<CD3DRenderPass>			m_RenderPasses;
 
 	// Direct3D Options...
-	RSD3DOptions*					m_pD3DOptions;
+	RSRenderStyleOptions*					m_pD3DOptions;
 
 	// Renderer Helper member vars...
 	CD3DRenderStyle*				m_pNext;												// Helper for keeping a list of these guys...

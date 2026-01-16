@@ -12,7 +12,7 @@
 #include "d3d_rendershader_gouraud_fullbright.h"
 #include "d3d_rendershader_lightmap.h"
 #include "modelshadowshader.h"
-#include "d3d_viewparams.h"
+#include "viewparams.h"
 #include "common_draw.h"
 #include "drawsky.h"
 #include "counter.h"

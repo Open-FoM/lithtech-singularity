@@ -502,8 +502,8 @@ void CD3DSkelMesh::Render(ModelInstance *pInstance, D3DMATRIX* pD3DTransforms, C
 				}
 #endif // LTJS_USE_D3DX9
 
-				RSD3DOptions rsD3DOptions;
-				pRenderStyle->GetDirect3D_Options(&rsD3DOptions);
+				RSRenderStyleOptions rsD3DOptions;
+				pRenderStyle->GetRenderStyleOptions(&rsD3DOptions);
 				if(rsD3DOptions.bUseEffectShader)
 				{
 #if LTJS_USE_D3DX9
@@ -567,8 +567,8 @@ void CD3DSkelMesh::Render(ModelInstance *pInstance, D3DMATRIX* pD3DTransforms, C
 			}
 #endif // LTJS_USE_D3DX9
 
-			RSD3DOptions rsD3DOptions;
-			pRenderStyle->GetDirect3D_Options(&rsD3DOptions);
+			RSRenderStyleOptions rsD3DOptions;
+			pRenderStyle->GetRenderStyleOptions(&rsD3DOptions);
 			if(rsD3DOptions.bUseEffectShader)
 			{
 #if LTJS_USE_D3DX9
@@ -633,7 +633,7 @@ void CD3DSkelMesh::BeginRender(D3DMATRIX* pD3DTransforms, CD3DRenderStyle* pRend
 
 
 	// If this pass has a vertex shader, use it.
-	RSD3DRenderPass *pPass = pRenderStyle->GetRenderPass_D3DOptions(iRenderPass);
+	RSRenderPassShaders *pPass = pRenderStyle->GetRenderPassShaders(iRenderPass);
 	if (NULL != pPass &&
 	    pPass->bUseVertexShader &&
 		pPass->VertexShaderID != LTVertexShader::VERTEXSHADER_INVALID)
@@ -662,8 +662,8 @@ void CD3DSkelMesh::BeginRender(D3DMATRIX* pD3DTransforms, CD3DRenderStyle* pRend
 	else if (!m_VBController.getVertexFormat(0) || m_bNonFixPipeData)
 	{
 
-		RSD3DOptions rsD3DOptions;
-		pRenderStyle->GetDirect3D_Options(&rsD3DOptions);
+		RSRenderStyleOptions rsD3DOptions;
+		pRenderStyle->GetRenderStyleOptions(&rsD3DOptions);
 		if(!rsD3DOptions.bUseEffectShader)
 		{
 			return; // This is a non fixed function pipe VB - bail out...

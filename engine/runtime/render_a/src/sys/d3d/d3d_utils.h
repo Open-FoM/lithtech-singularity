@@ -16,6 +16,9 @@
 #	include "common_stuff.h"
 #endif
 
+#ifndef __RENDEROBJECT_H__
+#include "renderobject.h"
+#endif
 
 class PFormat;
 
@@ -38,20 +41,6 @@ bool			d3d_CheckCVar(char *pVarName, const char *pVal);
 #define D3DRGBA(r, g, b, a)			((((long)((a) * 255)) << 24) | (((long)((r) * 255)) << 16) | (((long)((g) * 255)) << 8) | (long)((b) * 255))
 #define	D3DRGB_255(r,g,b)			(0xFF000000 | ((long)(r) << 16) | ((long)(g) << 8) | (long)(b))
 #define	D3DRGBA_255(r, g, b, a)		(((long)(a) << 24) | ((long)(r) << 16) | ((long)(g) << 8) | (long)(b))
-
-// ENUMs
-enum VERTEX_BLEND_TYPE				{ eNO_WORLD_BLENDS, eNONINDEXED_B1, eNONINDEXED_B2, eNONINDEXED_B3, eINDEXED_B1, eINDEXED_B2, eINDEXED_B3 };
-
-// VERTEX DATA TYPE FLAGS (Note: Should match those in the LTB header)...
-#define	VERTDATATYPE_POSITION					0x0001
-#define	VERTDATATYPE_NORMAL						0x0002
-#define	VERTDATATYPE_DIFFUSE					0x0004
-#define	VERTDATATYPE_PSIZE						0x0008
-#define	VERTDATATYPE_UVSETS_1					0x0010
-#define	VERTDATATYPE_UVSETS_2					0x0020
-#define	VERTDATATYPE_UVSETS_3					0x0040
-#define	VERTDATATYPE_UVSETS_4					0x0080
-#define	VERTDATATYPE_BASISVECTORS				0x0100
 
 // BASIC VERTEX TYPES...
 #define BASIC_VERTEX_FLAGS					(D3DFVF_XYZ | D3DFVF_DIFFUSE)

@@ -747,17 +747,18 @@ struct LightingMaterial {					// Lighting Materials...
 
 /*!
 */
-struct RSD3DOptions					// Platform options: Direct3D...
+struct RSRenderStyleOptions
 {						
-	bool							bUseEffectShader;
-	int								EffectShaderID;
+	bool						bUseEffectShader;
+	int						EffectShaderID;
 };
 
 /*!
-Contains render pass options for Direct3d platforms.
-\see SetRenderPass_D3DOptions(), GetRenderPass_D3DOptions()
+Contains render pass shader options.
+\see SetRenderPassShaders(), GetRenderPassShaders()
 */
-struct RSD3DRenderPass
+struct RSRenderPassShaders
+
 {
 //! indicates whether or not to use a vertex shader
 	bool							bUseVertexShader;
@@ -852,55 +853,55 @@ Returns the count of \b RenderPassOp structures applied to this render style.
 */
 	virtual uint32					GetRenderPassCount()									= 0;
 
-	// Platform Options: Direct3D...
+	// Platform Options...
 
 /*!
-\param Options The address of the \b RSD3DOptions structure to apply to this
+\param Options The address of the \b RSRenderStyleOptions structure to apply to this
 render style.
 \return A Boolean value indicating whether or not the function is successful.
 
-Sets Direct3D options for this render style.
+Sets render style options.
 
-\see CRenderStyle::GetDirect3D_Options()
+\see CRenderStyle::GetRenderStyleOptions()
 */
-	virtual bool					SetDirect3D_Options(RSD3DOptions& Options)				{ return false; }
+	virtual bool					SetRenderStyleOptions(RSRenderStyleOptions& Options)				{ return false; }
 
 /*!
-\param pOptions [Return parameter] A pointer to the \b RSD3DOptions structure
+\param pOptions [Return parameter] A pointer to the \b RSRenderStyleOptions structure
 set for this render style.
 \return A Boolean value indicating whether or not the function is successful.
 
-Retrieves the Direct3D options set for this render style.
+Retrieves the render style options set for this render style.
 
-\see CRenderStyle::SetDirect3D_Options()
+\see CRenderStyle::SetRenderStyleOptions()
 */
-	virtual bool					GetDirect3D_Options(RSD3DOptions* pOptions)				{ pOptions = NULL; return false; }
+	virtual bool					GetRenderStyleOptions(RSRenderStyleOptions* pOptions)				{ pOptions = NULL; return false; }
 
 /*!
-\param iPass An index into the \b CRenderStyle instance's list of \b RSD3DRenderPassOp
+\param iPass An index into the \b CRenderStyle instance's list of \b RSRenderPassShaders
 structures.
-\param pD3DRenderPass The address of the \b RSD3DRenderPass structure to apply
-to this render style.
+\param pPassShaders The address of the \b RSRenderPassShaders structure to apply to
+this render style.
 \return A Boolean value indicating whether or not the function is successful.
 
-Sets a \b RSD3DRenderPass structure to this render style.
+Sets a \b RSRenderPassShaders structure to this render style.
 
-\see CRenderStyle::GetRenderPass_D3DOptions()
+\see CRenderStyle::GetRenderPassShaders()
 */
-	virtual bool					SetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3DRenderPass)	{ return false; }
+	virtual bool					SetRenderPassShaders(uint32 iPass,RSRenderPassShaders* pPassShaders)	{ return false; }
 
 /*!
-\param iPass An index into the \b CRenderStyle instance's list of \b RSD3DRenderPassOp
+\param iPass An index into the \b CRenderStyle instance's list of \b RSRenderPassShaders
 structures.
-\param pD3DRenderPass [Return parameter] A pointer to one of the \b RSD3DRenderPass
+\param pPassShaders [Return parameter] A pointer to one of the \b RSRenderPassShaders
 structures applied to this render style.
 \return A Boolean value indicating whether or not the function is successful.
 
-Retrieves one of the \b RSD3DRenderPass structures applied to this render style.
+Retrieves one of the \b RSRenderPassShaders structures applied to this render style.
 
-\see CRenderStyle::GetRenderPass_D3DOptions()
+\see CRenderStyle::GetRenderPassShaders()
 */
-	virtual bool					GetRenderPass_D3DOptions(uint32 iPass,RSD3DRenderPass* pD3DRenderPass)	{ pD3DRenderPass = NULL; return false; }
+	virtual bool					GetRenderPassShaders(uint32 iPass,RSRenderPassShaders* pPassShaders)	{ pPassShaders = NULL; return false; }
 
 	// Helper Functions...
 

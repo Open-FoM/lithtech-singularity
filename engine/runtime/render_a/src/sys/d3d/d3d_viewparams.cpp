@@ -3,7 +3,7 @@
 
 #include "precompile.h"
 
-#include "d3d_viewparams.h"
+#include "viewparams.h"
 #include "d3d_draw.h"
 
 bool ViewParams::ViewAABBIntersect(const LTVector &vBoxMin, const LTVector &vBoxMax) const

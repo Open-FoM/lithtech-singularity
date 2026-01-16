@@ -787,7 +787,7 @@ void CD3DSpriteArray::Render(LTMatrix& WorldTransform, CRenderStyle* pRenderStyl
 
 	for (uint32 iRenderPass = 0; iRenderPass < pD3DRenderStyle->GetRenderPassCount(); ++iRenderPass) 
 	{
-		HD3DVERTEXSHADER VertexShader = pD3DRenderStyle->GetVertexShader(iRenderPass,0); RSD3DRenderPass D3DRenderPass;
+		HD3DVERTEXSHADER VertexShader = pD3DRenderStyle->GetVertexShader(iRenderPass,0); RSRenderPassShaders D3DRenderPass;
 		if (VertexShader) 
 		{																		// Using a custom vertex shader...
 			// If we were created for HW Vert Processing & the shader requires that we need to re-created ourselves for SW Vert Processing...
@@ -798,7 +798,7 @@ void CD3DSpriteArray::Render(LTMatrix& WorldTransform, CRenderStyle* pRenderStyl
 			else if (m_bSWVertProcessing && !pD3DRenderStyle->CreatedForSWVertProcessing()) {
 				pD3DRenderStyle->ForceSWVertProcessing(); }
 			if (FAILED(g_RenderStateMgr.SetVertexShader(VertexShader)))							{ return; }
-			if (!pD3DRenderStyle->GetRenderPass_D3DOptions(iRenderPass,&D3DRenderPass))			{ return; }
+			if (!pD3DRenderStyle->GetRenderPassShaders(iRenderPass,&D3DRenderPass))			{ return; }
 			if (!g_RenderStateMgr.SetVertexShaderConstants(pD3DRenderStyle, &D3DRenderPass,0))	{ return; } 
 		}
 		else 
