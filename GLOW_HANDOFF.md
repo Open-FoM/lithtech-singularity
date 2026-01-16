@@ -76,7 +76,8 @@ This document is intended to hand off the current state, key implementation deta
 
 5. **Blur Passes**
    - `diligent_glow_render_blur_pass()` runs a horizontal pass to `blur_target` then a vertical pass back to `glow_target`.
-   - Each kernel element draws an additive fullscreen quad with per-element UV offsets.
+   - Default path batches 8 taps per fullscreen quad via a dedicated blur shader (`ScreenGlowBlurMultiTap 1`).
+   - The legacy path draws one quad per kernel element (`ScreenGlowBlurMultiTap 0`).
 
 6. **Composite**
    - The glow texture is additively blended onto the backbuffer.
@@ -127,6 +128,7 @@ This document is intended to hand off the current state, key implementation deta
 - `ScreenGlowGaussAmp1`
 - `ScreenGlowGaussRadius1`
 - `ScreenGlowPixelShift`
+- `ScreenGlowBlurMultiTap`
 
 ### Fog
 - `ScreenGlowFogEnable`
