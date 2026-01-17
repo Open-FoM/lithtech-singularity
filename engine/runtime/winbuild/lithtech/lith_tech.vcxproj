@@ -69,8 +69,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Final|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;__D3D;__D3DREND;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;_FINAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;_FINAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -86,7 +86,7 @@
     </ClCompile>
     <CustomBuildStep />
     <Link>
-      <AdditionalDependencies>ddraw.lib;d3dx9.lib;d3d9.lib;dxguid.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_d3d_render.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_dshow.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxguid.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <MapFileName>$(TargetName).map</MapFileName>
       <SubSystem>Windows</SubSystem>
@@ -108,8 +108,8 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;__D3D;__D3DREND;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -125,7 +125,7 @@
     </ClCompile>
     <CustomBuildStep />
     <Link>
-      <AdditionalDependencies>ddraw.lib;d3dx9.lib;d3d9.lib;dxguid.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_d3d_render.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_dshow.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxguid.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <MapFileName>$(Targetname).map</MapFileName>
       <SubSystem>Windows</SubSystem>
@@ -148,8 +148,8 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\..\libs\mfcstub;..\..\..\libs\Lib_DShow;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;_CRT_SECURE_NO_WARNINGS;_ITERATOR_DEBUG_LEVEL=0;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;__D3D;__D3DREND;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;D3D_DEBUG_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\..\..\DirectX\Include;..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\..\libs\mfcstub;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;_CRT_SECURE_NO_WARNINGS;_ITERATOR_DEBUG_LEVEL=0;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;D3D_DEBUG_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <ForceConformanceInForLoopScope>false</ForceConformanceInForLoopScope>
@@ -164,7 +164,7 @@
     </ClCompile>
     <CustomBuildStep />
     <Link>
-      <AdditionalDependencies>ddraw.lib;d3dx9.lib;d3d9.lib;dxguid.lib;dxerr9.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_d3d_render.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_dshow.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxguid.lib;winmm.lib;dplayx.lib;dinput8.lib;lib_lt_mem.lib;lib_rez_mgr.lib;lib_std_lith.lib;lib_ilt_sound.lib;lib_lith.lib;lib_ui.lib;lib_info.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>..\..\..\..\DirectX\Lib\x86;..\..\..\..\build\lib\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -257,7 +257,7 @@
     <ClCompile Include="..\..\client\src\cutil.cpp" />
     <ClCompile Include="..\..\model\src\sys\d3d\d3d_model_load.cpp" />
     <ClCompile Include="..\..\render_b\src\sys\d3d\d3ddrawprim.cpp" />
-    <ClCompile Include="..\..\render_b\src\sys\d3d\d3dtexinterface.cpp" />
+    <ClCompile Include="..\..\render_b\src\systexinterface.cpp" />
     <ClCompile Include="..\..\kernel\io\src\sys\win\de_file.cpp" />
     <ClCompile Include="..\..\world\src\de_mainworld.cpp" />
     <ClCompile Include="..\..\kernel\mem\src\sys\win\de_memory.cpp" />
@@ -267,7 +267,6 @@
     <ClCompile Include="..\..\kernel\src\debugging.cpp" />
     <ClCompile Include="..\..\client\src\debuggraphmgr.cpp" />
     <ClCompile Include="..\..\shared\src\dhashtable.cpp" />
-    <ClCompile Include="..\..\kernel\src\sys\win\dshowvideomgrimpl.cpp" />
     <ClCompile Include="..\..\shared\src\sys\win\dstreamopenqueuemgr.cpp" />
     <ClCompile Include="..\..\kernel\src\sys\win\dsys_interface.cpp" />
     <ClCompile Include="..\..\shared\src\dtxmgr.cpp" />
@@ -495,15 +494,14 @@
     <ClInclude Include="..\..\..\sdk\inc\physics\coordinate_frame.h" />
     <ClInclude Include="..\..\kernel\src\sys\win\counter.h" />
     <ClInclude Include="..\..\client\src\customfontfilemgr.h" />
-    <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_convar.h" />
+    <ClInclude Include="..\..\render_a\src\sys\renderer_convar.h" />
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_device.h" />
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_draw.h" />
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_renderstatemgr.h" />
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_renderstyle.h" />
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_utils.h" />
-    <ClInclude Include="..\..\shared\src\sys\win\d3dddstructs.h" />
     <ClInclude Include="..\..\render_b\src\sys\d3d\d3ddrawprim.h" />
-    <ClInclude Include="..\..\render_b\src\sys\d3d\d3dtexinterface.h" />
+    <ClInclude Include="..\..\render_b\src\systexinterface.h" />
     <ClInclude Include="..\..\kernel\io\src\sys\win\de_file.h" />
     <ClInclude Include="..\..\world\src\de_mainworld.h" />
     <ClInclude Include="..\..\kernel\mem\src\de_memory.h" />
@@ -513,7 +511,6 @@
     <ClInclude Include="..\..\shared\src\DebugGeometry.h" />
     <ClInclude Include="..\..\client\src\debuggraphmgr.h" />
     <ClInclude Include="..\..\shared\src\dhashtable.h" />
-    <ClInclude Include="..\..\kernel\src\sys\win\dshowvideomgrimpl.h" />
     <ClInclude Include="..\..\shared\src\sys\win\dstreamopenqueuemgr.h" />
     <ClInclude Include="..\..\kernel\src\dsys.h" />
     <ClInclude Include="..\..\kernel\src\sys\win\dsys_interface.h" />

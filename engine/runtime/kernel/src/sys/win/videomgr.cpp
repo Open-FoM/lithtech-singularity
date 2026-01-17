@@ -3,7 +3,6 @@
 #include "videomgr.h"
 
 #include "binkvideomgrimpl.h"
-#include "dshowvideomgrimpl.h"
 #include "ltjs_ffmpeg_video_mgr_impl.h"
 
 
@@ -60,7 +59,6 @@ void VideoMgr::OnRenderTerm()
 VideoMgr* CreateVideoMgr( const char *pszName )
 {
 	bool want_bink    = (stricmp( pszName, "BINK" ) == 0);
-	bool want_dshow   = (stricmp( pszName, "DIRECTSHOW" ) == 0);
 	const auto want_ffmpeg = (::stricmp(pszName, "FFMPEG") == 0);
 
 	// load bink
@@ -118,32 +116,7 @@ VideoMgr* CreateVideoMgr( const char *pszName )
 		}
 #endif // LTJS_USE_FFMPEG_VIDEO_MGR
 	}
-	else if ( want_dshow )
-	{
-
-#ifdef LTJS_USE_DIRECTSHOW
-		VideoMgr* pVidMgr;
-
-		LT_MEM_TRACK_ALLOC(pVidMgr = new DShowVideoMgr(),LT_MEM_TYPE_MISC);
-
-		if( pVidMgr )
-		{
-			if(((DShowVideoMgr*)pVidMgr)->Init() == LT_OK)
-			{
-				//success, give them back the video manager
-				return pVidMgr;
-			}
-
-			//we failed to initialize
-			delete pVidMgr;
-			pVidMgr = NULL;
-		}
-#endif // LTJS_USE_DIRECTSHOW
-
-	}
-
   
 	return LTNULL;
 }
-
 

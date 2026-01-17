@@ -1,11 +1,12 @@
 #include "bdefs.h"
 
 
-#if defined(LTJS_USE_FFMPEG_VIDEO_MGR) && !defined(LTJS_USE_DILIGENT_RENDER)
+#if defined(LTJS_USE_FFMPEG_VIDEO_MGR)
 
 
 #include "ltjs_ffmpeg_video_mgr_impl.h"
 #include <array>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include "bibendovsky_spul_file_stream.h"
@@ -91,10 +92,16 @@ private:
 	ILTSoundSys* sound_sys_ptr_;
 	int audio_max_buffer_count_;
 
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	HLTBUFFER surface_;
+	std::uint32_t surface_width_;
+	std::uint32_t surface_height_;
+#else
 	LPDIRECT3DTEXTURE9 d3d9_texture_;
 	std::uint32_t texture_width_;
 	std::uint32_t texture_height_;
 	Vertices vertices_;
+#endif
 
 
 	bool initialize_internal(
@@ -173,10 +180,16 @@ FfmpegVideoInst::Impl::Impl(
 	audio_stream_{},
 	sound_sys_ptr_{},
 	audio_max_buffer_count_{},
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	surface_{},
+	surface_width_{},
+	surface_height_{},
+#else
 	d3d9_texture_{},
 	texture_width_{},
 	texture_height_{},
 	vertices_{}
+#endif
 {
 }
 
@@ -220,6 +233,16 @@ void FfmpegVideoInst::Impl::api_on_render_init()
 
 void FfmpegVideoInst::Impl::api_on_render_term()
 {
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	if (surface_)
+	{
+		::r_GetRenderStruct()->DeleteSurface(surface_);
+		surface_ = nullptr;
+	}
+
+	surface_width_ = 0;
+	surface_height_ = 0;
+#else
 	// release any textures if present
 	if(d3d9_texture_)
 	{
@@ -229,6 +252,7 @@ void FfmpegVideoInst::Impl::api_on_render_term()
 
 	texture_width_ = 0;
 	texture_height_ = 0;
+#endif
 }
 
 LTRESULT FfmpegVideoInst::Impl::api_update()
@@ -494,6 +518,27 @@ std::uint32_t FfmpegVideoInst::Impl::calculate_texture_dimension(
 
 bool FfmpegVideoInst::Impl::clear_surface()
 {
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	if (!surface_)
+	{
+		return false;
+	}
+
+	uint32 pitch = 0;
+	auto* data = static_cast<std::uint8_t*>(::r_GetRenderStruct()->LockSurface(surface_, pitch));
+	if (!data)
+	{
+		return false;
+	}
+
+	for (auto i_line = 0U; i_line < surface_height_; ++i_line)
+	{
+		std::memset(data + i_line * pitch, 0, surface_width_ * 4);
+	}
+
+	::r_GetRenderStruct()->UnlockSurface(surface_);
+	return true;
+#else
 	if (!d3d9_texture_)
 	{
 		return false;
@@ -535,6 +580,7 @@ bool FfmpegVideoInst::Impl::clear_surface()
 	static_cast<void>(d3d9_surface->Release());
 
 	return true;
+#endif
 }
 
 LTRESULT FfmpegVideoInst::Impl::init_screen()
@@ -546,6 +592,30 @@ LTRESULT FfmpegVideoInst::Impl::init_screen()
 		RETURN_ERROR(1, FfmpegVideoInst::Impl::init_screen, LT_NOTINITIALIZED);
 	}
 
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	const auto fmv_width = fmv_player_.get_width();
+	const auto fmv_height = fmv_player_.get_height();
+
+	surface_ = ::r_GetRenderStruct()->CreateSurface(fmv_width, fmv_height);
+	if (!surface_)
+	{
+		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::init_screen, LT_ERROR, "Failed to create video surface.");
+	}
+
+	surface_width_ = static_cast<std::uint32_t>(fmv_width);
+	surface_height_ = static_cast<std::uint32_t>(fmv_height);
+
+	if (!clear_surface())
+	{
+		::r_GetRenderStruct()->DeleteSurface(surface_);
+		surface_ = nullptr;
+		surface_width_ = 0;
+		surface_height_ = 0;
+		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::init_screen, LT_ERROR, "Failed to clear video surface.");
+	}
+
+	return LT_OK;
+#else
 	auto* d3d9_device = static_cast<IDirect3DDevice9*>(::r_GetRenderStruct()->GetD3DDevice());
 
 	if (!d3d9_device)
@@ -584,6 +654,7 @@ LTRESULT FfmpegVideoInst::Impl::init_screen()
 	texture_height_ = texture_height;
 
 	return LT_OK;
+#endif
 }
 
 LTRESULT FfmpegVideoInst::Impl::update_on_screen(
@@ -591,6 +662,81 @@ LTRESULT FfmpegVideoInst::Impl::update_on_screen(
 	const int width,
 	const int height)
 {
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	if (!::r_IsRenderInitted() || !surface_)
+	{
+		RETURN_ERROR(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTINITIALIZED);
+	}
+
+	uint32 pitch = 0;
+	auto* dst_data_ptr = static_cast<std::uint8_t*>(::r_GetRenderStruct()->LockSurface(surface_, pitch));
+	if (!dst_data_ptr)
+	{
+		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::update_on_screen, LT_ERROR, "Failed to lock video surface.");
+	}
+
+	const auto src_pitch = 4 * width;
+	for (auto i = 0; i < height; ++i)
+	{
+		const auto src_line = static_cast<const std::uint8_t*>(data_ptr) + (i * src_pitch);
+		const auto dst_line = dst_data_ptr + (i * pitch);
+		std::uninitialized_copy_n(src_line, src_pitch, dst_line);
+	}
+
+	::r_GetRenderStruct()->UnlockSurface(surface_);
+
+	bool is_set_3d_state = !::r_GetRenderStruct()->IsIn3D();
+	if (is_set_3d_state)
+	{
+		::r_GetRenderStruct()->Start3D();
+
+		LTRGBColor color;
+		color.dwordVal = 0x00000000;
+		::r_GetRenderStruct()->Clear(nullptr, CLEARSCREEN_SCREEN, color);
+	}
+
+	const auto screen_width = ::r_GetRenderStruct()->m_Width;
+	const auto screen_height = ::r_GetRenderStruct()->m_Height;
+
+	auto image_width = screen_width;
+	auto image_height = (image_width * height) / width;
+	if (image_height > screen_height)
+	{
+		image_height = screen_height;
+		image_width = (image_height * width) / height;
+	}
+
+	const auto x_offset = (screen_width - image_width) / 2;
+	const auto y_offset = (screen_height - image_height) / 2;
+
+	LTRect src_rect;
+	src_rect.left = 0;
+	src_rect.top = 0;
+	src_rect.right = width;
+	src_rect.bottom = height;
+
+	LTRect dest_rect;
+	dest_rect.left = x_offset;
+	dest_rect.top = y_offset;
+	dest_rect.right = x_offset + image_width;
+	dest_rect.bottom = y_offset + image_height;
+
+	BlitRequest request;
+	request.m_hBuffer = surface_;
+	request.m_pSrcRect = &src_rect;
+	request.m_pDestRect = &dest_rect;
+	request.m_Alpha = 1.0f;
+	request.m_TransparentColor.dwVal = 0;
+	request.m_BlitOptions = 0;
+	::r_GetRenderStruct()->BlitToScreen(&request);
+
+	if (is_set_3d_state)
+	{
+		::r_GetRenderStruct()->End3D();
+	}
+
+	return LT_OK;
+#else
 	if (!::r_IsRenderInitted() || !d3d9_texture_)
 	{
 		RETURN_ERROR(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTINITIALIZED);
@@ -746,6 +892,7 @@ LTRESULT FfmpegVideoInst::Impl::update_on_screen(
 	}
 
 	return LT_OK;
+#endif
 }
 
 //

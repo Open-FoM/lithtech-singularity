@@ -38,8 +38,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MFCStub", "..\..\Libs\MFCSt
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CryptMgr", "..\..\Libs\CryptMgr\cryptmgr.vcxproj", "{4D71855A-6759-4D91-A3E5-C7B71A816477}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lib_DShow", "..\libs\Lib_DShow\Lib_DShow.vcxproj", "{0BC75469-6DD7-4B39-81A3-9B51CC685A22}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32

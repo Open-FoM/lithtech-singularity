@@ -147,7 +147,7 @@
     <ClCompile Include="..\..\render_b\src\sys\d3d\d3ddrawprim.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\render_b\src\sys\d3d\d3dtexinterface.cpp">
+    <ClCompile Include="..\..\render_b\src\systexinterface.cpp">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\..\kernel\io\src\sys\win\de_file.cpp">
@@ -175,9 +175,6 @@
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\..\shared\src\dhashtable.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\kernel\src\sys\win\dshowvideomgrimpl.cpp">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\..\shared\src\sys\win\dstreamopenqueuemgr.cpp">
@@ -704,7 +701,7 @@
     <ClInclude Include="..\..\client\src\customfontfilemgr.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_convar.h">
+    <ClInclude Include="..\..\render_a\src\sys\renderer_convar.h">
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_device.h">
@@ -722,13 +719,10 @@
     <ClInclude Include="..\..\render_a\src\sys\d3d\d3d_utils.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\shared\src\sys\win\d3dddstructs.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\render_b\src\sys\d3d\d3ddrawprim.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\render_b\src\sys\d3d\d3dtexinterface.h">
+    <ClInclude Include="..\..\render_b\src\systexinterface.h">
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\kernel\io\src\sys\win\de_file.h">
@@ -756,9 +750,6 @@
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\shared\src\dhashtable.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\kernel\src\sys\win\dshowvideomgrimpl.h">
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\shared\src\sys\win\dstreamopenqueuemgr.h">

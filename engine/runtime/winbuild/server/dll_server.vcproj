@@ -23,7 +23,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="..\..\server\src;..\..\physics\src;..\..\client\src;..\..\sound\src;..\..\kernel\src;..\..\shared\src\sys\win;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src\sys\win;..\..\kernel\net\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\shared\src;..\..\model\src;.;..\..\kernel\net;..\..\world\src;..\..\..\..\Libs\stdlith;..\..\..\libs\rezmgr;..\..\..\..\Libs\lith;..\..\lithtemplate;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
-				PreprocessorDefinitions="_DEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS;__D3D;__D3DREND"
+				PreprocessorDefinitions="_DEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS"
 				RuntimeLibrary="3"
 				UsePrecompiledHeader="3"
 				PrecompiledHeaderThrough="bdefs.h"
@@ -98,7 +98,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(RESIDENTEVIL_MAIN_DIR)&quot;
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="1"
 				AdditionalIncludeDirectories="..\..\server\src;..\..\physics\src;..\..\client\src;..\..\sound\src;..\..\kernel\src;..\..\shared\src\sys\win;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src\sys\win;..\..\kernel\net\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\shared\src;..\..\model\src;.;..\..\kernel\net;..\..\world\src;..\..\..\..\Libs\stdlith;..\..\..\libs\rezmgr;..\..\..\..\Libs\lith;..\..\lithtemplate;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
-				PreprocessorDefinitions="NDEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS;__D3D;__D3DREND;_FINAL"
+				PreprocessorDefinitions="NDEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS;_FINAL"
 				StringPooling="TRUE"
 				ExceptionHandling="TRUE"
 				RuntimeLibrary="2"
@@ -174,7 +174,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="1"
 				AdditionalIncludeDirectories="..\..\server\src;..\..\physics\src;..\..\client\src;..\..\sound\src;..\..\kernel\src;..\..\shared\src\sys\win;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src\sys\win;..\..\kernel\net\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\shared\src;..\..\model\src;.;..\..\kernel\net;..\..\world\src;..\..\..\..\Libs\stdlith;..\..\..\libs\rezmgr;..\..\..\..\Libs\lith;..\..\lithtemplate;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
-				PreprocessorDefinitions="NDEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS;__D3D;__D3DREND"
+				PreprocessorDefinitions="NDEBUG;WIN32;_WINDOWS;_USRDLL;DE_SERVER_COMPILE;DIRECTENGINE_COMPILE;STDLITH_ALLOC_OVERRIDE;LT15_COMPAT;NO_PRAGMA_LIBS"
 				StringPooling="TRUE"
 				ExceptionHandling="TRUE"
 				RuntimeLibrary="2"
@@ -1173,9 +1173,6 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			</File>
 			<File
 				RelativePath="..\..\..\sdk\inc\physics\coordinate_frame.h">
-			</File>
-			<File
-				RelativePath="..\..\shared\src\sys\win\d3dddstructs.h">
 			</File>
 			<File
 				RelativePath="..\..\world\src\de_mainworld.h">

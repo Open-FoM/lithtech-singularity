@@ -22,8 +22,8 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="2"
-				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow"
-				PreprocessorDefinitions="_PUBLIC_DEVELOPMENT,NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,__D3D,__D3DREND,MODEL_SUPPORT_ABC,WIN32,_WINDOWS"
+				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
+				PreprocessorDefinitions="_PUBLIC_DEVELOPMENT,NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,MODEL_SUPPORT_ABC,WIN32,_WINDOWS"
 				StringPooling="TRUE"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="TRUE"
@@ -46,7 +46,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Outputs="$(GAME_MAIN_DIR)\LithtechDev.exe"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ddraw.lib d3dx9.lib d3d9.lib dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
+				AdditionalDependencies="dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
 				OutputFile="$(OutDir)/LithtechDev.exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
@@ -93,8 +93,8 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			<Tool
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="2"
-				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow"
-				PreprocessorDefinitions="NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,__D3D,__D3DREND,MODEL_SUPPORT_ABC,WIN32,_WINDOWS,_FINAL"
+				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
+				PreprocessorDefinitions="NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,MODEL_SUPPORT_ABC,WIN32,_WINDOWS,_FINAL"
 				StringPooling="TRUE"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="TRUE"
@@ -121,7 +121,7 @@ copy &quot;$(TargetName).pdb&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Outputs="$(GAME_MAIN_DIR)\Lithtech.exe"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ddraw.lib d3dx9.lib d3d9.lib dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
+				AdditionalDependencies="dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
 				OutputFile="$(OutDir)/Lithtech.exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
@@ -173,8 +173,8 @@ copy &quot;$(TargetName).pdb&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			<Tool
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="2"
-				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow"
-				PreprocessorDefinitions="NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,__D3D,__D3DREND,MODEL_SUPPORT_ABC,WIN32,_WINDOWS"
+				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
+				PreprocessorDefinitions="NDEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,MODEL_SUPPORT_ABC,WIN32,_WINDOWS"
 				StringPooling="TRUE"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="TRUE"
@@ -201,7 +201,7 @@ copy &quot;$(TargetName).pdb&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Outputs="$(GAME_MAIN_DIR)\Lithtech.exe"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ddraw.lib d3dx9.lib d3d9.lib dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
+				AdditionalDependencies="dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
 				OutputFile="$(OutDir)/Lithtech.exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
@@ -254,8 +254,8 @@ copy &quot;$(TargetName).pdb&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\..\libs\mfcstub;..\..\..\libs\Lib_DShow"
-				PreprocessorDefinitions="_DEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,__D3D,__D3DREND,MODEL_SUPPORT_ABC,WIN32,_WINDOWS,D3D_DEBUG_INFO"
+				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\..\libs\mfcstub"
+				PreprocessorDefinitions="_DEBUG,DE_LOCAL_SERVERBIND,DE_CLIENT_COMPILE,DSNDMGR_NO_MFC,DIRECTENGINE_COMPILE,MODEL_SUPPORT_ABC,WIN32,_WINDOWS,D3D_DEBUG_INFO"
 				RuntimeLibrary="3"
 				UsePrecompiledHeader="3"
 				PrecompiledHeaderThrough="bdefs.h"
@@ -277,7 +277,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Outputs="$(GAME_MAIN_DIR)\Lithtech.exe"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ddraw.lib d3dx9d.lib d3d9.lib DxErr9.lib dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
+				AdditionalDependencies="dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
 				OutputFile="$(OutDir)/Lithtech.exe"
 				LinkIncremental="2"
 				SuppressStartupBanner="TRUE"
@@ -325,8 +325,8 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			<Tool
 				Name="VCCLCompilerTool"
 				InlineFunctionExpansion="2"
-				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\render_a\src\sys\d3d;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr;..\..\..\libs\Lib_DShow"
-				PreprocessorDefinitions="NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;__D3D;__D3DREND;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;COMPILE_JUPITER_EVAL"
+				AdditionalIncludeDirectories="..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;..\..\distrobj\src;..\..\state_mgr\src;..\..\physics\src;..\..\..\sdk\inc\physics;..\..\..\sdk\inc\state_mgr"
+				PreprocessorDefinitions="NDEBUG;DE_LOCAL_SERVERBIND;DE_CLIENT_COMPILE;DSNDMGR_NO_MFC;DIRECTENGINE_COMPILE;MODEL_SUPPORT_ABC;WIN32;_WINDOWS;COMPILE_JUPITER_EVAL"
 				StringPooling="TRUE"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="TRUE"
@@ -349,7 +349,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				Outputs="$(GAME_MAIN_DIR)\Lithtech.exe"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ddraw.lib d3dx9.lib d3d9.lib dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
+				AdditionalDependencies="dxguid.lib winmm.lib atl.lib dplayx.lib dinput8.lib odbc32.lib odbccp32.lib"
 				OutputFile="$(OutDir)/Lithtech.exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
@@ -702,7 +702,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				RelativePath="..\..\render_b\src\sys\d3d\d3ddrawprim.cpp">
 			</File>
 			<File
-				RelativePath="..\..\render_b\src\sys\d3d\d3dtexinterface.cpp">
+				RelativePath="..\..\render_b\src\systexinterface.cpp">
 			</File>
 			<File
 				RelativePath="..\..\kernel\io\src\sys\win\de_file.cpp">
@@ -730,9 +730,6 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			</File>
 			<File
 				RelativePath="..\..\shared\src\dhashtable.cpp">
-			</File>
-			<File
-				RelativePath="..\..\kernel\src\sys\win\dshowvideomgrimpl.cpp">
 			</File>
 			<File
 				RelativePath="..\..\shared\src\sys\win\dstreamopenqueuemgr.cpp">
@@ -1330,7 +1327,7 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				RelativePath="..\..\client\src\customfontfilemgr.h">
 			</File>
 			<File
-				RelativePath="..\..\render_a\src\sys\d3d\d3d_convar.h">
+				RelativePath="..\..\render_a\src\sys\renderer_convar.h">
 			</File>
 			<File
 				RelativePath="..\..\render_a\src\sys\d3d\d3d_device.h">
@@ -1348,13 +1345,10 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 				RelativePath="..\..\render_a\src\sys\d3d\d3d_utils.h">
 			</File>
 			<File
-				RelativePath="..\..\shared\src\sys\win\d3dddstructs.h">
-			</File>
-			<File
 				RelativePath="..\..\render_b\src\sys\d3d\d3ddrawprim.h">
 			</File>
 			<File
-				RelativePath="..\..\render_b\src\sys\d3d\d3dtexinterface.h">
+				RelativePath="..\..\render_b\src\systexinterface.h">
 			</File>
 			<File
 				RelativePath="..\..\kernel\io\src\sys\win\de_file.h">
@@ -1382,9 +1376,6 @@ copy &quot;$(TargetPath)&quot; &quot;$(GAME_MAIN_DIR)&quot;
 			</File>
 			<File
 				RelativePath="..\..\shared\src\dhashtable.h">
-			</File>
-			<File
-				RelativePath="..\..\kernel\src\sys\win\dshowvideomgrimpl.h">
 			</File>
 			<File
 				RelativePath="..\..\shared\src\sys\win\dstreamopenqueuemgr.h">

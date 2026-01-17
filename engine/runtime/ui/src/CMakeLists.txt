@@ -10,8 +10,6 @@ ltjs_add_defaults (${PROJECT_NAME})
 target_compile_definitions (
 	${PROJECT_NAME}
 	PRIVATE
-		__D3D
-		__D3DREND
 )
 
 target_link_libraries (
@@ -146,5 +144,5 @@ target_sources (
 		cuiwindow.cpp
 		cuiwindow_impl.cpp
 		sdl_cuivectorfont.cpp
-		sys/d3d/cuidebug.cpp
+		sys/win/cuidebug.cpp
 )

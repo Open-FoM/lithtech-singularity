@@ -17,9 +17,8 @@
 #ifdef __LINUX
 #include "sys/linux/linuxddstructs.h"
 #elif _WIN32
-#include "sys/win/d3dddstructs.h"
+#include "sys/win/diligentddstructs.h"
 #endif
 
 
 #endif
-

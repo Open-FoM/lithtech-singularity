@@ -70,7 +70,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <AdditionalIncludeDirectories>..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;__D3D;__D3DREND;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -95,7 +95,7 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_ITERATOR_DEBUG_LEVEL=0;__D3D;__D3DREND;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_ITERATOR_DEBUG_LEVEL=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -118,7 +118,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Final|Win32'">
     <ClCompile>
       <AdditionalIncludeDirectories>..\..\..\..\libs\stdlith;..\..\..\..\libs\lith;..\..\..\libs\rezmgr;..\..\controlfilemgr;..\..\crtcompat;..\..\lithtemplate;.;..\..\client\src;..\..\kernel\mem\src;..\..\kernel\io\src;..\..\kernel\src;..\..\kernel\src\sys\win;..\..\model\src;..\..\sound\src;..\..\server\src;..\..\shared\src\sys\win;..\..\shared\src;..\..\world\src;..\..\..\sdk\inc;..\..\..\sdk\inc\compat;..\..\kernel\net\src;..\..\render_b\src;..\..\mpm\src;..\..\comm\src;..\..\ui\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;__D3D;__D3DREND;_FINAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_FINAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>

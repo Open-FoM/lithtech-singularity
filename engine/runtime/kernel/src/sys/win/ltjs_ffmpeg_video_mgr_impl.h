@@ -2,7 +2,7 @@
 #define LTJS_FFMPEG_VIDEO_NGR_IMPL_INCLUDED
 
 
-#if defined(LTJS_USE_FFMPEG_VIDEO_MGR) && !defined(LTJS_USE_DILIGENT_RENDER)
+#if defined(LTJS_USE_FFMPEG_VIDEO_MGR)
 
 
 #include <memory>

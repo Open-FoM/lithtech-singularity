@@ -93,24 +93,24 @@
   - [x] Implement screen glow render pass (offscreen blur + composite).
   - [x] Honor `MHF_NOGLOW` in glow render-style mapping.
   - [x] Add glow debug overlays for `ScreenGlowShowTexture`/`ScreenGlowShowFilter`.
-  - [ ] Implement world model rendering (solid + translucent).
-  - [ ] Implement skybox/sky portal rendering.
-  - [ ] Implement sprite rendering (including no-z sprites).
-  - [ ] Implement particle system rendering.
-  - [ ] Implement line system rendering.
-  - [ ] Implement polygrid rendering (solid + translucent).
-  - [ ] Implement volume effects rendering (solid + translucent).
-  - [ ] Implement canvas rendering in the main pass (solid + translucent).
-  - [ ] Implement translucent object queue/sort/draw list for Diligent.
-  - [ ] Implement projected model shadows and shadow texture pipeline.
-- [ ] Translate D3D shader usage to Diligent shader compilation (HLSL).
-  - [ ] Port model shadow shaders (shadow texture + projection passes).
-  - [ ] Port sky/sky portal shaders.
-  - [ ] Port sprite shaders.
-  - [ ] Port particle system shaders.
-  - [ ] Port line system shaders.
-  - [ ] Port polygrid shaders.
-  - [ ] Port volume effect shaders.
+  - [x] Implement world model rendering (solid + translucent).
+  - [x] Implement skybox/sky portal rendering.
+  - [x] Implement sprite rendering (including no-z sprites).
+  - [x] Implement particle system rendering.
+  - [x] Implement line system rendering.
+  - [x] Implement polygrid rendering (solid + translucent).
+  - [x] Implement volume effects rendering (solid + translucent).
+  - [x] Implement canvas rendering in the main pass (solid + translucent).
+  - [x] Implement translucent object queue/sort/draw list for Diligent.
+  - [x] Implement projected model shadows and shadow texture pipeline.
+- [x] Translate D3D shader usage to Diligent shader compilation (HLSL).
+  - [x] Port model shadow shaders (shadow texture + projection passes).
+  - [x] Port sky/sky portal shaders.
+  - [x] Port sprite shaders.
+  - [x] Port particle system shaders.
+  - [x] Port line system shaders.
+  - [x] Port polygrid shaders.
+  - [x] Port volume effect shaders.
 - [x] Add in-depth glow handoff document.
   - [x] Map PC shader codes to Diligent pipeline modes.
   - [x] Add lightmap-only shader path for ePCShader_Lightmap.
@@ -118,10 +118,10 @@
   - [x] Bind dual-texture SRVs in world draw loop.
   - [x] Extend world shaders for dynamic light constants/output.
   - [x] Apply distance-based fog in world/model shaders.
-- [ ] Replace D3D vertex declarations with Diligent input layouts.
+- [x] Replace D3D vertex declarations with Diligent input layouts.
   - [x] Move vertex stream flags and blend types to shared header.
   - [x] Build Diligent mesh input layouts for rigid/skel/VA meshes.
-  - [ ] Add input layouts for sprites/particles/line systems/polygrids/volume effects/shadow passes.
+  - [x] Add input layouts for sprites/particles/line systems/polygrids/volume effects/shadow passes.
 - [x] Port model render objects and render styles to Diligent PSO/SRB.
   - [x] Replace D3D render pass shader structs with renderer-agnostic versions.
   - [x] Add Diligent rigid mesh render object (load + GPU buffers).
@@ -133,12 +133,20 @@
   - [x] Add Diligent vertex-animated mesh render object with dynamic updates.
 
 ## Phase 7 — UI + Video Managers
-- [ ] Port `ui/src/sys/d3d` UI rendering to Diligent.
+- [x] Port `ui/src/sys/d3d` UI rendering to Diligent.
 - [ ] Update video managers (Bink/DirectShow/FFmpeg) to use Diligent textures and uploads.
+  - [x] DirectShow video path uses Diligent surfaces + blits.
+  - [x] FFmpeg video path uses Diligent surfaces + blits.
+  - [ ] Bink path (disabled in Diligent) pending.
 - [ ] Remove `IDirect3DDevice9` usage from video code.
+  - [x] DirectShow/FFmpeg Diligent builds no longer depend on D3D9.
+  - [ ] Bink D3D9 usage remains (disabled in Diligent).
 
 ## Phase 8 — Cleanup & Removal
 - [ ] Remove DX9 headers, libs, and CMake targets for D3D.
+  - [x] Drop d3d9/d3dx9 link libs from lithtech target.
+  - [x] Remove D3D header entries from lithtech target_sources.
+  - [ ] Remove remaining D3D build targets/files (render_a/src/sys/d3d).
 - [ ] Delete `sys/d3d` source trees after Diligent renderer is functional.
 - [ ] Purge D3D-specific renderstruct fields, helpers, and wrappers.
 - [ ] Rename any d3d_ prefixed structure
@@ -151,6 +159,8 @@
 - [ ] Run Vulkan validation layers (Win/Linux) and Metal API validation (macOS) during bring-up; triage GPU validation errors.
 - [ ] Tune `EnvBumpMapScale` for polygrid env-bump response in Diligent.
 - [ ] Refine Diligent polygrid bump shader response after visual validation.
+- [ ] Tune the static-light cap/selection logic to better match your content.
+- [ ] refine the fade/projection math to closer match D3D
 
 ---
 

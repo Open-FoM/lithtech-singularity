@@ -2,11 +2,10 @@ cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
 project (ltjs_lith_tech VERSION 0.0.1 LANGUAGES CXX)
 
 option (LTJS_USE_DIRECT_MUSIC8 "Use DirectMusic8 for music." OFF)
-option (LTJS_USE_D3DX9 "Use Direct3D 9 extensions." OFF)
 option (LTJS_USE_FFMPEG_VIDEO_MGR "Use video manager implemented via FFmpeg." ON)
 option (LTJS_USE_SAFE_SEH "Use Safe Exception Handlers." OFF)
 
-if (LTJS_USE_DIRECT_MUSIC8 OR LTJS_USE_D3DX9)
+if (LTJS_USE_DIRECT_MUSIC8)
 	set (LTJS_USE_BUNDLED_DIRECTX ON)
 endif ()
 
@@ -121,38 +120,22 @@ if (MSVC)
 			APPEND
 			libs
 			${path_to_dx_libs}/ddraw.lib
-			${path_to_dx_libs}/d3d9.lib
 			${path_to_dx_libs}/dxguid.lib
 			${path_to_dx_libs}/dinput8.lib
 			${path_to_dx_libs}/dplayx.lib
 			winmm
 		)
 
-		if (LTJS_USE_D3DX9)
-			list(
-				APPEND
-				libs
-				${path_to_dx_libs}/d3dx9.lib
-			)
-		endif ()
 	else ()
 		list(
 			APPEND
 			libs
-			d3d9
 			dxguid
 			dinput8
 			winmm
 			ws2_32
 		)
 
-		if (LTJS_USE_D3DX9)
-			list(
-				APPEND
-				libs
-				d3dx9
-			)
-		endif ()
 	endif ()
 endif ()
 
@@ -166,20 +149,11 @@ if (NOT MSVC)
 	list(
 		APPEND
 		libs
-		d3d9
 		dxguid
 		dinput8
 		winmm
 		ws2_32
 	)
-
-	if (LTJS_USE_D3DX9)
-		list(
-			APPEND
-			libs
-			d3dx9
-		)
-	endif ()
 endif ()
 
 if (MINGW)
@@ -220,7 +194,6 @@ target_include_directories (
 		../../../../libs/lith
 		../../../../libs/mfcstub
 		../../../../libs/stdlith
-		../../../libs/lib_dshow
 		../../../libs/rezmgr
 		../../../sdk/inc
 		../../../sdk/inc/compat
@@ -385,7 +358,6 @@ target_sources (
 		../../kernel/src/sys/win/bindmgr.h
 		../../kernel/src/sys/win/binkvideomgrimpl.h
 		../../kernel/src/sys/win/counter.h
-		../../kernel/src/sys/win/dshowvideomgrimpl.h
 		../../kernel/src/sys/win/dsys_interface.h
 		../../kernel/src/sys/win/dutil.h
 		../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.h
@@ -424,17 +396,8 @@ target_sources (
 		../../model/src/modelallocations.h
 		../../model/src/transformmaker.h
 		../../physics/src/lt_collision_mgr.h
-		../../render_a/src/sys/d3d/clipline.h
-		../../render_a/src/sys/d3d/common_draw.h
-		../../render_a/src/sys/d3d/d3d_convar.h
-		../../render_a/src/sys/d3d/d3d_device.h
-		../../render_a/src/sys/d3d/d3d_draw.h
-		../../render_a/src/sys/d3d/d3d_renderstatemgr.h
-		../../render_a/src/sys/d3d/d3d_renderstyle.h
-		../../render_a/src/sys/d3d/d3d_utils.h
 		../../render_b/src/gendrawprim.h
 		../../render_b/src/sys/diligent/diligentdrawprim.h
-		../../render_b/src/sys/d3d/d3dtexinterface.h
 		../../render_b/src/sysdrawprim.h
 		../../server/src/classmgr.h
 		../../server/src/game_serialize.h
@@ -502,7 +465,6 @@ target_sources (
 		../../shared/src/staticfifo.h
 		../../shared/src/stdlterror.h
 		../../shared/src/strtools.h
-		../../shared/src/sys/win/d3dddstructs.h
 		../../shared/src/sys/win/dstreamopenqueuemgr.h
 		../../shared/src/sys/win/renderstruct.h
 		../../shared/src/sys/win/winstdlterror.h
@@ -603,7 +565,6 @@ target_sources (
 		../../kernel/src/sys/win/binkvideomgrimpl.cpp
 		../../kernel/src/sys/win/client.cpp
 		../../kernel/src/sys/win/counter.cpp
-		../../kernel/src/sys/win/dshowvideomgrimpl.cpp
 		../../kernel/src/sys/win/dsys_interface.cpp
 		../../kernel/src/sys/win/dutil.cpp
 		../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.cpp
@@ -635,10 +596,10 @@ target_sources (
 		../../model/src/model.cpp
 		../../model/src/model_load.cpp
 		../../model/src/modelallocations.cpp
-		../../model/src/sys/d3d/d3d_model_load.cpp
+		../../model/src/d3d_model_load.cpp
 		../../model/src/transformmaker.cpp
 		../../render_b/src/sys/diligent/diligentdrawprim.cpp
-		../../render_b/src/sys/d3d/d3dtexinterface.cpp
+		../../render_b/src/systexinterface.cpp
 		../../server/src/classmgr.cpp
 		../../server/src/game_serialize.cpp
 		../../server/src/interlink.cpp

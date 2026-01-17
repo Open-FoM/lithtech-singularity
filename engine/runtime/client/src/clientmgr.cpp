@@ -362,21 +362,19 @@ LTRESULT CClientMgr::Init(const char *resTrees[MAX_RESTREES], uint32 nResTrees, 
 // 	Also requires bink32.dll in your path when running 
 //
 
-#if defined( IHAVEPURCHASEDBINK )
+	m_pVideoMgr = LTNULL;
 
-    m_pVideoMgr = CreateVideoMgr("BINK");
-
-#elif defined (LTJS_USE_FFMPEG_VIDEO_MGR)
+#if defined(LTJS_USE_FFMPEG_VIDEO_MGR)
 	m_pVideoMgr = ::CreateVideoMgr("FFMPEG");
-#else
-
-//
-//---- NOTE: Directshow video not available in version 68 or lower 
-// 
-
-	 m_pVideoMgr = CreateVideoMgr("DIRECTSHOW");
-
 #endif
+
+#if defined(IHAVEPURCHASEDBINK)
+	if (!m_pVideoMgr)
+	{
+		m_pVideoMgr = CreateVideoMgr("BINK");
+	}
+#endif
+
 
     // Tell the video stuff.
     if (m_pVideoMgr) 
@@ -2365,5 +2363,3 @@ void CClientMgr::CDefaultNetHandler::HandleUnknownPacket(const CPacket_Read &cPa
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-

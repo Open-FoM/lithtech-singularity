@@ -25,8 +25,6 @@ target_compile_definitions (
 		STDLITH_ALLOC_OVERRIDE
 		LT15_COMPAT
 		NO_PRAGMA_LIBS
-		__D3D
-		__D3DREND
 )
 
 set_target_properties (
@@ -277,7 +275,6 @@ target_sources (
 		../../shared/src/stacktrace.h
 		../../shared/src/staticfifo.h
 		../../shared/src/stdlterror.h
-		../../shared/src/sys/win/d3dddstructs.h
 		../../shared/src/sys/win/renderstruct.h
 		../../shared/src/sysddstructs.h
 		../../shared/src/version_info.h
@@ -337,7 +334,7 @@ target_sources (
 		../../model/src/model.cpp
 		../../model/src/model_load.cpp
 		../../model/src/modelallocations.cpp
-		../../model/src/sys/d3d/d3d_model_load.cpp
+		../../model/src/d3d_model_load.cpp
 		../../model/src/transformmaker.cpp
 		../../server/src/classmgr.cpp
 		../../server/src/game_serialize.cpp

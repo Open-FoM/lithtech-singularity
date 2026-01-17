@@ -461,9 +461,6 @@
     <ClInclude Include="..\..\..\sdk\inc\physics\coordinate_frame.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\shared\src\sys\win\d3dddstructs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\world\src\de_mainworld.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -44,6 +44,8 @@ target_sources (
 	${PROJECT_NAME}
 	PRIVATE
 		diligent_render.cpp
+		../rendererconsolevars.cpp
+		../renderstylemap.cpp
 		../aabb.cpp
 		../viewparams.cpp
 		../viewfrustum.cpp
