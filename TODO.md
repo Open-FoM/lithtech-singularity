@@ -93,7 +93,24 @@
   - [x] Implement screen glow render pass (offscreen blur + composite).
   - [x] Honor `MHF_NOGLOW` in glow render-style mapping.
   - [x] Add glow debug overlays for `ScreenGlowShowTexture`/`ScreenGlowShowFilter`.
+  - [ ] Implement world model rendering (solid + translucent).
+  - [ ] Implement skybox/sky portal rendering.
+  - [ ] Implement sprite rendering (including no-z sprites).
+  - [ ] Implement particle system rendering.
+  - [ ] Implement line system rendering.
+  - [ ] Implement polygrid rendering (solid + translucent).
+  - [ ] Implement volume effects rendering (solid + translucent).
+  - [ ] Implement canvas rendering in the main pass (solid + translucent).
+  - [ ] Implement translucent object queue/sort/draw list for Diligent.
+  - [ ] Implement projected model shadows and shadow texture pipeline.
 - [ ] Translate D3D shader usage to Diligent shader compilation (HLSL).
+  - [ ] Port model shadow shaders (shadow texture + projection passes).
+  - [ ] Port sky/sky portal shaders.
+  - [ ] Port sprite shaders.
+  - [ ] Port particle system shaders.
+  - [ ] Port line system shaders.
+  - [ ] Port polygrid shaders.
+  - [ ] Port volume effect shaders.
 - [x] Add in-depth glow handoff document.
   - [x] Map PC shader codes to Diligent pipeline modes.
   - [x] Add lightmap-only shader path for ePCShader_Lightmap.
@@ -103,8 +120,9 @@
   - [x] Apply distance-based fog in world/model shaders.
 - [ ] Replace D3D vertex declarations with Diligent input layouts.
   - [x] Move vertex stream flags and blend types to shared header.
-  - [x] Build Diligent mesh input layouts for rigid meshes.
-- [ ] Port model render objects and render styles to Diligent PSO/SRB.
+  - [x] Build Diligent mesh input layouts for rigid/skel/VA meshes.
+  - [ ] Add input layouts for sprites/particles/line systems/polygrids/volume effects/shadow passes.
+- [x] Port model render objects and render styles to Diligent PSO/SRB.
   - [x] Replace D3D render pass shader structs with renderer-agnostic versions.
   - [x] Add Diligent rigid mesh render object (load + GPU buffers).
   - [x] Wire Diligent model draw path into `diligent_RenderScene`.
