@@ -27,6 +27,7 @@
 #include "../d3d/rendererconsolevars.h"
 #include "iltrenderstyles.h"
 #include "rendertarget.h"
+#include "iltclient.h"
 #include "../d3d/renderstylemap.h"
 
 #ifdef LTJS_SDL_BACKEND
@@ -59,6 +60,26 @@
 #include <windows.h>
 #define __WINDOWS_H__
 #endif
+
+void d3d_InitViewBox2(
+	ViewBoxDef* pDef,
+	float nearZ,
+	float farZ,
+	const ViewParams& prev_params,
+	float screen_min_x,
+	float screen_min_y,
+	float screen_max_x,
+	float screen_max_y);
+bool d3d_InitFrustum2(
+	ViewParams* pParams,
+	ViewBoxDef* pViewBox,
+	float screenMinX,
+	float screenMinY,
+	float screenMaxX,
+	float screenMaxY,
+	const LTMatrix* pMat,
+	const LTVector& vScale,
+	ViewParams::ERenderMode eMode);
 
 namespace
 {
@@ -198,6 +219,7 @@ struct DiligentRBLightGroup
 };
 
 struct DiligentRenderWorld;
+struct DiligentRenderTexture;
 
 struct DiligentRenderBlock
 {
@@ -221,6 +243,7 @@ struct DiligentRenderBlock
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> index_buffer;
 
 	bool Load(ILTStream* stream);
+	void ExtendSkyBounds(const ViewParams& params, float& min_x, float& min_y, float& max_x, float& max_y) const;
 	bool EnsureGpuBuffers();
 	bool UpdateLightmaps();
 	bool SetLightGroupColor(uint32 id, const LTVector& color);
@@ -249,6 +272,7 @@ struct DiligentWorldConstants
 {
 	std::array<float, 16> mvp{};
 	std::array<float, 16> view{};
+	std::array<float, 16> world{};
 	float camera_pos[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -277,6 +301,7 @@ struct DiligentWorldResources
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_lightmap_dual;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_solid;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_dynamic_light;
+	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_bump;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> constant_buffer;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> vertex_buffer;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> index_buffer;
@@ -859,7 +884,23 @@ enum DiligentWorldPipelineMode : uint8
 	kWorldPipelineLightmapOnly = 4,
 	kWorldPipelineDualTexture = 5,
 	kWorldPipelineLightmapDual = 6,
-	kWorldPipelineDynamicLight = 7
+	kWorldPipelineDynamicLight = 7,
+	kWorldPipelineBump = 8
+};
+
+enum DiligentWorldBlendMode : uint8
+{
+	kWorldBlendSolid = 0,
+	kWorldBlendAlpha = 1,
+	kWorldBlendAdditive = 2,
+	kWorldBlendAdditiveOne = 3,
+	kWorldBlendMultiply = 4
+};
+
+enum DiligentWorldDepthMode : uint8
+{
+	kWorldDepthEnabled = 0,
+	kWorldDepthDisabled = 1
 };
 
 enum DiligentPCShaderType : uint8
@@ -881,10 +922,12 @@ constexpr uint8 kWorldPipelineSkip = 0xFFu;
 struct DiligentWorldPipelineKey
 {
 	uint8 mode = kWorldPipelineSolid;
+	uint8 blend_mode = kWorldBlendSolid;
+	uint8 depth_mode = kWorldDepthEnabled;
 
 	bool operator==(const DiligentWorldPipelineKey& other) const
 	{
-		return mode == other.mode;
+		return mode == other.mode && blend_mode == other.blend_mode && depth_mode == other.depth_mode;
 	}
 };
 
@@ -892,7 +935,11 @@ struct DiligentWorldPipelineKeyHash
 {
 	size_t operator()(const DiligentWorldPipelineKey& key) const noexcept
 	{
-		return std::hash<uint8>{}(key.mode);
+		uint64 hash = 0;
+		hash = diligent_hash_combine(hash, key.mode);
+		hash = diligent_hash_combine(hash, key.blend_mode);
+		hash = diligent_hash_combine(hash, key.depth_mode);
+		return static_cast<size_t>(hash);
 	}
 };
 
@@ -910,6 +957,13 @@ Diligent::RefCntAutoPtr<Diligent::ITextureView> g_debug_white_texture_srv;
 std::unordered_map<HLTBUFFER, DiligentSurfaceGpuData> g_surface_cache;
 std::unique_ptr<DiligentRenderWorld> g_render_world;
 std::vector<const DiligentRenderBlock*> g_visible_render_blocks;
+std::vector<WorldModelInstance*> g_diligent_solid_world_models;
+std::vector<WorldModelInstance*> g_diligent_translucent_world_models;
+std::vector<SpriteInstance*> g_diligent_translucent_sprites;
+std::vector<SpriteInstance*> g_diligent_noz_sprites;
+std::vector<LTPolyGrid*> g_diligent_solid_polygrids;
+std::vector<LTPolyGrid*> g_diligent_early_translucent_polygrids;
+std::vector<LTPolyGrid*> g_diligent_translucent_polygrids;
 CRenderObject* g_render_object_list_head = nullptr;
 uint32 g_diligent_object_frame_code = 0;
 LTSurfaceBlend g_optimized_2d_blend = LTSURFACEBLEND_ALPHA;
@@ -1530,6 +1584,71 @@ DiligentRenderBlock* DiligentRenderBlock::GetChild(uint32 index) const
 	return world->GetRenderBlock(child_index);
 }
 
+void DiligentRenderBlock::ExtendSkyBounds(const ViewParams& params, float& min_x, float& min_y, float& max_x, float& max_y) const
+{
+	for (const auto& poly : sky_portals)
+	{
+		if (poly.vertices.empty())
+		{
+			continue;
+		}
+
+		float local_min_x = FLT_MAX;
+		float local_min_y = FLT_MAX;
+		float local_max_x = -FLT_MAX;
+		float local_max_y = -FLT_MAX;
+
+		LTVector prev_vert = poly.vertices.back();
+		float prev_near_dist = params.m_ClipPlanes[CPLANE_NEAR_INDEX].DistTo(prev_vert);
+		bool prev_clip = prev_near_dist > 0.0f;
+
+		for (const auto& raw_vert : poly.vertices)
+		{
+			LTVector cur_vert = raw_vert;
+			float cur_near_dist = params.m_ClipPlanes[CPLANE_NEAR_INDEX].DistTo(cur_vert);
+			bool cur_clip = cur_near_dist > 0.0f;
+
+			if (cur_clip != prev_clip)
+			{
+				const float denom = cur_near_dist - prev_near_dist;
+				const float interpolant = (denom != 0.0f) ? -prev_near_dist / denom : 0.0f;
+				LTVector temp;
+				VEC_LERP(temp, prev_vert, cur_vert, interpolant);
+				cur_vert = temp;
+			}
+
+			MatVMul_InPlace_H(&(params.m_FullTransform), &cur_vert);
+
+			local_min_x = LTMIN(local_min_x, cur_vert.x);
+			local_min_y = LTMIN(local_min_y, cur_vert.y);
+			local_max_x = LTMAX(local_max_x, cur_vert.x);
+			local_max_y = LTMAX(local_max_y, cur_vert.y);
+
+			prev_vert = raw_vert;
+			prev_near_dist = cur_near_dist;
+			prev_clip = cur_clip;
+		}
+
+		if ((local_max_x < static_cast<float>(params.m_Rect.left)) ||
+			(local_max_y < static_cast<float>(params.m_Rect.top)) ||
+			(local_min_x > static_cast<float>(params.m_Rect.right)) ||
+			(local_min_y > static_cast<float>(params.m_Rect.bottom)))
+		{
+			continue;
+		}
+
+		local_min_x = LTMAX(static_cast<float>(params.m_Rect.left), local_min_x);
+		local_min_y = LTMAX(static_cast<float>(params.m_Rect.top), local_min_y);
+		local_max_x = LTMIN(static_cast<float>(params.m_Rect.right), local_max_x);
+		local_max_y = LTMIN(static_cast<float>(params.m_Rect.bottom), local_max_y);
+
+		min_x = LTMIN(min_x, local_min_x);
+		min_y = LTMIN(min_y, local_min_y);
+		max_x = LTMAX(max_x, local_max_x);
+		max_y = LTMAX(max_y, local_max_y);
+	}
+}
+
 bool DiligentRenderBlock::EnsureGpuBuffers()
 {
 	if (vertex_buffer && index_buffer)
@@ -2042,6 +2161,44 @@ void diligent_fill_optimized_2d_blend_desc(LTSurfaceBlend blend, Diligent::Rende
 	blend_desc.SrcBlendAlpha = blend_desc.SrcBlend;
 	blend_desc.DestBlendAlpha = blend_desc.DestBlend;
 	blend_desc.BlendOpAlpha = blend_desc.BlendOp;
+}
+
+void diligent_fill_world_blend_desc(DiligentWorldBlendMode blend, Diligent::RenderTargetBlendDesc& blend_desc)
+{
+	blend_desc.RenderTargetWriteMask = Diligent::COLOR_MASK_ALL;
+	if (blend == kWorldBlendSolid)
+	{
+		blend_desc.BlendEnable = false;
+		return;
+	}
+
+	blend_desc.BlendEnable = true;
+	blend_desc.BlendOp = Diligent::BLEND_OPERATION_ADD;
+	blend_desc.BlendOpAlpha = blend_desc.BlendOp;
+
+	if (blend == kWorldBlendAdditive)
+	{
+		blend_desc.SrcBlend = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		blend_desc.DestBlend = Diligent::BLEND_FACTOR_ONE;
+	}
+	else if (blend == kWorldBlendAdditiveOne)
+	{
+		blend_desc.SrcBlend = Diligent::BLEND_FACTOR_ONE;
+		blend_desc.DestBlend = Diligent::BLEND_FACTOR_ONE;
+	}
+	else if (blend == kWorldBlendMultiply)
+	{
+		blend_desc.SrcBlend = Diligent::BLEND_FACTOR_ZERO;
+		blend_desc.DestBlend = Diligent::BLEND_FACTOR_SRC_COLOR;
+	}
+	else
+	{
+		blend_desc.SrcBlend = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		blend_desc.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+	}
+
+	blend_desc.SrcBlendAlpha = blend_desc.SrcBlend;
+	blend_desc.DestBlendAlpha = blend_desc.DestBlend;
 }
 
 bool diligent_ensure_optimized_2d_shaders()
@@ -2798,6 +2955,7 @@ const char* diligent_get_world_vertex_shader_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -2826,7 +2984,7 @@ const char* diligent_get_world_vertex_shader_source()
 		"    output.Color = input.Color;\n"
 		"    output.UV0 = input.UV0;\n"
 		"    output.UV1 = input.UV1;\n"
-		"    output.WorldPos = input.Pos;\n"
+		"    output.WorldPos = mul(float4(input.Pos, 1.0f), g_World).xyz;\n"
 		"    return output;\n"
 		"}\n";
 }
@@ -2840,6 +2998,7 @@ const char* diligent_get_world_pixel_shader_textured_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -2884,6 +3043,7 @@ const char* diligent_get_world_pixel_shader_glow_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -2932,6 +3092,7 @@ const char* diligent_get_world_pixel_shader_lightmap_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -2978,6 +3139,7 @@ const char* diligent_get_world_pixel_shader_lightmap_only_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -3025,6 +3187,7 @@ const char* diligent_get_world_pixel_shader_dual_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -3062,6 +3225,58 @@ const char* diligent_get_world_pixel_shader_dual_source()
 		"}\n";
 }
 
+const char* diligent_get_world_pixel_shader_bump_source()
+{
+	return
+		"Texture2D g_Texture0;\n"
+		"Texture2D g_Texture1;\n"
+		"SamplerState g_Texture0_sampler;\n"
+		"SamplerState g_Texture1_sampler;\n"
+		"cbuffer WorldConstants\n"
+		"{\n"
+		"    float4x4 g_Mvp;\n"
+		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
+		"    float4 g_CameraPos;\n"
+		"    float4 g_FogColor;\n"
+		"    float4 g_FogParams;\n"
+		"    float4 g_DynamicLightPos;\n"
+		"    float4 g_DynamicLightColor;\n"
+		"};\n"
+		"float3 ApplyFog(float3 color, float3 worldPos)\n"
+		"{\n"
+		"    if (g_CameraPos.w <= 0.5f)\n"
+		"    {\n"
+		"        return color;\n"
+		"    }\n"
+		"    float fogNear = g_FogColor.w;\n"
+		"    float fogFar = g_FogParams.x;\n"
+		"    float fogRange = max(fogFar - fogNear, 0.0001f);\n"
+		"    float dist = length(worldPos - g_CameraPos.xyz);\n"
+		"    float fogFactor = saturate((dist - fogNear) / fogRange);\n"
+		"    return lerp(color, g_FogColor.rgb, fogFactor);\n"
+		"}\n"
+		"struct PSInput\n"
+		"{\n"
+		"    float4 Pos : SV_POSITION;\n"
+		"    float4 Color : COLOR0;\n"
+		"    float2 UV0 : TEXCOORD0;\n"
+		"    float2 UV1 : TEXCOORD1;\n"
+		"    float3 WorldPos : TEXCOORD2;\n"
+		"};\n"
+		"float4 PSMain(PSInput input) : SV_TARGET\n"
+		"{\n"
+		"    float3 normal = g_Texture0.Sample(g_Texture0_sampler, input.UV0).xyz * 2.0f - 1.0f;\n"
+		"    float2 env_uv = input.UV1 + normal.xy * g_DynamicLightPos.x;\n"
+		"    float4 env = g_Texture1.Sample(g_Texture1_sampler, env_uv);\n"
+		"    float intensity = saturate(normal.z);\n"
+		"    float3 color = env.rgb * intensity * input.Color.rgb;\n"
+		"    float alpha = env.a * input.Color.a;\n"
+		"    float3 fogged = ApplyFog(color, input.WorldPos);\n"
+		"    return float4(fogged, alpha);\n"
+		"}\n";
+}
+
 const char* diligent_get_world_pixel_shader_lightmap_dual_source()
 {
 	return
@@ -3075,6 +3290,7 @@ const char* diligent_get_world_pixel_shader_lightmap_dual_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -3120,6 +3336,7 @@ const char* diligent_get_world_pixel_shader_solid_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -3162,6 +3379,7 @@ const char* diligent_get_world_pixel_shader_dynamic_light_source()
 		"{\n"
 		"    float4x4 g_Mvp;\n"
 		"    float4x4 g_View;\n"
+		"    float4x4 g_World;\n"
 		"    float4 g_CameraPos;\n"
 		"    float4 g_FogColor;\n"
 		"    float4 g_FogParams;\n"
@@ -3404,7 +3622,7 @@ Diligent::IShader* diligent_get_model_vertex_shader(const DiligentMeshLayout& la
 
 bool diligent_ensure_world_shaders()
 {
-	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light)
+	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump)
 	{
 		return true;
 	}
@@ -3468,6 +3686,12 @@ bool diligent_ensure_world_shaders()
 		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_dual);
 	}
 
+	if (!g_world_resources.pixel_shader_bump)
+	{
+		shader_info.Source = diligent_get_world_pixel_shader_bump_source();
+		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_bump);
+	}
+
 	if (!g_world_resources.pixel_shader_lightmap_dual)
 	{
 		shader_info.Source = diligent_get_world_pixel_shader_lightmap_dual_source();
@@ -3486,12 +3710,15 @@ bool diligent_ensure_world_shaders()
 		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_dynamic_light);
 	}
 
-	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light;
+	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump;
 }
 
-DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
+DiligentWorldPipeline* diligent_get_world_pipeline(
+	uint8 mode,
+	DiligentWorldBlendMode blend_mode,
+	DiligentWorldDepthMode depth_mode)
 {
-	DiligentWorldPipelineKey key{mode};
+	DiligentWorldPipelineKey key{mode, blend_mode, depth_mode};
 	auto it = g_world_pipelines.pipelines.find(key);
 	if (it != g_world_pipelines.pipelines.end())
 	{
@@ -3544,6 +3771,10 @@ DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
 	{
 		pipeline_info.PSODesc.Name = "ltjs_world_dynamic_light";
 	}
+	else if (mode == kWorldPipelineBump)
+	{
+		pipeline_info.PSODesc.Name = "ltjs_world_bump";
+	}
 	else
 	{
 		pipeline_info.PSODesc.Name = "ltjs_world_unlit";
@@ -3565,10 +3796,12 @@ DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
 	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
 	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
 	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
-	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+	const bool depth_enabled = (depth_mode != kWorldDepthDisabled);
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = depth_enabled;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = depth_enabled;
 	if (mode == kWorldPipelineDynamicLight)
 	{
+		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
 		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_EQUAL;
 		auto& blend_desc = pipeline_info.GraphicsPipeline.BlendDesc.RenderTargets[0];
@@ -3579,6 +3812,18 @@ DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
 		blend_desc.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
 		blend_desc.DestBlendAlpha = Diligent::BLEND_FACTOR_ONE;
 		blend_desc.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+	}
+	else
+	{
+		if (!depth_enabled || blend_mode != kWorldBlendSolid)
+		{
+			pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+		}
+		if (!depth_enabled)
+		{
+			pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_ALWAYS;
+		}
+		diligent_fill_world_blend_desc(blend_mode, pipeline_info.GraphicsPipeline.BlendDesc.RenderTargets[0]);
 	}
 
 	pipeline_info.pVS = g_world_resources.vertex_shader;
@@ -3609,6 +3854,10 @@ DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
 	else if (mode == kWorldPipelineDynamicLight)
 	{
 		pipeline_info.pPS = g_world_resources.pixel_shader_dynamic_light;
+	}
+	else if (mode == kWorldPipelineBump)
+	{
+		pipeline_info.pPS = g_world_resources.pixel_shader_bump;
 	}
 	else
 	{
@@ -3662,6 +3911,13 @@ DiligentWorldPipeline* diligent_get_world_pipeline(uint8 mode)
 		pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1u;
 	}
 	else if (mode == kWorldPipelineDualTexture)
+	{
+		pipeline_info.PSODesc.ResourceLayout.Variables = variables;
+		pipeline_info.PSODesc.ResourceLayout.NumVariables = 2u;
+		pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = sampler_desc;
+		pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 2u;
+	}
+	else if (mode == kWorldPipelineBump)
 	{
 		pipeline_info.PSODesc.ResourceLayout.Variables = variables;
 		pipeline_info.PSODesc.ResourceLayout.NumVariables = 2u;
@@ -3773,9 +4029,300 @@ bool diligent_ensure_world_index_buffer(uint32 size)
 	return true;
 }
 
-bool diligent_draw_world_blocks()
+void diligent_set_world_vertex_color(DiligentWorldVertex& vertex, uint32 color)
 {
-	if (g_visible_render_blocks.empty())
+	vertex.color[0] = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+	vertex.color[1] = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+	vertex.color[2] = static_cast<float>(color & 0xFF) / 255.0f;
+	vertex.color[3] = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+}
+
+bool diligent_draw_world_immediate(
+	const DiligentWorldConstants& constants,
+	DiligentWorldBlendMode blend_mode,
+	DiligentWorldDepthMode depth_mode,
+	Diligent::ITextureView* texture_view,
+	Diligent::ITextureView* texture1_view,
+	bool use_bump,
+	const DiligentWorldVertex* vertices,
+	uint32 vertex_count,
+	const uint16* indices,
+	uint32 index_count)
+{
+	if (!g_immediate_context || !g_swap_chain)
+	{
+		return false;
+	}
+
+	if (!vertices || vertex_count == 0 || !indices || index_count == 0)
+	{
+		return true;
+	}
+
+	if (!diligent_ensure_world_constant_buffer())
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
+
+	const uint32 vertex_bytes = vertex_count * sizeof(DiligentWorldVertex);
+	const uint32 index_bytes = index_count * sizeof(uint16);
+	if (!diligent_ensure_world_vertex_buffer(vertex_bytes) || !diligent_ensure_world_index_buffer(index_bytes))
+	{
+		return false;
+	}
+
+	void* mapped_vertices = nullptr;
+	g_immediate_context->MapBuffer(g_world_resources.vertex_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_vertices);
+	if (!mapped_vertices)
+	{
+		return false;
+	}
+	std::memcpy(mapped_vertices, vertices, vertex_bytes);
+	g_immediate_context->UnmapBuffer(g_world_resources.vertex_buffer, Diligent::MAP_WRITE);
+
+	void* mapped_indices = nullptr;
+	g_immediate_context->MapBuffer(g_world_resources.index_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_indices);
+	if (!mapped_indices)
+	{
+		return false;
+	}
+	std::memcpy(mapped_indices, indices, index_bytes);
+	g_immediate_context->UnmapBuffer(g_world_resources.index_buffer, Diligent::MAP_WRITE);
+
+	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
+	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::IBuffer* buffers[] = {g_world_resources.vertex_buffer};
+	Diligent::Uint64 offsets[] = {0};
+	g_immediate_context->SetVertexBuffers(
+		0,
+		1,
+		buffers,
+		offsets,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_immediate_context->SetIndexBuffer(g_world_resources.index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	uint8 mode = kWorldPipelineSolid;
+	if (use_bump && texture_view && texture1_view)
+	{
+		mode = kWorldPipelineBump;
+	}
+	else if (texture_view && texture1_view)
+	{
+		mode = kWorldPipelineDualTexture;
+	}
+	else if (texture_view)
+	{
+		mode = kWorldPipelineTextured;
+	}
+	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
+	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
+	{
+		return false;
+	}
+
+	if (texture_view)
+	{
+		auto* texture_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture0");
+		if (texture_var)
+		{
+			texture_var->Set(texture_view);
+		}
+	}
+
+	if (texture1_view)
+	{
+		auto* texture_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture1");
+		if (texture_var)
+		{
+			texture_var->Set(texture1_view);
+		}
+	}
+
+	g_immediate_context->SetPipelineState(pipeline->pipeline_state);
+	g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::DrawIndexedAttribs draw_attribs;
+	draw_attribs.NumIndices = index_count;
+	draw_attribs.IndexType = Diligent::VT_UINT16;
+	draw_attribs.FirstIndexLocation = 0;
+	draw_attribs.BaseVertex = 0;
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_immediate_context->DrawIndexed(draw_attribs);
+
+	return true;
+}
+
+LTMatrix diligent_build_transform(const LTVector& position, const LTRotation& rotation, const LTVector& scale)
+{
+	LTMatrix matrix;
+	quat_ConvertToMatrix(reinterpret_cast<const float*>(&rotation), matrix.m);
+
+	matrix.m[0][0] *= scale.x;
+	matrix.m[1][0] *= scale.x;
+	matrix.m[2][0] *= scale.x;
+
+	matrix.m[0][1] *= scale.y;
+	matrix.m[1][1] *= scale.y;
+	matrix.m[2][1] *= scale.y;
+
+	matrix.m[0][2] *= scale.z;
+	matrix.m[1][2] *= scale.z;
+	matrix.m[2][2] *= scale.z;
+
+	matrix.m[0][3] = position.x;
+	matrix.m[1][3] = position.y;
+	matrix.m[2][3] = position.z;
+
+	return matrix;
+}
+
+DiligentWorldBlendMode diligent_get_object_blend_mode(const LTObject* object)
+{
+	if (!object)
+	{
+		return kWorldBlendSolid;
+	}
+
+	if (object->m_Flags2 & FLAG2_ADDITIVE)
+	{
+		return kWorldBlendAdditiveOne;
+	}
+
+	if (object->m_Flags2 & FLAG2_MULTIPLY)
+	{
+		return kWorldBlendMultiply;
+	}
+
+	return object->IsTranslucent() ? kWorldBlendAlpha : kWorldBlendSolid;
+}
+
+void diligent_fill_world_constants(
+	const ViewParams& view_params,
+	const LTMatrix& world_matrix,
+	bool fog_enabled,
+	float fog_near,
+	float fog_far,
+	DiligentWorldConstants& constants)
+{
+	LTMatrix mvp = view_params.m_mProjection * view_params.m_mView * world_matrix;
+	diligent_store_matrix_from_lt(mvp, constants.mvp);
+	diligent_store_matrix_from_lt(view_params.m_mView, constants.view);
+	diligent_store_matrix_from_lt(world_matrix, constants.world);
+	constants.camera_pos[0] = view_params.m_Pos.x;
+	constants.camera_pos[1] = view_params.m_Pos.y;
+	constants.camera_pos[2] = view_params.m_Pos.z;
+	constants.camera_pos[3] = fog_enabled ? 1.0f : 0.0f;
+	constants.fog_color[0] = static_cast<float>(g_CV_FogColorR.m_Val) / 255.0f;
+	constants.fog_color[1] = static_cast<float>(g_CV_FogColorG.m_Val) / 255.0f;
+	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
+	constants.fog_color[3] = fog_near;
+	constants.fog_params[0] = fog_far;
+}
+
+struct DiligentSpriteVertex
+{
+	LTVector m_Vec;
+	uint32 color;
+	float u;
+	float v;
+
+	void SetupVert(const LTVector& pos, uint32 rgba, float tu, float tv)
+	{
+		m_Vec = pos;
+		color = rgba;
+		u = tu;
+		v = tv;
+	}
+
+	static void ClipExtra(DiligentSpriteVertex* prev, DiligentSpriteVertex* cur, DiligentSpriteVertex* out, float t)
+	{
+		out->u = prev->u + t * (cur->u - prev->u);
+		out->v = prev->v + t * (cur->v - prev->v);
+		out->color = cur->color;
+	}
+};
+
+template<class T>
+bool diligent_clip_sprite(SpriteInstance* instance, HPOLY poly, T** points, uint32* point_count, T* out_points)
+{
+	if (!world_bsp_client || !instance || poly == INVALID_HPOLY)
+	{
+		return false;
+	}
+
+	WorldPoly* world_poly = world_bsp_client->GetPolyFromHPoly(poly);
+	if (!world_poly)
+	{
+		return false;
+	}
+
+	float d1 = 0.0f;
+	float d2 = 0.0f;
+	const float dot = world_poly->GetPlane()->DistTo(g_ViewParams.m_Pos);
+	if (dot <= 0.01f)
+	{
+		return false;
+	}
+
+	T* pVerts = *points;
+	uint32 nVerts = *point_count;
+	T* pOut = out_points;
+
+	LTPlane plane;
+	SPolyVertex* end_point = &world_poly->GetVertices()[world_poly->GetNumVertices()];
+	SPolyVertex* prev_point = end_point - 1;
+	for (SPolyVertex* cur_point = world_poly->GetVertices(); cur_point != end_point; )
+	{
+		LTVector vec_to;
+		VEC_SUB(vec_to, cur_point->m_Vertex->m_Vec, prev_point->m_Vertex->m_Vec);
+		VEC_CROSS(plane.m_Normal, vec_to, world_poly->GetPlane()->m_Normal);
+		VEC_NORM(plane.m_Normal);
+		plane.m_Dist = VEC_DOT(plane.m_Normal, cur_point->m_Vertex->m_Vec);
+
+		#define PLANETEST(pt) (plane.DistTo(pt) > 0.0f)
+		#define DOPLANECLIP(pt1, pt2) \
+			d1 = plane.DistTo(pt1); \
+			d2 = plane.DistTo(pt2); \
+			t = -d1 / (d2 - d1); \
+			pOut->m_Vec.x = pt1.x + ((pt2.x - pt1.x) * t); \
+			pOut->m_Vec.y = pt1.y + ((pt2.y - pt1.y) * t); \
+			pOut->m_Vec.z = pt1.z + ((pt2.z - pt1.z) * t);
+		#define CLIPTEST PLANETEST
+		#define DOCLIP DOPLANECLIP
+		#include "../d3d/polyclip.h"
+		#undef CLIPTEST
+		#undef DOCLIP
+		#undef PLANETEST
+		#undef DOPLANECLIP
+
+		prev_point = cur_point;
+		++cur_point;
+	}
+
+	*points = pVerts;
+	*point_count = nVerts;
+	return true;
+}
+
+bool diligent_draw_render_blocks_with_constants(
+	const std::vector<const DiligentRenderBlock*>& blocks,
+	const DiligentWorldConstants& base_constants,
+	DiligentWorldBlendMode blend_mode,
+	DiligentWorldDepthMode depth_mode)
+{
+	if (blocks.empty())
 	{
 		return true;
 	}
@@ -3785,34 +4332,6 @@ bool diligent_draw_world_blocks()
 		return false;
 	}
 
-	const bool fog_enabled = (g_CV_FogEnable.m_Val != 0);
-	DiligentWorldConstants constants;
-	LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView;
-	diligent_store_matrix_from_lt(mvp, constants.mvp);
-	diligent_store_matrix_from_lt(g_ViewParams.m_mView, constants.view);
-	constants.camera_pos[0] = g_ViewParams.m_Pos.x;
-	constants.camera_pos[1] = g_ViewParams.m_Pos.y;
-	constants.camera_pos[2] = g_ViewParams.m_Pos.z;
-	constants.camera_pos[3] = fog_enabled ? 1.0f : 0.0f;
-	constants.fog_color[0] = static_cast<float>(g_CV_FogColorR.m_Val) / 255.0f;
-	constants.fog_color[1] = static_cast<float>(g_CV_FogColorG.m_Val) / 255.0f;
-	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
-	constants.fog_color[3] = g_CV_FogNearZ.m_Val;
-	constants.fog_params[0] = g_CV_FogFarZ.m_Val;
-	if (g_diligent_num_world_dynamic_lights > 0)
-	{
-		const DynamicLight* light = g_diligent_world_dynamic_lights[0];
-		constants.dynamic_light_pos[0] = light->m_Pos.x;
-		constants.dynamic_light_pos[1] = light->m_Pos.y;
-		constants.dynamic_light_pos[2] = light->m_Pos.z;
-		constants.dynamic_light_pos[3] = light->m_LightRadius;
-		constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
-		constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
-		constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
-		constants.dynamic_light_color[3] = 1.0f;
-	}
-
-	const DiligentWorldConstants base_constants = constants;
 	if (!diligent_ensure_world_constant_buffer())
 	{
 		return false;
@@ -3820,14 +4339,18 @@ bool diligent_draw_world_blocks()
 
 	void* mapped_constants = nullptr;
 	g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
-	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &base_constants, sizeof(base_constants));
 	g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
 	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
 	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	for (const auto* block : g_visible_render_blocks)
+	for (const auto* block : blocks)
 	{
 		if (!block || block->vertices.empty() || block->indices.empty())
 		{
@@ -3955,13 +4478,13 @@ bool diligent_draw_world_blocks()
 				continue;
 			}
 
-			auto* pipeline = diligent_get_world_pipeline(mode);
+			auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
 			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 			{
 				continue;
 			}
 
-			if (mode == kWorldPipelineTextured)
+			if (mode == kWorldPipelineTextured || mode == kWorldPipelineGlowTextured)
 			{
 				auto* texture_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture0");
 				if (texture_var)
@@ -4040,7 +4563,7 @@ bool diligent_draw_world_blocks()
 		return true;
 	}
 
-	auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight);
+auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, kWorldBlendSolid, kWorldDepthEnabled);
 	if (!light_pipeline || !light_pipeline->pipeline_state || !light_pipeline->srb)
 	{
 		return true;
@@ -4073,7 +4596,7 @@ bool diligent_draw_world_blocks()
 		std::memcpy(light_mapped_constants, &light_constants, sizeof(light_constants));
 		g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
-		for (const auto* block : g_visible_render_blocks)
+		for (const auto* block : blocks)
 		{
 			if (!block || block->vertices.empty() || block->indices.empty())
 			{
@@ -4145,6 +4668,946 @@ bool diligent_draw_world_blocks()
 				draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 				g_immediate_context->DrawIndexed(draw_attribs);
 			}
+		}
+	}
+
+	return true;
+}
+
+bool diligent_draw_world_blocks()
+{
+	if (g_visible_render_blocks.empty())
+	{
+		return true;
+	}
+
+	const bool fog_enabled = (g_CV_FogEnable.m_Val != 0);
+	DiligentWorldConstants constants;
+	LTMatrix world_matrix;
+	world_matrix.Identity();
+	LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * world_matrix;
+	diligent_store_matrix_from_lt(mvp, constants.mvp);
+	diligent_store_matrix_from_lt(g_ViewParams.m_mView, constants.view);
+	diligent_store_matrix_from_lt(world_matrix, constants.world);
+	constants.camera_pos[0] = g_ViewParams.m_Pos.x;
+	constants.camera_pos[1] = g_ViewParams.m_Pos.y;
+	constants.camera_pos[2] = g_ViewParams.m_Pos.z;
+	constants.camera_pos[3] = fog_enabled ? 1.0f : 0.0f;
+	constants.fog_color[0] = static_cast<float>(g_CV_FogColorR.m_Val) / 255.0f;
+	constants.fog_color[1] = static_cast<float>(g_CV_FogColorG.m_Val) / 255.0f;
+	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
+	constants.fog_color[3] = g_CV_FogNearZ.m_Val;
+	constants.fog_params[0] = g_CV_FogFarZ.m_Val;
+	if (g_diligent_num_world_dynamic_lights > 0)
+	{
+		const DynamicLight* light = g_diligent_world_dynamic_lights[0];
+		constants.dynamic_light_pos[0] = light->m_Pos.x;
+		constants.dynamic_light_pos[1] = light->m_Pos.y;
+		constants.dynamic_light_pos[2] = light->m_Pos.z;
+		constants.dynamic_light_pos[3] = light->m_LightRadius;
+		constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
+		constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
+		constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
+		constants.dynamic_light_color[3] = 1.0f;
+	}
+
+	return diligent_draw_render_blocks_with_constants(
+		g_visible_render_blocks,
+		constants,
+		kWorldBlendSolid,
+		kWorldDepthEnabled);
+}
+
+bool diligent_draw_world_model_list_with_view(
+	const std::vector<WorldModelInstance*>& models,
+	const ViewParams& view_params,
+	float fog_near_z,
+	float fog_far_z,
+	DiligentWorldBlendMode blend_mode,
+	DiligentWorldDepthMode depth_mode)
+{
+	if (models.empty())
+	{
+		return true;
+	}
+
+	const bool fog_enabled_base = (g_CV_FogEnable.m_Val != 0);
+
+	for (auto* instance : models)
+	{
+		if (!instance)
+		{
+			continue;
+		}
+
+		auto* render_world = diligent_find_world_model(instance);
+		if (!render_world)
+		{
+			continue;
+		}
+
+		std::vector<const DiligentRenderBlock*> blocks;
+		blocks.reserve(render_world->render_blocks.size());
+		for (const auto& block : render_world->render_blocks)
+		{
+			if (block)
+			{
+				blocks.push_back(block.get());
+			}
+		}
+
+		const bool fog_enabled = fog_enabled_base && ((instance->m_Flags & FLAG_FOGDISABLE) == 0);
+		const DiligentWorldBlendMode instance_blend =
+			blend_mode == kWorldBlendSolid
+				? kWorldBlendSolid
+				: ((instance->m_Flags2 & FLAG2_ADDITIVE) != 0 ? kWorldBlendAdditive : kWorldBlendAlpha);
+
+		DiligentWorldConstants constants;
+		LTMatrix world_matrix = instance->m_Transform;
+		LTMatrix mvp = view_params.m_mProjection * view_params.m_mView * world_matrix;
+		diligent_store_matrix_from_lt(mvp, constants.mvp);
+		diligent_store_matrix_from_lt(view_params.m_mView, constants.view);
+		diligent_store_matrix_from_lt(world_matrix, constants.world);
+		constants.camera_pos[0] = view_params.m_Pos.x;
+		constants.camera_pos[1] = view_params.m_Pos.y;
+		constants.camera_pos[2] = view_params.m_Pos.z;
+		constants.camera_pos[3] = fog_enabled ? 1.0f : 0.0f;
+		constants.fog_color[0] = static_cast<float>(g_CV_FogColorR.m_Val) / 255.0f;
+		constants.fog_color[1] = static_cast<float>(g_CV_FogColorG.m_Val) / 255.0f;
+		constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
+		constants.fog_color[3] = fog_near_z;
+		constants.fog_params[0] = fog_far_z;
+		if (g_diligent_num_world_dynamic_lights > 0)
+		{
+			const DynamicLight* light = g_diligent_world_dynamic_lights[0];
+			constants.dynamic_light_pos[0] = light->m_Pos.x;
+			constants.dynamic_light_pos[1] = light->m_Pos.y;
+			constants.dynamic_light_pos[2] = light->m_Pos.z;
+			constants.dynamic_light_pos[3] = light->m_LightRadius;
+			constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
+			constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
+			constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
+			constants.dynamic_light_color[3] = 1.0f;
+		}
+
+		if (!diligent_draw_render_blocks_with_constants(blocks, constants, instance_blend, depth_mode))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool diligent_draw_world_model_list(const std::vector<WorldModelInstance*>& models, DiligentWorldBlendMode blend_mode)
+{
+	return diligent_draw_world_model_list_with_view(
+		models,
+		g_ViewParams,
+		g_CV_FogNearZ.m_Val,
+		g_CV_FogFarZ.m_Val,
+		blend_mode,
+		kWorldDepthEnabled);
+}
+
+bool diligent_draw_world_models_glow(const std::vector<WorldModelInstance*>& models, const DiligentWorldConstants& base_constants)
+{
+	if (models.empty())
+	{
+		return true;
+	}
+
+	for (auto* instance : models)
+	{
+		if (!instance)
+		{
+			continue;
+		}
+
+		auto* render_world = diligent_find_world_model(instance);
+		if (!render_world)
+		{
+			continue;
+		}
+
+		std::vector<const DiligentRenderBlock*> blocks;
+		blocks.reserve(render_world->render_blocks.size());
+		for (const auto& block : render_world->render_blocks)
+		{
+			if (block)
+			{
+				blocks.push_back(block.get());
+			}
+		}
+
+		DiligentWorldConstants constants = base_constants;
+		LTMatrix world_matrix = instance->m_Transform;
+		LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * world_matrix;
+		diligent_store_matrix_from_lt(mvp, constants.mvp);
+		diligent_store_matrix_from_lt(world_matrix, constants.world);
+
+		if (!diligent_draw_world_glow(constants, blocks))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool diligent_collect_sky_extents(const ViewParams& params, float& min_x, float& min_y, float& max_x, float& max_y)
+{
+	if (g_visible_render_blocks.empty())
+	{
+		return false;
+	}
+
+	min_x = FLT_MAX;
+	min_y = FLT_MAX;
+	max_x = -FLT_MAX;
+	max_y = -FLT_MAX;
+
+	for (const auto* block : g_visible_render_blocks)
+	{
+		if (!block)
+		{
+			continue;
+		}
+
+		block->ExtendSkyBounds(params, min_x, min_y, max_x, max_y);
+	}
+
+	return min_x != FLT_MAX && min_y != FLT_MAX && max_x != -FLT_MAX && max_y != -FLT_MAX;
+}
+
+bool diligent_draw_sky_objects(SceneDesc* desc, const ViewParams& sky_params, bool& out_drew)
+{
+	out_drew = false;
+	if (!desc || !desc->m_SkyObjects || desc->m_nSkyObjects <= 0)
+	{
+		return true;
+	}
+
+	std::vector<WorldModelInstance*> solid_world_models;
+	std::vector<WorldModelInstance*> translucent_world_models;
+	std::vector<SpriteInstance*> translucent_sprites;
+	std::vector<LTPolyGrid*> polygrids;
+
+	for (int i = 0; i < desc->m_nSkyObjects; ++i)
+	{
+		auto* sky_object = desc->m_SkyObjects[i];
+		if (!sky_object || (sky_object->m_Flags & FLAG_VISIBLE) == 0)
+		{
+			continue;
+		}
+
+		if (sky_object->HasWorldModel() && g_CV_DrawWorldModels.m_Val)
+		{
+			auto* instance = sky_object->ToWorldModel();
+			if (!instance)
+			{
+				continue;
+			}
+
+			if (sky_object->IsTranslucent())
+			{
+				translucent_world_models.push_back(instance);
+			}
+			else
+			{
+				solid_world_models.push_back(instance);
+			}
+
+			continue;
+		}
+
+		if (sky_object->m_ObjectType == OT_SPRITE && g_CV_DrawSprites.m_Val)
+		{
+			auto* sprite = sky_object->ToSprite();
+			if (sprite)
+			{
+				translucent_sprites.push_back(sprite);
+			}
+			continue;
+		}
+
+		if (sky_object->m_ObjectType == OT_POLYGRID && g_CV_DrawPolyGrids.m_Val)
+		{
+			auto* grid = sky_object->ToPolyGrid();
+			if (grid)
+			{
+				polygrids.push_back(grid);
+			}
+		}
+	}
+
+	if (!solid_world_models.empty())
+	{
+		out_drew = true;
+		if (!diligent_draw_world_model_list_with_view(
+				solid_world_models,
+				sky_params,
+				g_CV_SkyFogNearZ.m_Val,
+				g_CV_SkyFogFarZ.m_Val,
+				kWorldBlendSolid,
+				kWorldDepthDisabled))
+		{
+			return false;
+		}
+	}
+
+	if (!translucent_world_models.empty())
+	{
+		out_drew = true;
+		if (!diligent_draw_world_model_list_with_view(
+				translucent_world_models,
+				sky_params,
+				g_CV_SkyFogNearZ.m_Val,
+				g_CV_SkyFogFarZ.m_Val,
+				kWorldBlendAlpha,
+				kWorldDepthDisabled))
+		{
+			return false;
+		}
+	}
+
+	if (!polygrids.empty())
+	{
+		out_drew = true;
+		if (!diligent_draw_polygrid_list(polygrids, sky_params, g_CV_SkyFogNearZ.m_Val, g_CV_SkyFogFarZ.m_Val, kWorldDepthDisabled))
+		{
+			return false;
+		}
+	}
+
+	if (!translucent_sprites.empty())
+	{
+		out_drew = true;
+		if (!diligent_draw_sprite_list(translucent_sprites, sky_params, g_CV_SkyFogNearZ.m_Val, g_CV_SkyFogFarZ.m_Val, kWorldDepthDisabled))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool diligent_draw_sky(SceneDesc* desc)
+{
+	if (!desc || desc->m_DrawMode != DRAWMODE_NORMAL)
+	{
+		return true;
+	}
+
+	if (!g_CV_DrawSky.m_Val || !desc->m_SkyObjects || desc->m_nSkyObjects <= 0)
+	{
+		return true;
+	}
+
+	float min_x = 0.0f;
+	float min_y = 0.0f;
+	float max_x = 0.0f;
+	float max_y = 0.0f;
+	if (!diligent_collect_sky_extents(g_ViewParams, min_x, min_y, max_x, max_y))
+	{
+		return true;
+	}
+
+	if ((max_x - min_x) <= 0.9f || (max_y - min_y) <= 0.9f)
+	{
+		return true;
+	}
+
+	ViewBoxDef view_box;
+	d3d_InitViewBox2(&view_box, 0.01f, g_CV_SkyFarZ.m_Val, g_ViewParams, min_x, min_y, max_x, max_y);
+
+	LTMatrix mat = g_ViewParams.m_mInvView;
+	mat.SetTranslation(g_ViewParams.m_SkyViewPos);
+
+	ViewParams sky_params;
+	if (!d3d_InitFrustum2(
+			&sky_params,
+			&view_box,
+			min_x,
+			min_y,
+			max_x,
+			max_y,
+			&mat,
+			LTVector(g_CV_SkyScale.m_Val, g_CV_SkyScale.m_Val, g_CV_SkyScale.m_Val),
+			g_ViewParams.m_eRenderMode))
+	{
+		return false;
+	}
+
+	ViewParams saved_view = g_ViewParams;
+	g_ViewParams = sky_params;
+
+	bool drew = false;
+	const bool ok = diligent_draw_sky_objects(desc, sky_params, drew);
+	g_ViewParams = saved_view;
+
+	if (!ok)
+	{
+		return false;
+	}
+
+	if (drew && g_immediate_context)
+	{
+		auto* depth_target = g_swap_chain ? g_swap_chain->GetDepthBufferDSV() : nullptr;
+		if (depth_target)
+		{
+			g_immediate_context->ClearDepthStencil(
+				depth_target,
+				Diligent::CLEAR_DEPTH_FLAG,
+				1.0f,
+				0,
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		}
+	}
+
+	return true;
+}
+
+DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture, bool texture_changed);
+Diligent::ITextureView* diligent_get_texture_view(SharedTexture* shared_texture, bool texture_changed);
+
+bool diligent_draw_sprite_instance(
+	const ViewParams& params,
+	SpriteInstance* instance,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode)
+{
+	if (!instance)
+	{
+		return true;
+	}
+
+	auto* frame = instance->m_SpriteTracker.m_pCurFrame;
+	if (!frame || !frame->m_pTex)
+	{
+		return true;
+	}
+
+	auto* render_texture = diligent_get_render_texture(frame->m_pTex, false);
+	if (!render_texture || !render_texture->srv)
+	{
+		return true;
+	}
+
+	const float tex_width = static_cast<float>(render_texture->width);
+	const float tex_height = static_cast<float>(render_texture->height);
+
+	const uint32 color =
+		(static_cast<uint32>(instance->m_ColorA) << 24) |
+		(static_cast<uint32>(instance->m_ColorR) << 16) |
+		(static_cast<uint32>(instance->m_ColorG) << 8) |
+		static_cast<uint32>(instance->m_ColorB);
+
+	DiligentSpriteVertex sprite_verts[4];
+	const bool is_rotatable = (instance->m_Flags & FLAG_ROTATABLESPRITE) != 0;
+	const bool really_close = (instance->m_Flags & FLAG_REALLYCLOSE) != 0;
+
+	LTVector vPos = instance->GetPos();
+	LTVector vRight;
+	LTVector vUp;
+	LTVector vForward;
+	LTVector vBasisPos;
+	LTVector basis_right;
+	LTVector basis_up;
+	LTVector basis_forward;
+	float fZ = 0.0f;
+
+	constexpr float kSpritePositionBias = -20.0f;
+	constexpr float kSpriteMinFactorDist = 10.0f;
+	constexpr float kSpriteMaxFactorDist = 500.0f;
+	constexpr float kSpriteMinFactor = 0.1f;
+	constexpr float kSpriteMaxFactor = 2.0f;
+
+	if (is_rotatable)
+	{
+		LTMatrix rotation_matrix = diligent_build_transform(vPos, instance->m_Rotation, instance->m_Scale);
+		rotation_matrix.GetBasisVectors(&vRight, &vUp, &vForward);
+		static_cast<void>(vForward);
+		vRight *= tex_width;
+		vUp *= tex_height;
+		vBasisPos = params.m_Pos;
+	}
+	else
+	{
+		if (really_close)
+		{
+			basis_right.Init(1.0f, 0.0f, 0.0f);
+			basis_up.Init(0.0f, 1.0f, 0.0f);
+			basis_forward.Init(0.0f, 0.0f, 1.0f);
+			vBasisPos.Init(0.0f, 0.0f, 0.0f);
+		}
+		else
+		{
+			basis_right = params.m_Right;
+			basis_up = params.m_Up;
+			basis_forward = params.m_Forward;
+			vBasisPos = params.m_Pos;
+		}
+
+		fZ = (vPos - vBasisPos).Dot(basis_forward);
+		if (!really_close && fZ < NEARZ)
+		{
+			return true;
+		}
+
+		float size_x = tex_width * instance->m_Scale.x;
+		float size_y = tex_height * instance->m_Scale.y;
+
+		if (instance->m_Flags & FLAG_GLOWSPRITE)
+		{
+			float factor = (fZ - kSpriteMinFactorDist) / (kSpriteMaxFactorDist - kSpriteMinFactorDist);
+			factor = LTCLAMP(factor, 0.0f, 1.0f);
+			factor = kSpriteMinFactor + ((kSpriteMaxFactor - kSpriteMinFactor) * factor);
+			size_x *= factor;
+			size_y *= factor;
+		}
+
+		vRight = basis_right * size_x;
+		vUp = basis_up * size_y;
+	}
+
+	sprite_verts[0].SetupVert(vPos + vUp - vRight, color, 0.0f, 0.0f);
+	sprite_verts[1].SetupVert(vPos + vUp + vRight, color, 1.0f, 0.0f);
+	sprite_verts[2].SetupVert(vPos + vRight - vUp, color, 1.0f, 1.0f);
+	sprite_verts[3].SetupVert(vPos - vRight - vUp, color, 0.0f, 1.0f);
+
+	DiligentSpriteVertex* points = sprite_verts;
+	uint32 point_count = 4;
+	DiligentSpriteVertex clipped_verts[45];
+
+	if (instance->m_ClipperPoly != INVALID_HPOLY)
+	{
+		if (!diligent_clip_sprite(instance, instance->m_ClipperPoly, &points, &point_count, clipped_verts))
+		{
+			return true;
+		}
+	}
+
+	if (point_count < 3)
+	{
+		return true;
+	}
+
+	if ((instance->m_Flags & FLAG_SPRITEBIAS) && !really_close)
+	{
+		if (is_rotatable)
+		{
+			for (uint32 i = 0; i < point_count; ++i)
+			{
+				LTVector& vPt = points[i].m_Vec;
+				LTVector vPtRelCamera = vPt - params.m_Pos;
+				float local_z = vPtRelCamera.Dot(params.m_Forward);
+
+				if (local_z <= NEARZ)
+				{
+					continue;
+				}
+
+				float bias_dist = kSpritePositionBias;
+				if ((local_z + bias_dist) < NEARZ)
+				{
+					bias_dist = NEARZ - local_z;
+				}
+
+				float scale = 1.0f + bias_dist / local_z;
+				vPt = params.m_Right * vPtRelCamera.Dot(params.m_Right) * scale +
+					params.m_Up * vPtRelCamera.Dot(params.m_Up) * scale +
+					(local_z + bias_dist) * params.m_Forward + params.m_Pos;
+			}
+		}
+		else if (fZ > 0.0f)
+		{
+			float bias_dist = kSpritePositionBias;
+			if ((fZ + bias_dist) < NEARZ)
+			{
+				bias_dist = NEARZ - fZ;
+			}
+
+			float scale = 1.0f + bias_dist / fZ;
+			for (uint32 i = 0; i < point_count; ++i)
+			{
+				LTVector& vPt = points[i].m_Vec;
+				vPt = basis_right * (vPt - vBasisPos).Dot(basis_right) * scale +
+					basis_up * (vPt - vBasisPos).Dot(basis_up) * scale +
+					(fZ + bias_dist) * basis_forward + vBasisPos;
+			}
+		}
+	}
+
+	std::vector<DiligentWorldVertex> vertices;
+	vertices.resize(point_count);
+	for (uint32 i = 0; i < point_count; ++i)
+	{
+		auto& dst = vertices[i];
+		dst.position[0] = points[i].m_Vec.x;
+		dst.position[1] = points[i].m_Vec.y;
+		dst.position[2] = points[i].m_Vec.z;
+		diligent_set_world_vertex_color(dst, points[i].color);
+		dst.uv0[0] = points[i].u;
+		dst.uv0[1] = points[i].v;
+		dst.uv1[0] = 0.0f;
+		dst.uv1[1] = 0.0f;
+	}
+
+	std::vector<uint16> indices;
+	indices.reserve((point_count - 2) * 3);
+	for (uint32 i = 1; i + 1 < point_count; ++i)
+	{
+		indices.push_back(0);
+		indices.push_back(static_cast<uint16>(i));
+		indices.push_back(static_cast<uint16>(i + 1));
+	}
+
+	DiligentWorldConstants constants;
+	LTMatrix world_matrix;
+	world_matrix.Identity();
+	const bool fog_enabled = (g_CV_FogEnable.m_Val != 0) && ((instance->m_Flags & FLAG_FOGDISABLE) == 0);
+	diligent_fill_world_constants(params, world_matrix, fog_enabled, fog_near, fog_far, constants);
+
+	const DiligentWorldBlendMode blend_mode = diligent_get_object_blend_mode(instance);
+	return diligent_draw_world_immediate(
+		constants,
+		blend_mode,
+		depth_mode,
+		render_texture->srv,
+		nullptr,
+		false,
+		vertices.data(),
+		static_cast<uint32>(vertices.size()),
+		indices.data(),
+		static_cast<uint32>(indices.size()));
+}
+
+bool diligent_draw_sprite_list(
+	const std::vector<SpriteInstance*>& sprites,
+	const ViewParams& params,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode)
+{
+	for (auto* sprite : sprites)
+	{
+		if (!diligent_draw_sprite_instance(params, sprite, fog_near, fog_far, depth_mode))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static LTVector diligent_compute_polygrid_normal(
+	const LTPolyGrid* grid,
+	int32 x_index,
+	int32 y_index,
+	float spacing_x,
+	float spacing_z,
+	float y_scale)
+{
+	const int32 width = static_cast<int32>(grid->m_Width);
+	const int8* data = reinterpret_cast<const int8*>(grid->m_Data);
+
+	const int32 x0 = x_index > 0 ? x_index - 1 : x_index;
+	const int32 x1 = x_index + 1 < width ? x_index + 1 : x_index;
+	const int32 y0 = y_index > 0 ? y_index - 1 : y_index;
+	const int32 y1 = y_index + 1 < height ? y_index + 1 : y_index;
+
+	const float left = static_cast<float>(data[y_index * width + x0]);
+	const float right = static_cast<float>(data[y_index * width + x1]);
+	const float up = static_cast<float>(data[y0 * width + x_index]);
+	const float down = static_cast<float>(data[y1 * width + x_index]);
+
+	LTVector normal(
+		(left - right) * y_scale * spacing_z,
+		spacing_x * spacing_z,
+		(up - down) * y_scale * spacing_x);
+	normal.Normalize();
+	return normal;
+}
+
+static void diligent_compute_envmap_uv(
+	const ViewParams& params,
+	const LTMatrix& world_matrix,
+	const LTVector& local_pos,
+	const LTVector& local_normal,
+	float& u_out,
+	float& v_out)
+{
+	LTVector world_pos = local_pos;
+	world_matrix.Apply(world_pos);
+
+	LTVector world_normal = local_normal;
+	world_matrix.Apply3x3(world_normal);
+	world_normal.Normalize();
+
+	LTVector view_dir = params.m_Pos - world_pos;
+	const float view_mag = view_dir.Mag();
+	if (view_mag > 0.0001f)
+	{
+		view_dir /= view_mag;
+	}
+
+	LTVector incident = -view_dir;
+	const float dot_val = incident.Dot(world_normal);
+	LTVector reflection = incident - (2.0f * dot_val) * world_normal;
+	params.m_mView.Apply3x3(reflection);
+	const float refl_mag = reflection.Mag();
+	if (refl_mag > 0.0001f)
+	{
+		reflection /= refl_mag;
+	}
+
+	u_out = 0.5f + 0.5f * reflection.x;
+	v_out = 0.5f - 0.5f * reflection.y;
+}
+
+bool diligent_draw_polygrid_instance(
+	const ViewParams& params,
+	LTPolyGrid* grid,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode)
+{
+	if (!grid || !grid->m_Data || !grid->m_Indices || grid->m_nIndices == 0)
+	{
+		return true;
+	}
+
+	if (grid->m_Width < 2 || grid->m_Height < 2)
+	{
+		return true;
+	}
+
+	const bool wants_env_map = (grid->m_pEnvMap && g_CV_EnvMapPolyGrids.m_Val != 0);
+	const bool wants_bump_map = wants_env_map && (grid->m_nPGFlags & PG_NORMALMAPSPRITE) && (g_CV_BumpMapPolyGrids.m_Val != 0);
+
+	SharedTexture* texture = nullptr;
+	if (grid->m_pSprite && grid->m_SpriteTracker.m_pCurFrame)
+	{
+		texture = grid->m_SpriteTracker.m_pCurFrame->m_pTex;
+	}
+
+	Diligent::ITextureView* texture_view = texture ? diligent_get_texture_view(texture, false) : nullptr;
+	Diligent::ITextureView* env_map_view = wants_env_map ? diligent_get_texture_view(grid->m_pEnvMap, false) : nullptr;
+	Diligent::ITextureView* base_view = texture_view;
+	const bool use_env_map = (base_view && env_map_view);
+	const bool use_bump = wants_bump_map && texture_view && env_map_view;
+
+	const float half_width = (static_cast<float>(grid->m_Width) - 1.0f) * 0.5f;
+	const float half_height = (static_cast<float>(grid->m_Height) - 1.0f) * 0.5f;
+
+	const float x_inc = grid->GetDims().x * 2.0f / (grid->m_Width - 1);
+	const float z_inc = grid->GetDims().z * 2.0f / (grid->m_Height - 1);
+	const float y_scale = grid->GetDims().y / 127.0f;
+	const float spacing_x = x_inc * 2.0f;
+	const float spacing_z = z_inc * 2.0f;
+
+	const float x_start = -half_width * x_inc;
+	float curr_x = x_start;
+	float curr_z = -half_height * z_inc;
+
+	int8* data_pos = reinterpret_cast<int8*>(grid->m_Data);
+	int8* data_end = data_pos + grid->m_Width * grid->m_Height;
+	int8* line_end = data_pos + grid->m_Width;
+
+	const float scaled_r = static_cast<float>(grid->m_ColorR) / 255.0f;
+	const float scaled_g = static_cast<float>(grid->m_ColorG) / 255.0f;
+	const float scaled_b = static_cast<float>(grid->m_ColorB) / 255.0f;
+	const float alpha = static_cast<float>(grid->m_ColorA);
+
+	uint32 color_table[256];
+	for (uint32 i = 0; i < 256; ++i)
+	{
+		const auto& base_color = grid->m_ColorTable[i];
+		const uint8 r = static_cast<uint8>(LTCLAMP(base_color.x * scaled_r, 0.0f, 255.0f));
+		const uint8 g = static_cast<uint8>(LTCLAMP(base_color.y * scaled_g, 0.0f, 255.0f));
+		const uint8 b = static_cast<uint8>(LTCLAMP(base_color.z * scaled_b, 0.0f, 255.0f));
+		const uint8 a = static_cast<uint8>(LTCLAMP(alpha, 0.0f, 255.0f));
+		color_table[i] = (static_cast<uint32>(a) << 24) |
+			(static_cast<uint32>(r) << 16) |
+			(static_cast<uint32>(g) << 8) |
+			static_cast<uint32>(b);
+	}
+
+	uint32* color_lookup = color_table + 128;
+
+	const float x_scale = grid->m_xScale / ((grid->m_Width - 1) * x_inc);
+	const float z_scale = grid->m_yScale / ((grid->m_Height - 1) * z_inc);
+
+	float uv_scale = 1.0f;
+	if (use_bump)
+	{
+		auto* render_texture = diligent_get_render_texture(texture, false);
+		if (render_texture && render_texture->texture_data)
+		{
+			uv_scale = render_texture->texture_data->m_Header.GetDetailTextureScale();
+		}
+	}
+
+	const float start_u = static_cast<float>(fmod(grid->m_xPan * uv_scale, 1.0f));
+	const float start_v = static_cast<float>(fmod(grid->m_yPan * uv_scale, 1.0f));
+
+	float curr_u = start_u;
+	float curr_v = start_v;
+	const float u_inc = x_inc * x_scale * uv_scale;
+	const float v_inc = z_inc * z_scale * uv_scale;
+
+	LTMatrix world_matrix = diligent_build_transform(grid->GetPos(), grid->m_Rotation, LTVector(1.0f, 1.0f, 1.0f));
+	std::vector<DiligentWorldVertex> vertices;
+	vertices.reserve(static_cast<size_t>(grid->m_Width) * grid->m_Height);
+
+	int32 x_index = 0;
+	int32 y_index = 0;
+
+	if (grid->m_pValidMask)
+	{
+		uint32* curr_mask = grid->m_pValidMask;
+		const uint32 mask_line_adjust = (grid->m_Width % 32) ? 1 : 0;
+		uint32 shift = 1;
+
+		while (data_pos < data_end)
+		{
+			shift = 1;
+			while (data_pos < line_end)
+			{
+				if (*curr_mask & shift)
+				{
+					DiligentWorldVertex vertex{};
+					vertex.position[0] = curr_x;
+					const float height_value = static_cast<float>(*data_pos) * y_scale;
+					vertex.position[1] = height_value;
+					vertex.position[2] = curr_z;
+					diligent_set_world_vertex_color(vertex, color_lookup[*data_pos]);
+					vertex.uv0[0] = curr_u;
+					vertex.uv0[1] = curr_v;
+					if (use_env_map)
+					{
+						const LTVector local_pos(curr_x, height_value, curr_z);
+						const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
+						diligent_compute_envmap_uv(params, world_matrix, local_pos, local_normal, vertex.uv1[0], vertex.uv1[1]);
+					}
+					else
+					{
+						vertex.uv1[0] = 0.0f;
+						vertex.uv1[1] = 0.0f;
+					}
+					vertices.push_back(vertex);
+				}
+
+				++data_pos;
+				curr_x += x_inc;
+				curr_u += u_inc;
+				++x_index;
+
+				if (shift == 0x80000000)
+				{
+					++curr_mask;
+					shift = 1;
+				}
+				else
+				{
+					shift <<= 1;
+				}
+			}
+
+			curr_x = x_start;
+			line_end += grid->m_Width;
+			curr_mask += mask_line_adjust;
+			curr_z += z_inc;
+			curr_u = start_u;
+			curr_v += v_inc;
+			x_index = 0;
+			++y_index;
+		}
+	}
+	else
+	{
+		while (data_pos < data_end)
+		{
+			while (data_pos < line_end)
+			{
+				DiligentWorldVertex vertex{};
+				vertex.position[0] = curr_x;
+				const float height_value = static_cast<float>(*data_pos) * y_scale;
+				vertex.position[1] = height_value;
+				vertex.position[2] = curr_z;
+				diligent_set_world_vertex_color(vertex, color_lookup[*data_pos]);
+				vertex.uv0[0] = curr_u;
+				vertex.uv0[1] = curr_v;
+				if (use_env_map)
+				{
+					const LTVector local_pos(curr_x, height_value, curr_z);
+					const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
+					diligent_compute_envmap_uv(params, world_matrix, local_pos, local_normal, vertex.uv1[0], vertex.uv1[1]);
+				}
+				else
+				{
+					vertex.uv1[0] = 0.0f;
+					vertex.uv1[1] = 0.0f;
+				}
+				vertices.push_back(vertex);
+
+				++data_pos;
+				curr_x += x_inc;
+				curr_u += u_inc;
+				++x_index;
+			}
+
+			curr_x = x_start;
+			line_end += grid->m_Width;
+			curr_z += z_inc;
+			curr_u = start_u;
+			curr_v += v_inc;
+			x_index = 0;
+			++y_index;
+		}
+	}
+
+	if (vertices.empty())
+	{
+		return true;
+	}
+
+	const bool fog_enabled = (g_CV_FogEnable.m_Val != 0) && ((grid->m_Flags & FLAG_FOGDISABLE) == 0);
+	DiligentWorldConstants constants;
+	diligent_fill_world_constants(params, world_matrix, fog_enabled, fog_near, fog_far, constants);
+	if (use_bump)
+	{
+		constants.dynamic_light_pos[0] = g_CV_EnvBumpMapScale.m_Val;
+	}
+
+	const DiligentWorldBlendMode blend_mode = diligent_get_object_blend_mode(grid);
+	return diligent_draw_world_immediate(
+		constants,
+		blend_mode,
+		depth_mode,
+		base_view,
+		use_env_map ? env_map_view : nullptr,
+		use_bump,
+		vertices.data(),
+		static_cast<uint32>(vertices.size()),
+		grid->m_Indices,
+		grid->m_nIndices);
+}
+
+bool diligent_draw_polygrid_list(
+	const std::vector<LTPolyGrid*>& grids,
+	const ViewParams& params,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode)
+{
+	for (auto* grid : grids)
+	{
+		if (!diligent_draw_polygrid_instance(params, grid, fog_near, fog_far, depth_mode))
+		{
+			return false;
 		}
 	}
 
@@ -4225,7 +5688,7 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			}
 
 			const uint8 mode = kWorldPipelineGlowTextured;
-			auto* pipeline = diligent_get_world_pipeline(mode);
+			auto* pipeline = diligent_get_world_pipeline(mode, kWorldBlendSolid, kWorldDepthEnabled);
 			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 			{
 				continue;
@@ -6436,6 +7899,196 @@ bool diligent_should_process_model(LTObject* object)
 	return true;
 }
 
+DiligentRenderWorld* diligent_find_world_model(const WorldModelInstance* instance)
+{
+	if (!instance || !g_render_world)
+	{
+		return nullptr;
+	}
+
+	const auto* bsp = instance->GetOriginalBsp();
+	if (!bsp)
+	{
+		return nullptr;
+	}
+
+	const uint32 name_hash = st_GetHashCode(bsp->m_WorldName);
+	auto it = g_render_world->world_models.find(name_hash);
+	return it != g_render_world->world_models.end() ? it->second.get() : nullptr;
+}
+
+bool diligent_should_process_world_model(LTObject* object)
+{
+	if (!object || !object->HasWorldModel())
+	{
+		return false;
+	}
+
+	if (!g_CV_DrawWorldModels.m_Val)
+	{
+		return false;
+	}
+
+	if ((object->m_Flags & FLAG_VISIBLE) == 0)
+	{
+		return false;
+	}
+
+	if (object->m_Flags2 & FLAG2_SKYOBJECT)
+	{
+		return false;
+	}
+
+	if (object->m_WTFrameCode == g_diligent_object_frame_code)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void diligent_process_world_model_object(LTObject* object)
+{
+	if (!diligent_should_process_world_model(object))
+	{
+		return;
+	}
+
+	object->m_WTFrameCode = g_diligent_object_frame_code;
+
+	auto* instance = object->ToWorldModel();
+	if (!instance)
+	{
+		return;
+	}
+
+	if (object->IsTranslucent())
+	{
+		g_diligent_translucent_world_models.push_back(instance);
+	}
+	else
+	{
+		g_diligent_solid_world_models.push_back(instance);
+	}
+}
+
+bool diligent_should_process_sprite(LTObject* object)
+{
+	if (!object || object->m_ObjectType != OT_SPRITE)
+	{
+		return false;
+	}
+
+	if (!g_CV_DrawSprites.m_Val)
+	{
+		return false;
+	}
+
+	if ((object->m_Flags & FLAG_VISIBLE) == 0)
+	{
+		return false;
+	}
+
+	if (object->m_Flags2 & FLAG2_SKYOBJECT)
+	{
+		return false;
+	}
+
+	if (object->m_WTFrameCode == g_diligent_object_frame_code)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void diligent_process_sprite_object(LTObject* object)
+{
+	if (!diligent_should_process_sprite(object))
+	{
+		return;
+	}
+
+	object->m_WTFrameCode = g_diligent_object_frame_code;
+
+	auto* instance = object->ToSprite();
+	if (!instance)
+	{
+		return;
+	}
+
+	if (object->m_Flags & FLAG_SPRITE_NOZ)
+	{
+		g_diligent_noz_sprites.push_back(instance);
+	}
+	else
+	{
+		g_diligent_translucent_sprites.push_back(instance);
+	}
+}
+
+bool diligent_should_process_polygrid(LTObject* object)
+{
+	if (!object || object->m_ObjectType != OT_POLYGRID)
+	{
+		return false;
+	}
+
+	if (!g_CV_DrawPolyGrids.m_Val)
+	{
+		return false;
+	}
+
+	if ((object->m_Flags & FLAG_VISIBLE) == 0)
+	{
+		return false;
+	}
+
+	if (object->m_Flags2 & FLAG2_SKYOBJECT)
+	{
+		return false;
+	}
+
+	if (object->m_WTFrameCode == g_diligent_object_frame_code)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void diligent_process_polygrid_object(LTObject* object)
+{
+	if (!diligent_should_process_polygrid(object))
+	{
+		return;
+	}
+
+	object->m_WTFrameCode = g_diligent_object_frame_code;
+
+	auto* grid = object->ToPolyGrid();
+	if (!grid)
+	{
+		return;
+	}
+
+	if (object->IsTranslucent())
+	{
+		if (grid->m_nPGFlags & PG_RENDERBEFORETRANSLUCENTS)
+		{
+			g_diligent_early_translucent_polygrids.push_back(grid);
+		}
+		else
+		{
+			g_diligent_translucent_polygrids.push_back(grid);
+		}
+	}
+	else
+	{
+		g_diligent_solid_polygrids.push_back(grid);
+	}
+}
+
 bool diligent_should_process_canvas(LTObject* object)
 {
 	if (!object || object->m_ObjectType != OT_CANVAS)
@@ -6689,6 +8342,150 @@ void diligent_filter_world_node_for_models(const ViewParams& params, const World
 		}
 
 		diligent_filter_world_node_for_models(params, child);
+	}
+}
+
+void diligent_filter_world_node_for_world_models(const ViewParams& params, const WorldTreeNode* node)
+{
+	if (!node)
+	{
+		return;
+	}
+
+	auto* list_head = node->m_Objects[NOA_Objects].AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object || !object->HasWorldModel())
+		{
+			continue;
+		}
+
+		const LTVector min = object->m_Pos - object->m_Dims;
+		const LTVector max = object->m_Pos + object->m_Dims;
+		if (!params.ViewAABBIntersect(min, max))
+		{
+			continue;
+		}
+
+		diligent_process_world_model_object(object);
+	}
+
+	if (!node->HasChildren())
+	{
+		return;
+	}
+
+	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
+	{
+		const WorldTreeNode* child = node->GetChild(child_index);
+		if (!child || child->GetNumObjectsOnOrBelow() == 0)
+		{
+			continue;
+		}
+
+		if (!params.ViewAABBIntersect(child->GetBBoxMin(), child->GetBBoxMax()))
+		{
+			continue;
+		}
+
+		diligent_filter_world_node_for_world_models(params, child);
+	}
+}
+
+void diligent_filter_world_node_for_sprites(const ViewParams& params, const WorldTreeNode* node)
+{
+	if (!node)
+	{
+		return;
+	}
+
+	auto* list_head = node->m_Objects[NOA_Objects].AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object || object->m_ObjectType != OT_SPRITE)
+		{
+			continue;
+		}
+
+		const LTVector min = object->m_Pos - object->m_Dims;
+		const LTVector max = object->m_Pos + object->m_Dims;
+		if (!params.ViewAABBIntersect(min, max))
+		{
+			continue;
+		}
+
+		diligent_process_sprite_object(object);
+	}
+
+	if (!node->HasChildren())
+	{
+		return;
+	}
+
+	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
+	{
+		const WorldTreeNode* child = node->GetChild(child_index);
+		if (!child || child->GetNumObjectsOnOrBelow() == 0)
+		{
+			continue;
+		}
+
+		if (!params.ViewAABBIntersect(child->GetBBoxMin(), child->GetBBoxMax()))
+		{
+			continue;
+		}
+
+		diligent_filter_world_node_for_sprites(params, child);
+	}
+}
+
+void diligent_filter_world_node_for_polygrids(const ViewParams& params, const WorldTreeNode* node)
+{
+	if (!node)
+	{
+		return;
+	}
+
+	auto* list_head = node->m_Objects[NOA_Objects].AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object || object->m_ObjectType != OT_POLYGRID)
+		{
+			continue;
+		}
+
+		const LTVector min = object->m_Pos - object->m_Dims;
+		const LTVector max = object->m_Pos + object->m_Dims;
+		if (!params.ViewAABBIntersect(min, max))
+		{
+			continue;
+		}
+
+		diligent_process_polygrid_object(object);
+	}
+
+	if (!node->HasChildren())
+	{
+		return;
+	}
+
+	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
+	{
+		const WorldTreeNode* child = node->GetChild(child_index);
+		if (!child || child->GetNumObjectsOnOrBelow() == 0)
+		{
+			continue;
+		}
+
+		if (!params.ViewAABBIntersect(child->GetBBoxMin(), child->GetBBoxMax()))
+		{
+			continue;
+		}
+
+		diligent_filter_world_node_for_polygrids(params, child);
 	}
 }
 
@@ -7278,6 +9075,210 @@ bool diligent_draw_models(SceneDesc* desc)
 	}
 
 	return true;
+}
+
+void diligent_collect_world_models(SceneDesc* desc)
+{
+	g_diligent_solid_world_models.clear();
+	g_diligent_translucent_world_models.clear();
+
+	if (!desc || !g_CV_DrawWorldModels.m_Val)
+	{
+		return;
+	}
+
+	if (g_render_struct && g_render_struct->IncObjectFrameCode)
+	{
+		g_diligent_object_frame_code = g_render_struct->IncObjectFrameCode();
+	}
+	else
+	{
+		++g_diligent_object_frame_code;
+	}
+
+	if (desc->m_DrawMode == DRAWMODE_OBJECTLIST)
+	{
+		if (!desc->m_pObjectList || desc->m_ObjectListSize <= 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < desc->m_ObjectListSize; ++i)
+		{
+			LTObject* object = desc->m_pObjectList[i];
+			if (!object)
+			{
+				continue;
+			}
+
+			diligent_process_world_model_object(object);
+		}
+
+		return;
+	}
+
+	if (desc->m_DrawMode != DRAWMODE_NORMAL)
+	{
+		return;
+	}
+
+	if (!world_bsp_client)
+	{
+		return;
+	}
+
+	WorldTree* tree = world_bsp_client->ClientTree();
+	if (!tree)
+	{
+		return;
+	}
+
+	diligent_filter_world_node_for_world_models(g_ViewParams, tree->GetRootNode());
+
+	auto* list_head = tree->m_AlwaysVisObjects.AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object)
+		{
+			continue;
+		}
+
+		diligent_process_world_model_object(object);
+	}
+}
+
+void diligent_collect_sprites(SceneDesc* desc)
+{
+	g_diligent_translucent_sprites.clear();
+	g_diligent_noz_sprites.clear();
+
+	if (!desc || !g_CV_DrawSprites.m_Val)
+	{
+		return;
+	}
+
+	if (g_render_struct && g_render_struct->IncObjectFrameCode)
+	{
+		g_diligent_object_frame_code = g_render_struct->IncObjectFrameCode();
+	}
+	else
+	{
+		++g_diligent_object_frame_code;
+	}
+
+	if (desc->m_DrawMode == DRAWMODE_OBJECTLIST)
+	{
+		if (!desc->m_pObjectList || desc->m_ObjectListSize <= 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < desc->m_ObjectListSize; ++i)
+		{
+			LTObject* object = desc->m_pObjectList[i];
+			if (!object)
+			{
+				continue;
+			}
+
+			diligent_process_sprite_object(object);
+		}
+
+		return;
+	}
+
+	if (desc->m_DrawMode != DRAWMODE_NORMAL || !world_bsp_client)
+	{
+		return;
+	}
+
+	WorldTree* tree = world_bsp_client->ClientTree();
+	if (!tree)
+	{
+		return;
+	}
+
+	diligent_filter_world_node_for_sprites(g_ViewParams, tree->GetRootNode());
+
+	auto* list_head = tree->m_AlwaysVisObjects.AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object)
+		{
+			continue;
+		}
+
+		diligent_process_sprite_object(object);
+	}
+}
+
+void diligent_collect_polygrids(SceneDesc* desc)
+{
+	g_diligent_solid_polygrids.clear();
+	g_diligent_early_translucent_polygrids.clear();
+	g_diligent_translucent_polygrids.clear();
+
+	if (!desc || !g_CV_DrawPolyGrids.m_Val)
+	{
+		return;
+	}
+
+	if (g_render_struct && g_render_struct->IncObjectFrameCode)
+	{
+		g_diligent_object_frame_code = g_render_struct->IncObjectFrameCode();
+	}
+	else
+	{
+		++g_diligent_object_frame_code;
+	}
+
+	if (desc->m_DrawMode == DRAWMODE_OBJECTLIST)
+	{
+		if (!desc->m_pObjectList || desc->m_ObjectListSize <= 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < desc->m_ObjectListSize; ++i)
+		{
+			LTObject* object = desc->m_pObjectList[i];
+			if (!object)
+			{
+				continue;
+			}
+
+			diligent_process_polygrid_object(object);
+		}
+
+		return;
+	}
+
+	if (desc->m_DrawMode != DRAWMODE_NORMAL || !world_bsp_client)
+	{
+		return;
+	}
+
+	WorldTree* tree = world_bsp_client->ClientTree();
+	if (!tree)
+	{
+		return;
+	}
+
+	diligent_filter_world_node_for_polygrids(g_ViewParams, tree->GetRootNode());
+
+	auto* list_head = tree->m_AlwaysVisObjects.AsDLink();
+	for (LTLink* current = list_head->m_pNext; current != list_head; current = current->m_pNext)
+	{
+		auto* object = static_cast<LTObject*>(current->m_pData);
+		if (!object)
+		{
+			continue;
+		}
+
+		diligent_process_polygrid_object(object);
+	}
 }
 
 bool diligent_draw_models_glow(SceneDesc* desc, const CRenderStyleMap& render_style_map)
@@ -7902,9 +9903,12 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 	}
 
 	DiligentWorldConstants glow_constants;
-	LTMatrix glow_mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView;
+	LTMatrix glow_world;
+	glow_world.Identity();
+	LTMatrix glow_mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * glow_world;
 	diligent_store_matrix_from_lt(glow_mvp, glow_constants.mvp);
 	diligent_store_matrix_from_lt(g_ViewParams.m_mView, glow_constants.view);
+	diligent_store_matrix_from_lt(glow_world, glow_constants.world);
 	glow_constants.camera_pos[0] = g_ViewParams.m_Pos.x;
 	glow_constants.camera_pos[1] = g_ViewParams.m_Pos.y;
 	glow_constants.camera_pos[2] = g_ViewParams.m_Pos.z;
@@ -7918,6 +9922,12 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 	glow_target->InstallOnDevice();
 	diligent_set_viewport(static_cast<float>(g_diligent_glow_state.texture_width), static_cast<float>(g_diligent_glow_state.texture_height));
 	if (!diligent_draw_world_glow(glow_constants, g_visible_render_blocks))
+	{
+		g_ViewParams = saved_view;
+		g_visible_render_blocks = saved_blocks;
+		return false;
+	}
+	if (!diligent_draw_world_models_glow(g_diligent_solid_world_models, glow_constants))
 	{
 		g_ViewParams = saved_view;
 		g_visible_render_blocks = saved_blocks;
@@ -8108,12 +10118,56 @@ int diligent_RenderScene(SceneDesc* desc)
 		}
 	}
 
+	if (!diligent_draw_sky(desc))
+	{
+		return RENDER_ERROR;
+	}
+
+	diligent_collect_world_models(desc);
+	diligent_collect_polygrids(desc);
+	diligent_collect_sprites(desc);
+
 	if (!diligent_draw_world_blocks())
 	{
 		return RENDER_ERROR;
 	}
 
+	if (!diligent_draw_world_model_list(g_diligent_solid_world_models, kWorldBlendSolid))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_polygrid_list(g_diligent_solid_polygrids, g_ViewParams, g_CV_FogNearZ.m_Val, g_CV_FogFarZ.m_Val, kWorldDepthEnabled))
+	{
+		return RENDER_ERROR;
+	}
+
 	if (!diligent_draw_models(desc))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_polygrid_list(g_diligent_early_translucent_polygrids, g_ViewParams, g_CV_FogNearZ.m_Val, g_CV_FogFarZ.m_Val, kWorldDepthEnabled))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_world_model_list(g_diligent_translucent_world_models, kWorldBlendAlpha))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_polygrid_list(g_diligent_translucent_polygrids, g_ViewParams, g_CV_FogNearZ.m_Val, g_CV_FogFarZ.m_Val, kWorldDepthEnabled))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_sprite_list(g_diligent_translucent_sprites, g_ViewParams, g_CV_FogNearZ.m_Val, g_CV_FogFarZ.m_Val, kWorldDepthEnabled))
+	{
+		return RENDER_ERROR;
+	}
+
+	if (!diligent_draw_sprite_list(g_diligent_noz_sprites, g_ViewParams, g_CV_FogNearZ.m_Val, g_CV_FogFarZ.m_Val, kWorldDepthDisabled))
 	{
 		return RENDER_ERROR;
 	}
@@ -8598,6 +10652,7 @@ void diligent_Term(bool)
 	g_world_resources.pixel_shader_lightmap_only.Release();
 	g_world_resources.pixel_shader_solid.Release();
 	g_world_resources.pixel_shader_dynamic_light.Release();
+	g_world_resources.pixel_shader_bump.Release();
 	g_world_resources.constant_buffer.Release();
 	g_world_resources.vertex_buffer.Release();
 	g_world_resources.index_buffer.Release();

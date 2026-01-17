@@ -149,6 +149,8 @@
 - [ ] Validate UI overlay and video playback.
 - [ ] Verify performance and memory usage regressions.
 - [ ] Run Vulkan validation layers (Win/Linux) and Metal API validation (macOS) during bring-up; triage GPU validation errors.
+- [ ] Tune `EnvBumpMapScale` for polygrid env-bump response in Diligent.
+- [ ] Refine Diligent polygrid bump shader response after visual validation.
 
 ---
 
