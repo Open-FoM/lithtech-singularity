@@ -10357,11 +10357,16 @@ bool diligent_EnsureDevice()
 
 	if (!g_engine_factory)
 	{
+		dsi_ConsolePrint("Diligent: failed to load Vulkan engine factory.");
 		return false;
 	}
 
 	Diligent::EngineVkCreateInfo engine_create_info;
 	g_engine_factory->CreateDeviceAndContextsVk(engine_create_info, &g_render_device, &g_immediate_context);
+	if (!g_render_device || !g_immediate_context)
+	{
+		dsi_ConsolePrint("Diligent: failed to create device/contexts.");
+	}
 	return g_render_device && g_immediate_context;
 }
 
@@ -10369,15 +10374,20 @@ bool diligent_CreateSwapChain(uint32 width, uint32 height)
 {
 	if (!g_engine_factory || !g_render_device || !g_immediate_context || !g_native_window_handle)
 	{
+		dsi_ConsolePrint("Diligent: missing prerequisites for swap chain creation.");
 		return false;
 	}
 
-	Diligent::SwapChainDesc swap_chain_desc;
+	Diligent::SwapChainDesc swap_chain_desc{};
 	swap_chain_desc.Width = width;
 	swap_chain_desc.Height = height;
 
 	Diligent::Win32NativeWindow window{g_native_window_handle};
 	g_engine_factory->CreateSwapChainVk(g_render_device, g_immediate_context, swap_chain_desc, window, &g_swap_chain);
+	if (!g_swap_chain)
+	{
+		dsi_ConsolePrint("Diligent: failed to create swap chain.");
+	}
 	return static_cast<bool>(g_swap_chain);
 }
 

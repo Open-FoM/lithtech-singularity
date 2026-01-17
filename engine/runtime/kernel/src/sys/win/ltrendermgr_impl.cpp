@@ -119,8 +119,20 @@ LTRESULT CLTRenderMgr::RestoreDefaultRenderTarget()
 		return LT_ERROR;
 	}
 
-	auto* render_target = g_default_render_target ? g_default_render_target.RawPtr() : swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_default_depth_stencil ? g_default_depth_stencil.RawPtr() : swap_chain->GetDepthBufferDSV();
+	auto* current_back_buffer = swap_chain->GetCurrentBackBufferRTV();
+	auto* current_depth_buffer = swap_chain->GetDepthBufferDSV();
+	auto* render_target = g_default_render_target ? g_default_render_target.RawPtr() : current_back_buffer;
+	auto* depth_target = g_default_depth_stencil ? g_default_depth_stencil.RawPtr() : current_depth_buffer;
+
+	// If the swap chain was resized, cached views may be stale; prefer current views.
+	if (render_target && current_back_buffer && render_target->GetTexture() != current_back_buffer->GetTexture())
+	{
+		render_target = current_back_buffer;
+	}
+	if (depth_target && current_depth_buffer && depth_target->GetTexture() != current_depth_buffer->GetTexture())
+	{
+		depth_target = current_depth_buffer;
+	}
 	if (!render_target)
 	{
 		return LT_ERROR;
