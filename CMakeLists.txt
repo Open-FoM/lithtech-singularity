@@ -51,17 +51,6 @@ add_subdirectory (engine/runtime/ui/src)
 add_subdirectory (engine/runtime/winbuild/lithtech)
 add_subdirectory (engine/runtime/winbuild/ltmsg)
 add_subdirectory (engine/runtime/winbuild/server)
-add_subdirectory (game/clientfxdll)
-add_subdirectory (game/clientres/to2)
-add_subdirectory (game/clientshelldll/clientshellshared)
-add_subdirectory (game/clientshelldll/to2)
-add_subdirectory (game/launcher)
-add_subdirectory (game/libs/ltguimgr)
-add_subdirectory (game/libs/serverdir)
-add_subdirectory (game/objectdll/objectshared)
-add_subdirectory (game/objectdll/to2)
-add_subdirectory (game/serverres/to2)
-
 
 install (
 	DIRECTORY
