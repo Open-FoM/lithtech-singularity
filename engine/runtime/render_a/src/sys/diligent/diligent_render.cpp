@@ -7472,6 +7472,20 @@ bool diligent_glow_update_filter()
 		g_diligent_glow_state.filter[g_diligent_glow_state.filter_size++] = {};
 	}
 
+	float weight_sum = 0.0f;
+	for (uint32 index = 0; index < g_diligent_glow_state.filter_size; ++index)
+	{
+		weight_sum += g_diligent_glow_state.filter[index].weight;
+	}
+	if (weight_sum > 0.0f)
+	{
+		const float inv_weight_sum = 1.0f / weight_sum;
+		for (uint32 index = 0; index < g_diligent_glow_state.filter_size; ++index)
+		{
+			g_diligent_glow_state.filter[index].weight *= inv_weight_sum;
+		}
+	}
+
 	return true;
 }
 
