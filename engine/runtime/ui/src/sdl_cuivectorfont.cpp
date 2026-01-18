@@ -39,7 +39,7 @@
 
 #include "SDL3/SDL.h"
 
-#include "ftbuild.h"
+#include "ft2build.h"
 #include FT_FREETYPE_H
 
 #include "ltjs_sdl_uresources.h"

@@ -48,7 +48,7 @@ For bitmap fonts, an HTEXTURE is used to hold the font graphics, and must be
 
 TrueType font support is compiled into the engine by default.  If you do not
 wish to use TrueType fonts, open up the file 
-\b engine\engine\ui\src\freetype-2.0.1\include\freetype\config\ftoption.h
+\b libs\freetype\include\freetype\config\ftoption.h
 and \e #undef the macro FT_ENABLE_FREETYPE.  This will save you about 80K in
 code/data size.
 
