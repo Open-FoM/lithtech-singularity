@@ -12,6 +12,7 @@
 
 #include "bdefs.h"
 #include "clientmgr.h"
+#include "client_filemgr.h"
 #include "volumeeffect.h"
 
 

@@ -18,6 +18,7 @@
 #include "setupobject.h"
 #include "clientmgr.h"
 #include "sprite.h"
+#include "soundmgr.h"
 #include "consolecommands.h"
 #include "servermgr.h"
 #include "predict.h"
@@ -853,4 +854,3 @@ LTRESULT CClientShell::DoLoadWorld(const CPacket_Read &cPacket, bool bLocal)
 
     return LT_OK;
 }
-

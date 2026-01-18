@@ -7,6 +7,7 @@
 #include <io.h>
 #include <direct.h>
 #else // LINUX
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -124,7 +125,11 @@ void ExtractDir(CRezDir* pDir, const char* sParamPath) {
   if (sPath[strlen(sPath)-1] != '\\') strcat(sPath,"\\");
 
   // create the directory (just in case it doesn't exist)
+  #ifdef _WIN32
   _mkdir(sPath);
+  #else
+  mkdir(sPath, 0755);
+  #endif
 
   // search through all types in this dir
   CRezTyp* pTyp = pDir->GetFirstType();

@@ -14,6 +14,14 @@
 
 #include <vector>
 
+#ifndef MAX_PATH
+#	include <limits.h>
+#	ifndef PATH_MAX
+#		define PATH_MAX 1024
+#	endif
+#	define MAX_PATH PATH_MAX
+#endif
+
 //this object represents a custom font file that has been registered. This exists primarily
 //to serve as a locator to the file, and track whether or not it was an original file, or
 //one that had to be extracted.
@@ -23,6 +31,7 @@ public:
 	
 	const char*		GetFilename() const			{ return m_pszFilename; }
 	bool			IsExtracted() const			{ return m_bExtracted; }
+	const char*		GetFamilyName() const		{ return m_pszFamilyName; }
 
 private:
 
@@ -37,6 +46,9 @@ private:
 
 	//boolean indicating if the file was extracted
 	bool	m_bExtracted;
+
+	//normalized (lowercase) font family name, if known
+	char	m_pszFamilyName[128];
 };
 
 //the manager of the custom font files. This primarily handles all the registration code, and also
@@ -57,6 +69,9 @@ public:
 	//is not valid. Note that this will delete the font file so the pointer must not be used
 	//after this call.
 	bool				UnregisterCustomFontFile(CCustomFontFile* pFontFile);
+
+	//looks up a registered font file by family name (case-insensitive). Returns null if not found.
+	const char*			FindFontFileByFamily(const char* pszFamily) const;
 
 private:
 

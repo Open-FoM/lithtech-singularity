@@ -13,6 +13,7 @@
 // Includes....
 #include "bdefs.h"
 #include "clientmgr.h"
+#include "soundmgr.h"
 #include "consolecommands.h"
 
 

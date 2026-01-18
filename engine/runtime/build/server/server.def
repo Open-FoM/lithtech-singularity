@@ -1,0 +1,6 @@
+; server.def : Declares the module parameters.
+
+EXPORTS
+
+	CreateServer @1
+	DeleteServer @2

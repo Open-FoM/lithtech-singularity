@@ -6,12 +6,8 @@
 
 
 #ifdef __LINUX
-
-#ifndef WORD
+#ifndef LTJS_HAS_WIN_TYPES
 typedef unsigned short int WORD;
-#endif
-
-#ifndef DWORD
 typedef unsigned long int DWORD;
 #endif
 

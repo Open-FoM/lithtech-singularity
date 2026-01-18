@@ -9,10 +9,7 @@
 #include "iltstream.h"
 #include "conparse.h"
 #include "ltb.h"
-
-#ifndef __LINUX
 #include "render.h"
-#endif
 
 // ------------------------------------------------------------------------
 // D3D specific object creation routine.

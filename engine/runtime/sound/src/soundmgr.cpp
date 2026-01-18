@@ -1003,6 +1003,7 @@ LTRESULT CSoundMgr::RemoveSWSamples()
 //  Gets the directsound object.
 // 
 //----------------------------------------------------------------------------------------------
+#if defined(_WIN32) && !defined(__APPLE__)
 LPDIRECTSOUND8 CSoundMgr::GetDirectSound()
 {
     LPDIRECTSOUND8 lpDirectSound;
@@ -1018,6 +1019,7 @@ LPDIRECTSOUND8 CSoundMgr::GetDirectSound()
     
     return lpDirectSound;
 }
+#endif // _WIN32 && !__APPLE__
 
 /*
 //----------------------------------------------------------------------------------------------

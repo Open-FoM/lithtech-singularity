@@ -198,7 +198,7 @@ target_sources (
 		../../kernel/src/sys/win/dutil.h
 		../../kernel/src/sys/win/lthread.h
 		../../kernel/src/sys/win/ltthread.h
-		../../kernel/src/sys/win/render.h
+		../../kernel/src/render.h
 		../../kernel/src/sys/win/streamsim.h
 		../../kernel/src/sys/win/stringmgr.h
 		../../kernel/src/sys/win/timemgr.h

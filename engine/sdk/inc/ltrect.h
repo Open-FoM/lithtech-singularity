@@ -45,7 +45,7 @@ Used for:   2D Rendering.
 
 
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 // Provides the definition for the utility class LTRect that represents a
 // templatized 2d AABB. Each extent is stored in a 2d vector to allow easier
 // operation on individual components. Most utility function assume that
@@ -487,10 +487,9 @@ typedef TRect2<float>	LTRect2f;
 typedef TRect3<int32>	LTRect3n;
 typedef TRect3<float>	LTRect3f;
 
-#endif //!LINUX
+#endif // !__LINUX || __APPLE__
 
 #endif  //! __LTRECT_H__
-
 
 
 

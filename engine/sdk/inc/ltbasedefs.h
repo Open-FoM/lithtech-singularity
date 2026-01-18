@@ -61,14 +61,40 @@
 	#define MODULE_EXPORT
 	#define MODULE_IMPORT
 	#define _MAX_PATH 256
+#ifndef MAX_PATH
+	#define MAX_PATH _MAX_PATH
+#endif
+	#include <cstdint>
 	#include <ctype.h>
 	#include <strings.h>
+	#ifndef BYTE
+		typedef unsigned char BYTE;
+		#define BYTE BYTE
+	#endif
+	#ifndef WORD
+		typedef unsigned short WORD;
+		#define WORD WORD
+	#endif
+	#ifndef DWORD
+		typedef uint32_t DWORD;
+		#define DWORD DWORD
+	#endif
+	#ifndef BOOL
+		typedef int BOOL;
+		#define BOOL BOOL
+	#endif
+	#define LTJS_HAS_WIN_TYPES 1
 	inline int stricmp(const char* string1, const char* string2)
 	{ return strcasecmp(string1, string2); }
+	inline int strnicmp(const char* string1, const char* string2, size_t count)
+	{ return strncasecmp(string1, string2, count); }
 	inline char* strupr(char* s)
 	{ while (*s) { *s = toupper(*s); ++s; } return s; }
 	inline int notSupportedLinux ()
 	{  ASSERT( false && "Not supported on Linux" ); }
+	#ifndef OutputDebugString
+		inline void OutputDebugString(const char* /*message*/) {}
+	#endif
 
 #endif
 
@@ -101,14 +127,14 @@ inline uint32 LTStrLen(const char* pszStr1)
 	return 0;
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline uint32 LTStrLen(const wchar_t* pszStr1)
 {
 	if(pszStr1)
 		return (uint32)wcslen(pszStr1);
 	return 0;
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 /*!
 Called to determine if the provided string is empty. This will assume that NULL strings are 
@@ -119,12 +145,12 @@ inline bool LTStrEmpty(const char* pszStr)
 	return !pszStr || (pszStr[0] == '\0');
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline bool LTStrEmpty(const wchar_t* pszStr)
 {
 	return !pszStr || (pszStr[0] == (wchar_t)'\0');
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 
 /*!
@@ -171,7 +197,7 @@ inline void LTStrCpy(char *pDest, const char *pSrc, uint32 nBufferChars)
 
 
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline void LTStrCpy(wchar_t *pDest, const wchar_t *pSrc, uint32 nBufferChars) 
 {
 
@@ -198,7 +224,7 @@ inline void LTStrCpy(wchar_t *pDest, const wchar_t *pSrc, uint32 nBufferChars)
 	wcsncpy(pDest, pSrc, nBufferChars - 1);
 	pDest[nBufferChars - 1] = '\0';
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 
 /*!
@@ -228,7 +254,7 @@ inline char* LTStrDup(const char* pszString)
 	return pRV;
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline wchar_t* LTStrDup(const wchar_t* pszString)
 {
 	//handle a null input
@@ -250,7 +276,7 @@ inline wchar_t* LTStrDup(const wchar_t* pszString)
 
 	return pRV;
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 /*!
 Safe substring copy (strncpy doesn't always null terminate, but this does).
@@ -297,7 +323,7 @@ inline void LTStrCat(char *pDest, const char *pSrc, uint32 destBytes)
 	pDest[destLen + catLen] = '\0';
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline void LTStrCat(wchar_t *pDest, const wchar_t *pSrc, uint32 nBufferChars) 
 {
 
@@ -324,7 +350,7 @@ inline void LTStrCat(wchar_t *pDest, const wchar_t *pSrc, uint32 nBufferChars)
 	wcsncat(pDest, pSrc, catLen);
 	pDest[destLen + catLen] = '\0';
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 
 /*!
@@ -369,7 +395,7 @@ inline int32 LTStrCmp(const char* pszStr1, const char* pszStr2)
 	return strcmp(pszStr1, pszStr2);
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline int32 LTStrCmp(const wchar_t* pszStr1, const wchar_t* pszStr2)
 {
 #ifndef _FINAL
@@ -384,7 +410,7 @@ inline int32 LTStrCmp(const wchar_t* pszStr1, const wchar_t* pszStr2)
 
 	return wcscmp(pszStr1, pszStr2);
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 /*!
 Case sensitive string equality comparison
@@ -394,12 +420,12 @@ inline bool LTStrEquals(const char* pszStr1, const char* pszStr2)
 	return (LTStrCmp(pszStr1, pszStr2) == 0);
 }
 
-#ifndef __LINUX
+#if !defined(__LINUX) || defined(__APPLE__)
 inline bool LTStrEquals(const wchar_t* pszStr1, const wchar_t* pszStr2)
 {
 	return (LTStrCmp(pszStr1, pszStr2) == 0);
 }
-#endif
+#endif // !__LINUX || __APPLE__
 
 
 /*!

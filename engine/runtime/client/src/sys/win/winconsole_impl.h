@@ -7,6 +7,14 @@
 #ifndef __WINCONSOLE_IMPL_H__
 #define __WINCONSOLE_IMPL_H__
 
+#if !defined(_WIN32) && !defined(WIN32)
+typedef void* HWND;
+typedef uint32 COLORREF;
+#ifndef RGB
+#define RGB(r, g, b) ((COLORREF)((((uint32)(r)) & 0xFF) | ((((uint32)(g)) & 0xFF) << 8) | ((((uint32)(b)) & 0xFF) << 16)))
+#endif
+#endif
+
 #ifndef __CONSOLE_H__
 #include "console.h"
 #endif

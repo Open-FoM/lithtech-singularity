@@ -5,6 +5,7 @@
 #include "de_objects.h"
 #include "clientmgr.h"
 #include "clientshell.h"
+#include "sysfile.h"
 
 //	===========================================================================
 #ifdef USE_ABSTRACT_SOUND_INTERFACES
@@ -1505,4 +1506,3 @@ LTRESULT C3DSoundInstance::GetOcclusion( LTFLOAT &fLevel)
 	fLevel = GetSoundSys()->Get3DSampleOcclusion( m_h3DSample );
 	return LT_OK;
 }
-

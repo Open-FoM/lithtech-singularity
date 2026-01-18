@@ -39,9 +39,13 @@
 #include "ltrendererstats.h"
 #include "rendererframestats.h"
 
+#include "soundmgr.h"
+
+#if LTJS_USE_D3DX9
 #include "ltvertexshadermgr.h"
 #include "ltpixelshadermgr.h"
 #include "lteffectshadermgr.h"
+#endif // LTJS_USE_D3DX9
 #include "ltinfo_impl.h"
 
 #ifdef LTJS_SDL_BACKEND
@@ -1354,7 +1358,7 @@ HSTRING CLTClient::CopyString(HSTRING hString)
 HSTRING CLTClient::CreateString(const char *pString)
 {
 	if (pString)
-		return str_CreateStringAnsi(pString);
+		return str_CreateStringAnsi(const_cast<char*>(pString));
 	else
 		return LTNULL;
 }

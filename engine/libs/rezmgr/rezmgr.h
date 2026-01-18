@@ -16,7 +16,13 @@
 // defines
 
 #ifndef DWORD
+#if defined(_WIN32)
 typedef unsigned long int	DWORD;
+#else
+#include <cstdint>
+typedef uint32_t DWORD;
+#endif
+#define DWORD DWORD
 #endif
 
 #define RezMgrUserTitleSize     60
@@ -25,6 +31,41 @@ typedef unsigned long int	DWORD;
 #include <stdio.h>
 #define __STDIO_H__
 #endif
+
+#ifndef _WIN32
+#include <time.h>
+
+#ifndef _MAX_DRIVE
+#define _MAX_DRIVE 3
+#endif
+#ifndef _MAX_DIR
+#define _MAX_DIR 256
+#endif
+#ifndef _MAX_FNAME
+#define _MAX_FNAME 256
+#endif
+#ifndef _MAX_EXT
+#define _MAX_EXT 256
+#endif
+
+struct _finddata_t {
+	unsigned int attrib;
+	time_t time_create;
+	time_t time_access;
+	time_t time_write;
+	unsigned long size;
+	char name[260];
+};
+
+#ifndef _A_SUBDIR
+#define _A_SUBDIR 0x10
+#endif
+
+std::intptr_t _findfirst(char* filespec, _finddata_t* fileinfo);
+int _findnext(long handle, _finddata_t* fileinfo);
+int _findclose(long handle);
+void _splitpath(const char* path, char* drive, char* dir, char* fname, char* ext);
+#endif // !_WIN32
 
 #ifndef __REZTYPES_H__
 #include "reztypes.h"
@@ -371,4 +412,3 @@ private:
 
 
 #endif
-

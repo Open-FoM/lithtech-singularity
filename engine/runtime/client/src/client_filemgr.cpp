@@ -3,6 +3,7 @@
 #include "sysfile.h"
 #include "ftclient.h"
 #include "console.h"
+#include "client_filemgr.h"
 #include "clientmgr.h"
 #include "impl_common.h"
 
@@ -602,7 +603,6 @@ FTClient* CClientFileMgr::GetFTClient()
 	return m_hFTClient;
 
 }
-
 
 
 

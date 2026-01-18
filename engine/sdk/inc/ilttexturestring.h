@@ -14,6 +14,10 @@
 #	include "ltmodule.h"
 #endif
 
+#ifndef __LTRECT_H__
+#	include "ltrect.h"
+#endif
+
 
 //for the TEXTURE INTERFACE definition
 #ifndef __ILTTEXINTERFACE_H__

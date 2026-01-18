@@ -5,7 +5,7 @@
 #ifndef __CLIENT_TICKS_H__
 #define __CLIENT_TICKS_H__
 
-	#include "counter.h"
+	#include "syscounter.h"
 
 	// Count for the whole update loop.
 	extern uint32 g_Ticks_Total;
@@ -43,6 +43,5 @@
 	void ctik_ShowTickStatus();
 
 #endif  // __CLIENT_TICKS_H__
-
 
 

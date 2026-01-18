@@ -33,6 +33,7 @@
 #include "ltmessage_client.h"
 
 #include "misctools.h"
+#include "soundmgr.h"
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -1823,7 +1824,6 @@ void CClientShell::SendGoodbye(void)
 	cGoodbye.Writeuint8(CMSG_GOODBYE);
 	g_pClientMgr->m_NetMgr.SendPacket(CPacket_Read(cGoodbye), m_HostID);
 }
-
 
 
 

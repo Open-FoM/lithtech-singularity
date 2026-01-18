@@ -1,7 +1,7 @@
 
 #include "bdefs.h"
 #include "console.h"
-#include "counter.h"
+#include "syscounter.h"
 
 #include "client_ticks.h"
 
@@ -272,4 +272,3 @@ void ctik_ShowTickStatus()
 			
 	con_WhitePrintf("");
 }
-

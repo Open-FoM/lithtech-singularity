@@ -50,7 +50,7 @@ LTRESULT in_GetVersionInfoExt(LTVERSIONINFOEXT* pVersionInfo)
 	pVersionInfo->m_dwBuildMonth = LT_VI_BUILD_MONTH;
 	pVersionInfo->m_dwBuildDay = LT_VI_BUILD_DAY;
 	pVersionInfo->m_dwBuildYear = LT_VI_BUILD_YEAR;
-	lstrcpy(pVersionInfo->m_sBuildName, LT_VI_BUILD_NAME);
+	LTStrCpy(pVersionInfo->m_sBuildName, LT_VI_BUILD_NAME, sizeof(pVersionInfo->m_sBuildName));
 	pVersionInfo->m_dwLanguage = LT_VI_LANG;
 	pVersionInfo->m_dwPlatform = LT_VI_PLAT;
 	pVersionInfo->m_dwReserved1 = 0;
@@ -83,7 +83,7 @@ LTRESULT in_GetPerformanceInfo(LTPERFORMANCEINFO* pPerformanceInfo)
 	pPerformanceInfo->m_dwFlags = 0;
 	pPerformanceInfo->m_dwScreenWidth = g_ScreenWidth;
 	pPerformanceInfo->m_dwScreenHeight = g_ScreenHeight;
-	pPerformanceInfo->m_dwFps = (DWORD)(g_pClientMgr->m_FramerateTracker.GetRate() + 0.5f);	// round up
+	pPerformanceInfo->m_dwFps = static_cast<uint32>(g_pClientMgr->m_FramerateTracker.GetRate() + 0.5f);	// round up
 	pPerformanceInfo->m_dwNumWorldPolys = renderInfoStruct.m_dwWorldPolysDrawn;
 	pPerformanceInfo->m_dwNumWorldPolysProcessed = renderInfoStruct.m_dwWorldPolysProcessed;
 	pPerformanceInfo->m_dwNumModelPolys = renderInfoStruct.m_dwModelPolysDrawn;
@@ -91,4 +91,3 @@ LTRESULT in_GetPerformanceInfo(LTPERFORMANCEINFO* pPerformanceInfo)
 
 	return LT_OK;
 }
-

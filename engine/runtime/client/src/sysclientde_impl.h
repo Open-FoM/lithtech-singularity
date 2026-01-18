@@ -15,13 +15,8 @@
 #ifndef __SYSCLIENTDE_IMPL_H__
 #define __SYSCLIENTDE_IMPL_H__
 
-// This is a redirector to get the system dependent include
-#ifdef __LINUX
-#include "sys/linux/linuxclientde_impl.h"
-#elif _WIN32
-#include "sys/win/winclientde_impl.h"
-#endif
+// System-dependent ClientDE implementation (now platform-agnostic).
+#include "clientde_impl_sys.h"
 
 
 #endif
-

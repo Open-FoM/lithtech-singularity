@@ -9,7 +9,7 @@
 #include <algorithm>
 #include "winconsole_impl.h"
 #include "consolecommands.h"
-#include "dsys_interface.h"
+#include "dsys.h"
 #include "streamsim.h"
 #include "load_pcx.h"
 #include "resource.h"
@@ -22,6 +22,7 @@
 #include "ilttexinterface.h"
 #include "debuggeometry.h"
 #include "sysdrawprim.h"
+#include "systimer.h"
 
 #ifdef LTJS_SDL_BACKEND
 #include "SDL3/SDL_keyboard.h"
@@ -1213,6 +1214,7 @@ void CConsole::Draw() {
 	//	if ((!m_pFontBitmapData) || (!m_pStruct)) return;
 	if (!m_pStruct) return;
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Preserve current viewport
 	D3DVIEWPORT9 oldViewportData;
     PD3DDEVICE->GetViewport(&oldViewportData);
@@ -1226,6 +1228,7 @@ void CConsole::Draw() {
 	viewportData.MaxZ	= 1.0f;
 	HRESULT hResult = D3D_CALL(PD3DDEVICE->SetViewport(&viewportData));
     static_cast<void>(hResult);
+#endif // !LTJS_USE_DILIGENT_RENDER
 
 	// Check the console variables
 	CheckVariables();
@@ -1257,6 +1260,7 @@ void CConsole::Draw() {
 		BorderedRectangle( m_BackColor, m_BorderColor, cRect );
 	}
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Grab the current filter states.
 	bool bValidFilterStates = true;
 	DWORD nMinFilter, nMagFilter, nMipFilter;
@@ -1273,6 +1277,7 @@ void CConsole::Draw() {
 		PD3DDEVICE->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
 		PD3DDEVICE->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
 	}
+#endif // !LTJS_USE_DILIGENT_RENDER
 
 	// Draw all the text.
 	DrawTextLines( m_nTextLines );
@@ -1280,6 +1285,7 @@ void CConsole::Draw() {
 	// Draw the command box.
 	GetCommandBox()->Draw();
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Restore the previous filter states.
 	if( bValidFilterStates )
 	{
@@ -1290,6 +1296,7 @@ void CConsole::Draw() {
 
 	// Restore previous viewport
     PD3DDEVICE->SetViewport(&oldViewportData);
+#endif // !LTJS_USE_DILIGENT_RENDER
 
 #endif // !DE_HEADLESS_CLIENT
 }
@@ -1454,6 +1461,7 @@ void CConsole::DrawSmall(int nLines)
 #ifndef DE_HEADLESS_CLIENT
 	//	if (!m_pFontBitmapData) return;
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Preserve current viewport
 	D3DVIEWPORT9 oldViewportData;
     PD3DDEVICE->GetViewport(&oldViewportData);
@@ -1467,7 +1475,9 @@ void CConsole::DrawSmall(int nLines)
 	viewportData.MaxZ	= 1.0f;
 	HRESULT hResult = D3D_CALL(PD3DDEVICE->SetViewport(&viewportData));
     static_cast<void>(hResult);
+#endif // !LTJS_USE_DILIGENT_RENDER
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Grab the current filter states.
 	bool bValidFilterStates = true;
 	DWORD nMinFilter, nMagFilter, nMipFilter;
@@ -1484,10 +1494,12 @@ void CConsole::DrawSmall(int nLines)
 		PD3DDEVICE->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
 		PD3DDEVICE->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
 	}
+#endif // !LTJS_USE_DILIGENT_RENDER
 
 	// Draw the text.
 	DrawTextLines( nLines, true );
 
+#if !defined(LTJS_USE_DILIGENT_RENDER)
 	// Restore the previous filter states.
 	if( bValidFilterStates )
 	{
@@ -1498,6 +1510,7 @@ void CConsole::DrawSmall(int nLines)
 
 	//Restore previous viewport
     PD3DDEVICE->SetViewport(&oldViewportData);
+#endif // !LTJS_USE_DILIGENT_RENDER
 
 #endif // !DE_HEADLESS_CLIENT
 }
@@ -1770,6 +1783,3 @@ void CConsole::OnKeyPress(uint32 key)
 	}
 #endif // LTJS_SDL_BACKEND
 }
-
-
-

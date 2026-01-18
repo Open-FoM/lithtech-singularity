@@ -11,6 +11,7 @@
 #include "clientmgr.h"
 #include "sysfile.h"
 #include "de_objects.h"
+#include "client_filemgr.h"
 
 
 
@@ -175,7 +176,6 @@ void spr_UpdateTracker(SpriteTracker *pTracker, uint32 msDelta)
 		}
 	}
 }
-
 
 
 

@@ -31,6 +31,12 @@ function (ltjs_add_defaults)
 			$<$<BOOL:${LTJS_USE_D3DX9}>:LTJS_USE_D3DX9>
 	)
 
+	target_include_directories (
+		${ARGV0}
+		PRIVATE
+			${CMAKE_SOURCE_DIR}/libs/ltjs/include
+	)
+
 	if (MSVC)
 		target_compile_definitions (
 			${ARGV0}
@@ -46,6 +52,15 @@ function (ltjs_add_defaults)
 			${ARGV0}
 			PRIVATE
 				NOMINMAX
+		)
+	endif ()
+
+	if (APPLE)
+		target_compile_definitions (
+			${ARGV0}
+			PRIVATE
+				__LINUX
+				PLATFORM_MACOS=1
 		)
 	endif ()
 
@@ -91,10 +106,13 @@ function (ltjs_add_defaults)
 	)
 
 	if (NOT ${PROJECT_NAME} STREQUAL "ltjs_lib")
-		target_link_libraries (
-			${ARGV0}
-			PRIVATE
-				ltjs_lib
-		)
+		get_target_property(_ltjs_target_type ${ARGV0} TYPE)
+		if (NOT _ltjs_target_type STREQUAL "STATIC_LIBRARY")
+			target_link_libraries (
+				${ARGV0}
+				PRIVATE
+					ltjs_lib
+			)
+		endif ()
 	endif ()
 endfunction (ltjs_add_defaults)
