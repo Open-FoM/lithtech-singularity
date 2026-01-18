@@ -35,18 +35,34 @@ target_include_directories (
 		../../kernel/mem/src
 		../../kernel/net/src
 		../../kernel/src
-		../../kernel/src/sys/win
+		../../kernel/src/sys
 		../../lithtemplate
 		../../model/src
 		../../mpm/src
 		../../render_b/src
 		../../server/src
 		../../shared/src
-		../../shared/src/sys/win
+		../../shared/src
 		../../sound/src
 		../../ui/src
 		../../world/src
 )
+
+if (WIN32)
+	target_include_directories (
+		${PROJECT_NAME}
+		PRIVATE
+			../../kernel/src/sys/win
+			../../shared/src/sys/win
+	)
+else ()
+	target_include_directories (
+		${PROJECT_NAME}
+		PRIVATE
+			../../kernel/src/sys/linux
+			../../shared/src/sys/linux
+	)
+endif ()
 
 target_sources (
 	${PROJECT_NAME}
@@ -144,5 +160,18 @@ target_sources (
 		cuiwindow.cpp
 		cuiwindow_impl.cpp
 		sdl_cuivectorfont.cpp
-		sys/win/cuidebug.cpp
 )
+
+if (WIN32)
+	target_sources (
+		${PROJECT_NAME}
+		PRIVATE
+			sys/win/cuidebug.cpp
+	)
+else ()
+	target_sources (
+		${PROJECT_NAME}
+		PRIVATE
+			sys/linux/cuidebug.cpp
+	)
+endif ()
