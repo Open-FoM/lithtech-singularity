@@ -10,6 +10,8 @@
 #include "bindmgr.h"
 #include "client_ticks.h"
 #include "ltgraphicscaps.h"
+#include "Graphics/GraphicsEngine/interface/RenderDevice.h"
+#include <cstring>
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -1700,13 +1702,234 @@ static LTRESULT cis_GetEngineHook(const char *pName, void **pData)
 	return LT_ERROR;
 }
 
+static LTDeviceFeatures cis_ToLtDeviceFeatures(const Diligent::DeviceFeatures& features)
+{
+	LTDeviceFeatures out{};
+	out.SeparablePrograms = static_cast<LTDeviceFeatureState>(features.SeparablePrograms);
+	out.ShaderResourceQueries = static_cast<LTDeviceFeatureState>(features.ShaderResourceQueries);
+	out.WireframeFill = static_cast<LTDeviceFeatureState>(features.WireframeFill);
+	out.MultithreadedResourceCreation = static_cast<LTDeviceFeatureState>(features.MultithreadedResourceCreation);
+	out.ComputeShaders = static_cast<LTDeviceFeatureState>(features.ComputeShaders);
+	out.GeometryShaders = static_cast<LTDeviceFeatureState>(features.GeometryShaders);
+	out.Tessellation = static_cast<LTDeviceFeatureState>(features.Tessellation);
+	out.MeshShaders = static_cast<LTDeviceFeatureState>(features.MeshShaders);
+	out.RayTracing = static_cast<LTDeviceFeatureState>(features.RayTracing);
+	out.BindlessResources = static_cast<LTDeviceFeatureState>(features.BindlessResources);
+	out.OcclusionQueries = static_cast<LTDeviceFeatureState>(features.OcclusionQueries);
+	out.BinaryOcclusionQueries = static_cast<LTDeviceFeatureState>(features.BinaryOcclusionQueries);
+	out.TimestampQueries = static_cast<LTDeviceFeatureState>(features.TimestampQueries);
+	out.PipelineStatisticsQueries = static_cast<LTDeviceFeatureState>(features.PipelineStatisticsQueries);
+	out.DurationQueries = static_cast<LTDeviceFeatureState>(features.DurationQueries);
+	out.DepthBiasClamp = static_cast<LTDeviceFeatureState>(features.DepthBiasClamp);
+	out.DepthClamp = static_cast<LTDeviceFeatureState>(features.DepthClamp);
+	out.IndependentBlend = static_cast<LTDeviceFeatureState>(features.IndependentBlend);
+	out.DualSourceBlend = static_cast<LTDeviceFeatureState>(features.DualSourceBlend);
+	out.MultiViewport = static_cast<LTDeviceFeatureState>(features.MultiViewport);
+	out.TextureCompressionBC = static_cast<LTDeviceFeatureState>(features.TextureCompressionBC);
+	out.TextureCompressionETC2 = static_cast<LTDeviceFeatureState>(features.TextureCompressionETC2);
+	out.VertexPipelineUAVWritesAndAtomics = static_cast<LTDeviceFeatureState>(features.VertexPipelineUAVWritesAndAtomics);
+	out.PixelUAVWritesAndAtomics = static_cast<LTDeviceFeatureState>(features.PixelUAVWritesAndAtomics);
+	out.TextureUAVExtendedFormats = static_cast<LTDeviceFeatureState>(features.TextureUAVExtendedFormats);
+	out.ShaderFloat16 = static_cast<LTDeviceFeatureState>(features.ShaderFloat16);
+	out.ResourceBuffer16BitAccess = static_cast<LTDeviceFeatureState>(features.ResourceBuffer16BitAccess);
+	out.UniformBuffer16BitAccess = static_cast<LTDeviceFeatureState>(features.UniformBuffer16BitAccess);
+	out.ShaderInputOutput16 = static_cast<LTDeviceFeatureState>(features.ShaderInputOutput16);
+	out.ShaderInt8 = static_cast<LTDeviceFeatureState>(features.ShaderInt8);
+	out.ResourceBuffer8BitAccess = static_cast<LTDeviceFeatureState>(features.ResourceBuffer8BitAccess);
+	out.UniformBuffer8BitAccess = static_cast<LTDeviceFeatureState>(features.UniformBuffer8BitAccess);
+	out.ShaderResourceStaticArrays = static_cast<LTDeviceFeatureState>(features.ShaderResourceStaticArrays);
+	out.ShaderResourceRuntimeArrays = static_cast<LTDeviceFeatureState>(features.ShaderResourceRuntimeArrays);
+	out.WaveOp = static_cast<LTDeviceFeatureState>(features.WaveOp);
+	out.InstanceDataStepRate = static_cast<LTDeviceFeatureState>(features.InstanceDataStepRate);
+	out.NativeFence = static_cast<LTDeviceFeatureState>(features.NativeFence);
+	out.TileShaders = static_cast<LTDeviceFeatureState>(features.TileShaders);
+	out.TransferQueueTimestampQueries = static_cast<LTDeviceFeatureState>(features.TransferQueueTimestampQueries);
+	out.VariableRateShading = static_cast<LTDeviceFeatureState>(features.VariableRateShading);
+	out.SparseResources = static_cast<LTDeviceFeatureState>(features.SparseResources);
+	out.SubpassFramebufferFetch = static_cast<LTDeviceFeatureState>(features.SubpassFramebufferFetch);
+	out.TextureComponentSwizzle = static_cast<LTDeviceFeatureState>(features.TextureComponentSwizzle);
+	out.TextureSubresourceViews = static_cast<LTDeviceFeatureState>(features.TextureSubresourceViews);
+	out.NativeMultiDraw = static_cast<LTDeviceFeatureState>(features.NativeMultiDraw);
+	out.AsyncShaderCompilation = static_cast<LTDeviceFeatureState>(features.AsyncShaderCompilation);
+	out.FormattedBuffers = static_cast<LTDeviceFeatureState>(features.FormattedBuffers);
+	return out;
+}
+
 static LTRESULT cis_QueryGraphicDevice(LTGraphicsCaps* pCaps)
 {
+#if defined(LTJS_USE_DILIGENT_RENDER)
+	if (!pCaps)
+	{
+		return LT_INVALIDPARAMS;
+	}
+
+	*pCaps = LTGraphicsCaps{};
+
+	auto* render_struct = r_GetRenderStruct();
+	if (!render_struct)
+	{
+		return LT_ERROR;
+	}
+
+	auto* render_device = render_struct->GetRenderDevice();
+	if (!render_device)
+	{
+		return LT_ERROR;
+	}
+
+	const auto& device_info = render_device->GetDeviceInfo();
+	const auto& adapter_info = render_device->GetAdapterInfo();
+
+	pCaps->RenderDevice.Type = static_cast<uint32>(device_info.Type);
+	pCaps->RenderDevice.APIVersion.Major = device_info.APIVersion.Major;
+	pCaps->RenderDevice.APIVersion.Minor = device_info.APIVersion.Minor;
+	pCaps->RenderDevice.Features = cis_ToLtDeviceFeatures(device_info.Features);
+	pCaps->RenderDevice.NDC.MinZ = device_info.NDC.MinZ;
+	pCaps->RenderDevice.NDC.ZtoDepthScale = device_info.NDC.ZtoDepthScale;
+	pCaps->RenderDevice.NDC.YtoVScale = device_info.NDC.YtoVScale;
+	pCaps->RenderDevice.MaxShaderVersion.HLSL.Major = device_info.MaxShaderVersion.HLSL.Major;
+	pCaps->RenderDevice.MaxShaderVersion.HLSL.Minor = device_info.MaxShaderVersion.HLSL.Minor;
+	pCaps->RenderDevice.MaxShaderVersion.GLSL.Major = device_info.MaxShaderVersion.GLSL.Major;
+	pCaps->RenderDevice.MaxShaderVersion.GLSL.Minor = device_info.MaxShaderVersion.GLSL.Minor;
+	pCaps->RenderDevice.MaxShaderVersion.GLESSL.Major = device_info.MaxShaderVersion.GLESSL.Major;
+	pCaps->RenderDevice.MaxShaderVersion.GLESSL.Minor = device_info.MaxShaderVersion.GLESSL.Minor;
+	pCaps->RenderDevice.MaxShaderVersion.MSL.Major = device_info.MaxShaderVersion.MSL.Major;
+	pCaps->RenderDevice.MaxShaderVersion.MSL.Minor = device_info.MaxShaderVersion.MSL.Minor;
+
+	std::strncpy(pCaps->Adapter.Description, adapter_info.Description, sizeof(pCaps->Adapter.Description) - 1);
+	pCaps->Adapter.Description[sizeof(pCaps->Adapter.Description) - 1] = '\0';
+	pCaps->Adapter.Type = static_cast<uint32>(adapter_info.Type);
+	pCaps->Adapter.Vendor = static_cast<uint32>(adapter_info.Vendor);
+	pCaps->Adapter.VendorId = adapter_info.VendorId;
+	pCaps->Adapter.DeviceId = adapter_info.DeviceId;
+	pCaps->Adapter.NumOutputs = adapter_info.NumOutputs;
+	pCaps->Adapter.Memory.LocalMemory = adapter_info.Memory.LocalMemory;
+	pCaps->Adapter.Memory.HostVisibleMemory = adapter_info.Memory.HostVisibleMemory;
+	pCaps->Adapter.Memory.UnifiedMemory = adapter_info.Memory.UnifiedMemory;
+	pCaps->Adapter.Memory.MaxMemoryAllocation = adapter_info.Memory.MaxMemoryAllocation;
+	pCaps->Adapter.Memory.UnifiedMemoryCPUAccess = static_cast<uint32>(adapter_info.Memory.UnifiedMemoryCPUAccess);
+	pCaps->Adapter.Memory.MemorylessTextureBindFlags = static_cast<uint32>(adapter_info.Memory.MemorylessTextureBindFlags);
+	pCaps->Adapter.RayTracing.MaxRecursionDepth = adapter_info.RayTracing.MaxRecursionDepth;
+	pCaps->Adapter.RayTracing.ShaderGroupHandleSize = adapter_info.RayTracing.ShaderGroupHandleSize;
+	pCaps->Adapter.RayTracing.MaxShaderRecordStride = adapter_info.RayTracing.MaxShaderRecordStride;
+	pCaps->Adapter.RayTracing.ShaderGroupBaseAlignment = adapter_info.RayTracing.ShaderGroupBaseAlignment;
+	pCaps->Adapter.RayTracing.MaxRayGenThreads = adapter_info.RayTracing.MaxRayGenThreads;
+	pCaps->Adapter.RayTracing.MaxInstancesPerTLAS = adapter_info.RayTracing.MaxInstancesPerTLAS;
+	pCaps->Adapter.RayTracing.MaxPrimitivesPerBLAS = adapter_info.RayTracing.MaxPrimitivesPerBLAS;
+	pCaps->Adapter.RayTracing.MaxGeometriesPerBLAS = adapter_info.RayTracing.MaxGeometriesPerBLAS;
+	pCaps->Adapter.RayTracing.VertexBufferAlignment = adapter_info.RayTracing.VertexBufferAlignment;
+	pCaps->Adapter.RayTracing.IndexBufferAlignment = adapter_info.RayTracing.IndexBufferAlignment;
+	pCaps->Adapter.RayTracing.TransformBufferAlignment = adapter_info.RayTracing.TransformBufferAlignment;
+	pCaps->Adapter.RayTracing.BoxBufferAlignment = adapter_info.RayTracing.BoxBufferAlignment;
+	pCaps->Adapter.RayTracing.ScratchBufferAlignment = adapter_info.RayTracing.ScratchBufferAlignment;
+	pCaps->Adapter.RayTracing.InstanceBufferAlignment = adapter_info.RayTracing.InstanceBufferAlignment;
+	pCaps->Adapter.RayTracing.CapFlags = static_cast<uint32>(adapter_info.RayTracing.CapFlags);
+	pCaps->Adapter.WaveOp.MinSize = adapter_info.WaveOp.MinSize;
+	pCaps->Adapter.WaveOp.MaxSize = adapter_info.WaveOp.MaxSize;
+	pCaps->Adapter.WaveOp.SupportedStages = static_cast<uint32>(adapter_info.WaveOp.SupportedStages);
+	pCaps->Adapter.WaveOp.Features = static_cast<uint32>(adapter_info.WaveOp.Features);
+	pCaps->Adapter.Buffer.ConstantBufferOffsetAlignment = adapter_info.Buffer.ConstantBufferOffsetAlignment;
+	pCaps->Adapter.Buffer.StructuredBufferOffsetAlignment = adapter_info.Buffer.StructuredBufferOffsetAlignment;
+	pCaps->Adapter.Texture.MaxTexture1DDimension = adapter_info.Texture.MaxTexture1DDimension;
+	pCaps->Adapter.Texture.MaxTexture1DArraySlices = adapter_info.Texture.MaxTexture1DArraySlices;
+	pCaps->Adapter.Texture.MaxTexture2DDimension = adapter_info.Texture.MaxTexture2DDimension;
+	pCaps->Adapter.Texture.MaxTexture2DArraySlices = adapter_info.Texture.MaxTexture2DArraySlices;
+	pCaps->Adapter.Texture.MaxTexture3DDimension = adapter_info.Texture.MaxTexture3DDimension;
+	pCaps->Adapter.Texture.MaxTextureCubeDimension = adapter_info.Texture.MaxTextureCubeDimension;
+	pCaps->Adapter.Texture.Texture2DMSSupported = static_cast<uint8>(adapter_info.Texture.Texture2DMSSupported != 0);
+	pCaps->Adapter.Texture.Texture2DMSArraySupported = static_cast<uint8>(adapter_info.Texture.Texture2DMSArraySupported != 0);
+	pCaps->Adapter.Texture.TextureViewSupported = static_cast<uint8>(adapter_info.Texture.TextureViewSupported != 0);
+	pCaps->Adapter.Texture.CubemapArraysSupported = static_cast<uint8>(adapter_info.Texture.CubemapArraysSupported != 0);
+	pCaps->Adapter.Texture.TextureView2DOn3DSupported = static_cast<uint8>(adapter_info.Texture.TextureView2DOn3DSupported != 0);
+	pCaps->Adapter.Sampler.BorderSamplingModeSupported = static_cast<uint8>(adapter_info.Sampler.BorderSamplingModeSupported != 0);
+	pCaps->Adapter.Sampler.MaxAnisotropy = adapter_info.Sampler.MaxAnisotropy;
+	pCaps->Adapter.Sampler.LODBiasSupported = static_cast<uint8>(adapter_info.Sampler.LODBiasSupported != 0);
+	pCaps->Adapter.MeshShader.MaxThreadGroupCountX = adapter_info.MeshShader.MaxThreadGroupCountX;
+	pCaps->Adapter.MeshShader.MaxThreadGroupCountY = adapter_info.MeshShader.MaxThreadGroupCountY;
+	pCaps->Adapter.MeshShader.MaxThreadGroupCountZ = adapter_info.MeshShader.MaxThreadGroupCountZ;
+	pCaps->Adapter.MeshShader.MaxThreadGroupTotalCount = adapter_info.MeshShader.MaxThreadGroupTotalCount;
+	pCaps->Adapter.ShadingRate.NumShadingRates = adapter_info.ShadingRate.NumShadingRates;
+	pCaps->Adapter.ShadingRate.CapFlags = static_cast<uint32>(adapter_info.ShadingRate.CapFlags);
+	pCaps->Adapter.ShadingRate.Combiners = static_cast<uint32>(adapter_info.ShadingRate.Combiners);
+	pCaps->Adapter.ShadingRate.Format = static_cast<uint32>(adapter_info.ShadingRate.Format);
+	pCaps->Adapter.ShadingRate.ShadingRateTextureAccess = static_cast<uint32>(adapter_info.ShadingRate.ShadingRateTextureAccess);
+	pCaps->Adapter.ShadingRate.BindFlags = static_cast<uint32>(adapter_info.ShadingRate.BindFlags);
+	pCaps->Adapter.ShadingRate.MinTileSize[0] = adapter_info.ShadingRate.MinTileSize[0];
+	pCaps->Adapter.ShadingRate.MinTileSize[1] = adapter_info.ShadingRate.MinTileSize[1];
+	pCaps->Adapter.ShadingRate.MaxTileSize[0] = adapter_info.ShadingRate.MaxTileSize[0];
+	pCaps->Adapter.ShadingRate.MaxTileSize[1] = adapter_info.ShadingRate.MaxTileSize[1];
+	pCaps->Adapter.ShadingRate.MaxSabsampledArraySlices = adapter_info.ShadingRate.MaxSabsampledArraySlices;
+	for (uint32 i = 0; i < LT_MAX_SHADING_RATES; ++i)
+	{
+		if (i < adapter_info.ShadingRate.NumShadingRates)
+		{
+			pCaps->Adapter.ShadingRate.ShadingRates[i].Rate = static_cast<uint32>(adapter_info.ShadingRate.ShadingRates[i].Rate);
+			pCaps->Adapter.ShadingRate.ShadingRates[i].SampleBits = static_cast<uint32>(adapter_info.ShadingRate.ShadingRates[i].SampleBits);
+		}
+		else
+		{
+			pCaps->Adapter.ShadingRate.ShadingRates[i].Rate = 0;
+			pCaps->Adapter.ShadingRate.ShadingRates[i].SampleBits = 0;
+		}
+	}
+	pCaps->Adapter.ComputeShader.SharedMemorySize = adapter_info.ComputeShader.SharedMemorySize;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupInvocations = adapter_info.ComputeShader.MaxThreadGroupInvocations;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupSizeX = adapter_info.ComputeShader.MaxThreadGroupSizeX;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupSizeY = adapter_info.ComputeShader.MaxThreadGroupSizeY;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupSizeZ = adapter_info.ComputeShader.MaxThreadGroupSizeZ;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupCountX = adapter_info.ComputeShader.MaxThreadGroupCountX;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupCountY = adapter_info.ComputeShader.MaxThreadGroupCountY;
+	pCaps->Adapter.ComputeShader.MaxThreadGroupCountZ = adapter_info.ComputeShader.MaxThreadGroupCountZ;
+	pCaps->Adapter.DrawCommand.CapFlags = static_cast<uint32>(adapter_info.DrawCommand.CapFlags);
+	pCaps->Adapter.DrawCommand.MaxIndexValue = adapter_info.DrawCommand.MaxIndexValue;
+	pCaps->Adapter.DrawCommand.MaxDrawIndirectCount = adapter_info.DrawCommand.MaxDrawIndirectCount;
+	pCaps->Adapter.SparseResources.AddressSpaceSize = adapter_info.SparseResources.AddressSpaceSize;
+	pCaps->Adapter.SparseResources.ResourceSpaceSize = adapter_info.SparseResources.ResourceSpaceSize;
+	pCaps->Adapter.SparseResources.CapFlags = static_cast<uint32>(adapter_info.SparseResources.CapFlags);
+	pCaps->Adapter.SparseResources.StandardBlockSize = adapter_info.SparseResources.StandardBlockSize;
+	pCaps->Adapter.SparseResources.BufferBindFlags = static_cast<uint32>(adapter_info.SparseResources.BufferBindFlags);
+	pCaps->Adapter.Features = cis_ToLtDeviceFeatures(adapter_info.Features);
+
+	const uint32 queue_count = (adapter_info.NumQueues < LT_MAX_ADAPTER_QUEUES) ? adapter_info.NumQueues : LT_MAX_ADAPTER_QUEUES;
+	pCaps->Adapter.NumQueues = queue_count;
+	for (uint32 i = 0; i < queue_count; ++i)
+	{
+		pCaps->Adapter.Queues[i].QueueType = static_cast<uint32>(adapter_info.Queues[i].QueueType);
+		pCaps->Adapter.Queues[i].MaxDeviceContexts = adapter_info.Queues[i].MaxDeviceContexts;
+		pCaps->Adapter.Queues[i].TextureCopyGranularity[0] = adapter_info.Queues[i].TextureCopyGranularity[0];
+		pCaps->Adapter.Queues[i].TextureCopyGranularity[1] = adapter_info.Queues[i].TextureCopyGranularity[1];
+		pCaps->Adapter.Queues[i].TextureCopyGranularity[2] = adapter_info.Queues[i].TextureCopyGranularity[2];
+	}
+
+	Diligent::Version shader_version = device_info.MaxShaderVersion.HLSL;
+	if (shader_version.Major == 0 && shader_version.Minor == 0)
+	{
+		if (device_info.IsGLDevice())
+		{
+			shader_version = device_info.MaxShaderVersion.GLSL;
+		}
+		else if (device_info.IsMetalDevice())
+		{
+			shader_version = device_info.MaxShaderVersion.MSL;
+		}
+		else
+		{
+			shader_version = device_info.MaxShaderVersion.GLSL;
+		}
+	}
+
+	const uint32 packed_version = (shader_version.Major << 16) | (shader_version.Minor & 0xFFFFu);
+	pCaps->VertexShaderVersion = packed_version;
+	pCaps->PixelShaderVersion = packed_version;
+
+	return LT_OK;
+#else
 	if (pCaps)
 	{
 		*pCaps = LTGraphicsCaps{};
 	}
 	return LT_ERROR;
+#endif
 }
 
 
@@ -2135,8 +2358,6 @@ unsigned long GetInterfaceSurfaceMemory()
 
 	return total;
 }
-
-
 
 
 

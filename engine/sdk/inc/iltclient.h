@@ -3774,11 +3774,15 @@ Used for: Misc.
     LTRESULT (*GetEngineHook)(const char *pName, void **pData);
 
 /*!
-\param pCaps Name of engine hook.
+\param pCaps Pointer to an LTGraphicsCaps structure to fill.
 
 \return \b LT_OK when it succeeds, returns an error if not.
 
-This is here so we can query the video caps on the API level.
+Queries the renderer/device capabilities. On success, fills \b LTGraphicsCaps
+with backend, adapter, feature, and limits information. The structure contains
+\b Size and \b Version fields for compatibility checks, plus legacy
+\b VertexShaderVersion/\b PixelShaderVersion packed as (Major << 16) | Minor
+for the active backend.
 
 Used for: Misc.
 */

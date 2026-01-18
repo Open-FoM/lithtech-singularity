@@ -16,4 +16,3 @@ Track Linux/POSIX kernel gaps introduced in recent platform shims/stubs.
 - Restore `cres_hinstance`/`cresl_hinstance` engine hook handling for cursor resources. `engine/runtime/client/src/clientde_impl_sys.cpp`
 ## Client hook removals (D3D path retired)
 - `d3ddevice` engine hook removed with D3D9 path; no longer supported. `engine/runtime/client/src/clientde_impl_sys.cpp`
-- `cis_QueryGraphicDevice` D3D caps removed with D3D9 path; returns `LT_ERROR` and clears caps. `engine/runtime/client/src/clientde_impl_sys.cpp`
