@@ -29,5 +29,18 @@ target_sources (
 	${PROJECT_NAME}
 	PRIVATE
 		outputredir.cpp
-		sys/win32/outputredir_win32.cpp
 )
+
+if (WIN32)
+	target_sources (
+		${PROJECT_NAME}
+		PRIVATE
+			sys/win32/outputredir_win32.cpp
+	)
+else ()
+	target_sources (
+		${PROJECT_NAME}
+		PRIVATE
+			sys/posix/outputredir_posix.cpp
+	)
+endif ()
