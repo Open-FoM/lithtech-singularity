@@ -40,7 +40,7 @@ void lt_InitViewBox(ViewBoxDef* view_box, float near_z, float far_z, float x_fov
 	view_box->m_COP.Init(0.0f, 0.0f, 1.0f);
 }
 
-bool lt_InitFrustum2(
+bool lt_InitFrustrum(
 	ViewParams* params,
 	ViewBoxDef* view_box,
 	float screen_min_x,
@@ -256,7 +256,7 @@ bool d3d_InitFrustum(
 	rotation->ConvertToMatrix(matrix);
 	matrix.SetTranslation(*position);
 
-	return lt_InitFrustum2(
+	return lt_InitFrustrum(
 		params,
 		&view_box,
 		screen_min_x,
@@ -286,27 +286,4 @@ void d3d_InitViewBox2(
 	*pDef = prev_params.m_ViewBox;
 	pDef->m_NearZ = nearZ;
 	pDef->m_FarZ = farZ;
-}
-
-bool d3d_InitFrustum2(
-	ViewParams* pParams,
-	ViewBoxDef* pViewBox,
-	float screenMinX,
-	float screenMinY,
-	float screenMaxX,
-	float screenMaxY,
-	const LTMatrix* pMat,
-	const LTVector& vScale,
-	ViewParams::ERenderMode eMode)
-{
-	return lt_InitFrustum2(
-		pParams,
-		pViewBox,
-		screenMinX,
-		screenMinY,
-		screenMaxX,
-		screenMaxY,
-		pMat,
-		vScale,
-		eMode);
 }

@@ -5047,7 +5047,7 @@ bool diligent_draw_sky(SceneDesc* desc)
 	mat.SetTranslation(g_ViewParams.m_SkyViewPos);
 
 	ViewParams sky_params;
-	if (!d3d_InitFrustum2(
+	if (!lt_InitFrustrum(
 			&sky_params,
 			&view_box,
 			min_x,

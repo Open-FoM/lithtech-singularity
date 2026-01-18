@@ -77,7 +77,7 @@ void d3d_InitViewBox2(
 	float screen_max_x,
 	float screen_max_y);
 
-bool d3d_InitFrustum2(
+bool lt_InitFrustrum(
 	ViewParams* pParams,
 	ViewBoxDef* pViewBox,
 	float screenMinX,
