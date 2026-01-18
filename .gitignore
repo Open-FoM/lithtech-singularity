@@ -1,6 +1,8 @@
 .idea/
 .vs/
 build/
+!engine/runtime/build/
+!engine/runtime/build/**
 cmake-build-*/
 ipch/
 *.aps
