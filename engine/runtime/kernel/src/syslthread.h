@@ -2,7 +2,7 @@
 #define __SYSLTHREAD_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/lthread.h"
 #elif __XBOX
 #include "sys/xbox/lthread.h"

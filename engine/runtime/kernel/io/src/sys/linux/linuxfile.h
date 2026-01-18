@@ -84,11 +84,14 @@
 	// name is the full name (like e:\dedit\textures\8bit\tex1.dtx).
 	// (The file you specify doesn't have to exist..)
 	// Returns 0 if the file tree is a rezfile (in which case it doesn't make sense).
-	int df_GetFullFilename(HLTFileTree hTree, char *pName, char *pOutName, int maxLen);
+int df_GetFullFilename(HLTFileTree hTree, char *pName, char *pOutName, int maxLen);
+
+// Returns raw file info (full filename, start offset, size). Returns 1 on success, 0 on failure.
+int df_GetRawInfo(HLTFileTree *hTree, const char *pName, char* sFileName, unsigned int nMaxFileName, uint32* nPos, uint32* nSize);
 
 
-	// Sets up a DStream for you to read from the file.  The DStream that it
-	// sets up will do a em_ThrowError() with ERR_FILEREAD if you try to 
+// Sets up a DStream for you to read from the file.  The DStream that it
+// sets up will do a em_ThrowError() with ERR_FILEREAD if you try to 
 	// read or seek past the end of the file.
 	// The only supported openMode is DFOPEN_READ.
 	// Throws ERR_MEMORY, and the stream routines throw ERR_FILEREAD.
@@ -113,6 +116,5 @@
 	int df_Save(ILTStream *hFile, const char* pName);
 
 #endif  // __DE_FILE_ACCESS_H__
-
 
 

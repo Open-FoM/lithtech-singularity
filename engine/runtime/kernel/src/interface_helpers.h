@@ -5,6 +5,10 @@
 #ifndef __INTERFACE_HELPERS_H__
 #define __INTERFACE_HELPERS_H__
 
+#if !defined(_WIN32) && !defined(WIN32)
+typedef void* HFONT;
+#endif
+
 
 
 #ifndef __LTBASEDEFS_H__
@@ -246,4 +250,3 @@ inline LTBOOL IsColorTransparent(HLTCOLOR hColor)
 
     
 #endif  // __INTERFACE_HELPERS_H__
-

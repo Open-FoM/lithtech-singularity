@@ -5,7 +5,7 @@
 #include "iltthreadevent.h"
 
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 
 #include "sys/linux/linux_ltthread.h"
 #include "sys/linux/linux_ltthreadevent.h"

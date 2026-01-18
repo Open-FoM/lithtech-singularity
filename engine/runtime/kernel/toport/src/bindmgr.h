@@ -23,7 +23,7 @@
 
 
 	// Bind and unbind to modules...
-	int bm_BindModule(const char *pModuleName, CBindModuleType *&pModule);
+	int bm_BindModule(const char *pModuleName, bool bTempFile, CBindModuleType *&pModule);
 	void bm_UnbindModule(CBindModuleType *hModule);
 
 	// Calls the DLL's SetInstanceHandle function.
@@ -48,7 +48,6 @@
 
 
 #endif  // __BINDMGR_H__
-
 
 
 

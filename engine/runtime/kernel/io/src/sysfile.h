@@ -16,7 +16,7 @@
 #define __SYSFILE_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #define MAX_FILETREES_TO_SEARCH		(32)
 #include "sys/linux/linuxfile.h"
 #elif _WIN32

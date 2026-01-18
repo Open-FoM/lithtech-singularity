@@ -18,7 +18,7 @@ static void bm_UnbindFromServer()
 // Main interface functions.
 // --------------------------------------------------------- //
 
-int bm_BindModule(const char *pModuleName, CBindModuleType *&pModule)
+int bm_BindModule(const char *pModuleName, bool bTempFile, CBindModuleType *&pModule)
 {
 return 0;   // DAN - temporary
 }
@@ -45,7 +45,6 @@ void* bm_GetFunctionPointer(CBindModuleType *hModule, const char *pFunctionName)
 {
 return NULL;   // DAN - temporary
 }
-
 
 
 

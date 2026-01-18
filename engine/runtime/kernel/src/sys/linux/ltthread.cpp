@@ -22,7 +22,11 @@
 #include "ithread.h"
 #include "ltthread.h"
 #include <pthread.h>
+#if defined(__APPLE__)
+#include <errno.h>
+#else
 #include <linux/errno.h>
+#endif
 
 // ------------------------------------------------------------------------- //
 // 
@@ -218,4 +222,3 @@ CSysThread::ThreadTerm () {
 	pthread_exit(NULL);
 	return (STDLT_OK);
 }
-

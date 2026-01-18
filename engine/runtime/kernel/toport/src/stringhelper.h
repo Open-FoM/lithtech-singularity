@@ -1,10 +1,11 @@
 #include "bdefs.h"
+#include <cstdint>
 
 // ----------------------------------------------------------
 // SHAME ON ME.  I just ripped this STL stuff right outta MFC
 // ----------------------------------------------------------
 
-#define POSITION int32
+#define POSITION intptr_t
 #define BEFORE_START_POSITION ((POSITION)-1)
 
 

@@ -41,7 +41,7 @@ class CStringMgr : public IStringMgr
 /*	{ return str_GetString(hModule, stringCode, pBuffer, bufferLen, pBufferLen); }*/
 
 	HSTRING CreateString(uint8 *pBuffer)		{ return str_CreateString(pBuffer); }
-	HSTRING CreateStringAnsi(char *pString)		{ return str_CreateStringAnsi(pString); }
+	HSTRING CreateStringAnsi(const char *pString)	{ return str_CreateStringAnsi(pString); }
 	HSTRING CopyString(HSTRING hString)			{ return str_CopyString(hString); }
 	void FreeString(HSTRING hString)			{ str_FreeString(hString); }
 	bool CompareStrings(HSTRING hString1, HSTRING hString2)			{ return str_CompareStrings(hString1, hString2); }
@@ -126,7 +126,7 @@ void str_ShowAllStringsAllocated(StringShowFn fn, void *pUser)
 	while(pCur != &g_StringHead)
 	{
 		pString = (StringWrapper*)pCur->m_pData;
-		fn((char*)pString->m_Bytes, pUser);
+		fn(reinterpret_cast<const char*>(pString->m_Bytes), pUser);
 
 		pCur = pCur->m_pNext;
 	}
@@ -248,7 +248,7 @@ HSTRING str_CreateString(uint8 *pBuffer)
 }
 
 
-HSTRING str_CreateStringAnsi(char *pStringData)
+HSTRING str_CreateStringAnsi(const char *pStringData)
 {
 	StringWrapper *pString;
 	int nBytes, nChars;

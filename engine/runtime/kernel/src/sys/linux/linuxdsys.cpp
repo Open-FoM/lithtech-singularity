@@ -15,7 +15,12 @@
 #include "classbind.h"
 #include "bindmgr.h"
 #include "console.h"
+#include "iltinfo.h"
+#include "version_info.h"
 
+#ifdef LTJS_SDL_BACKEND
+#include "ltjs_shell_string_formatter.h"
+#endif // LTJS_SDL_BACKEND
 
 //IClientShell game client shell object.
 #include "iclientshell.h"
@@ -38,10 +43,29 @@ static void dsi_UnloadResourceModule()
 }
 
 
+#ifndef LTJS_SDL_BACKEND
 LTRESULT dsi_SetupMessage(char *pMsg, int maxMsgLen, LTRESULT dResult, va_list marker)
 {
 return LT_OK;      // DAN - temporary
 }
+#else
+LTRESULT dsi_SetupMessage(
+	char* pMsg,
+	int maxMsgLen,
+	LTRESULT dResult,
+	ltjs::ShellStringFormatter& formatter)
+{
+	static_cast<void>(formatter);
+
+	if (!pMsg || maxMsgLen <= 0)
+	{
+		return LT_ERROR;
+	}
+
+	snprintf(pMsg, maxMsgLen, "LTRESULT 0x%08X", dResult);
+	return LT_ERROR;
+}
+#endif // LTJS_SDL_BACKEND
 
 
 int dsi_Init()
@@ -147,6 +171,13 @@ void dsi_Sleep(uint32 ms)
 //	timerconfig.it_value.tv_usec = ms*1000;
 //	setitimer(ITIMER_REAL, &timerconfig, NULL);
 //	pause();
+}
+
+LTRESULT dsi_GetVersionInfo(LTVersionInfo &info)
+{
+	info.m_MajorVersion = LT_VI_VER_MAJOR;
+	info.m_MinorVersion = LT_VI_VER_MINOR;
+	return LT_OK;
 }
 
 void dsi_ServerSleep(uint32 ms)
@@ -263,6 +294,24 @@ void dsi_SetConsoleUp(LTBOOL bUp)
 {
 }
 
+void dsi_SetConsoleEnable(bool bEnabled)
+{
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_bConsoleEnabled = bEnabled;
+#else
+	(void)bEnabled;
+#endif
+}
+
+bool dsi_IsConsoleEnabled()
+{
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_bConsoleEnabled;
+#else
+	return false;
+#endif
+}
+
 LTBOOL dsi_IsClientActive()
 {
 	return TRUE;
@@ -310,6 +359,17 @@ LTRESULT dsi_DoErrorMessage(char *pMessage)
 return LT_OK;      // DAN - temporary
 }
 
-void dsi_MessageBox(char *pMessage, char *pTitle)
+void dsi_MessageBox(const char *pMessage, const char *pTitle)
 {
 }
+
+#ifdef LTJS_SDL_BACKEND
+void* dsi_get_system_event_handler_mgr() noexcept
+{
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.system_event_mgr ? g_ClientGlob.system_event_mgr->get_handler_mgr() : nullptr;
+#else
+	return nullptr;
+#endif
+}
+#endif // LTJS_SDL_BACKEND

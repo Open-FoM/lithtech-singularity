@@ -10,7 +10,7 @@ class CPacket_Write;
 class CPacket_Data;
 
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 void InterlockedIncrement(long* pAddend);
 long InterlockedDecrement(long * pAddend);
 #endif

@@ -15,7 +15,7 @@
 #define __DSYS_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/linuxdsys.h"
 #elif __XBOX
 #include "sys/xbox/xbox_dsys.h"

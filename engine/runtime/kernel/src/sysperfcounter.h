@@ -13,7 +13,7 @@
 
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/linuxperfcountermanager.h"
 #elif __XBOX
 #include "sys/xbox/xbox_perfcountermanager.h"

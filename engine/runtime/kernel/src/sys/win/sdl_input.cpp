@@ -36,6 +36,7 @@
 #include "console.h"
 #include "ltpvalue.h"
 #include "input.h"
+#include "systimer.h"
 
 #include "ltjs_dinput.h"
 #include "ltjs_exception.h"
@@ -48,6 +49,37 @@
 
 namespace
 {
+
+#if !defined(_WIN32) && !defined(WIN32)
+static inline uint32 GetTickCount()
+{
+	return timeGetTime();
+}
+
+static inline int strncpy_s(char* dest, size_t destsz, const char* src, size_t count)
+{
+	if (!dest || destsz == 0)
+	{
+		return 1;
+	}
+
+	if (!src)
+	{
+		dest[0] = '\0';
+		return 1;
+	}
+
+	size_t copy_len = count;
+	if (copy_len > destsz - 1)
+	{
+		copy_len = destsz - 1;
+	}
+
+	memcpy(dest, src, copy_len);
+	dest[copy_len] = '\0';
+	return 0;
+}
+#endif
 
 
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -565,11 +597,11 @@ int SdlInputMouseDevice::get_data(
 						&mouse_motion_pending_data_,
 					};
 
-					const int motion_values[] =
-					{
-						system_event.motion.xrel,
-						system_event.motion.yrel,
-					};
+						const int motion_values[] =
+						{
+							static_cast<int>(system_event.motion.xrel),
+							static_cast<int>(system_event.motion.yrel),
+						};
 
 					constexpr int axis_object_ids[] =
 					{

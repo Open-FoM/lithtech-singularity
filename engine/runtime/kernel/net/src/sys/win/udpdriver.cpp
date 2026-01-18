@@ -14,6 +14,7 @@
 #ifdef __LINUX
 #include <fcntl.h>
 #include <errno.h>
+#include <sched.h>
 #endif
 
 #ifndef DE_SERVER_COMPILE
@@ -3185,7 +3186,7 @@ LTRESULT CUDPDriver::ReallyJoinSession( bool bOpenNewSocket, sockaddr_in *addr )
 
 
 		// give others threads a break
-#ifdef _LINUX
+#ifdef __LINUX
 		::sched_yield();
 #else
 		Sleep(10);
@@ -3808,10 +3809,10 @@ uint32 CUDPDriver::Thread_Listen()
 					}
 
 					// give others threads a break
-#ifdef _LINUX
-					::sched_yield();
+#ifdef __LINUX
+									::sched_yield();
 #else
-					Sleep(10);
+									Sleep(10);
 #endif
 				}
 
@@ -3936,5 +3937,4 @@ uint32 CUDPDriver::Thread_Listen()
 
 	return nResult;
 }
-
 

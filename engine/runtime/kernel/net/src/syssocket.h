@@ -1,7 +1,7 @@
 #ifndef __SYSSOCKET_H__
 #define __SYSSOCKET_H__
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/socket.h"
 #elif __XBOX
 #elif _WIN32

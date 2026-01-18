@@ -16,7 +16,11 @@
 #include "iltthreadevent.h"
 #include <sys/time.h>
 #include <pthread.h>
+#if defined(__APPLE__)
+#include <errno.h>
+#else
 #include <asm/errno.h>
+#endif
 
 enum Linux_LTThreadEventType
 {

@@ -16,7 +16,7 @@
 #include "ltbasedefs.h"
 //#include "platform.h"
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #define INFINITE (uint32)-1
 #endif
 

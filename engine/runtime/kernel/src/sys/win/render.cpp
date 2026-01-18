@@ -618,7 +618,7 @@ LTRESULT r_InitRender(RMode *pMode)
 		return LT_OK;
 
 
-	VarSetter<BOOL> setter(&g_ClientGlob.m_bInitializingRenderer, LTTRUE, LTFALSE);
+	VarSetter<LTBOOL> setter(&g_ClientGlob.m_bInitializingRenderer, LTTRUE, LTFALSE);
 
 	r_TermRender(0, false);
 
@@ -808,5 +808,4 @@ void r_UnbindTexture(SharedTexture *pSharedTexture, bool bUnLoad_EngineData)
 		pSharedTexture->m_pEngineData = LTNULL; 
 	}
 }
-
 

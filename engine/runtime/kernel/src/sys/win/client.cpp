@@ -27,10 +27,19 @@
 #include "bdefs.h"
 
 #include "clientmgr.h"
+#include "soundmgr.h"
 #include "sysdebugging.h"
 #include "input.h"
 #include "render.h"
+#include "systimer.h"
+#include <stdio.h>
+#if defined(_WIN32)
 #include <crtdbg.h>
+#else
+#include <unistd.h>
+#include <errno.h>
+#include <sys/resource.h>
+#endif
 #include "iltclient.h"
 
 
@@ -61,10 +70,18 @@ define_holder(ILTCursor, ilt_cursor);
 // Used for finding memory leaks.
 int g_iStopAllocCount = -1;
 
+#if defined(_WIN32)
+using LTJS_InstanceHandle = HINSTANCE;
+#else
+using LTJS_InstanceHandle = void*;
+#endif
+
 
 extern char g_SSFile[];
 extern LTBOOL g_bNullRender;
 extern int32 g_CV_CursorCenter;
+
+static void set_working_directory(const char* path);
 extern int32 g_nConsoleLines;
 extern LTBOOL g_bConsoleEnable;
 extern int32 g_bShowRunningTime;
@@ -674,7 +691,7 @@ static bool StartClient(ClientGlob *pGlob)
     const char *pDir = command_line_args->FindArgDash("workingdir");
     if (pDir) 
 	{
-        SetCurrentDirectory(pDir);
+        set_working_directory(pDir);
     }
 
 	//the configuration files that we need to load (they are loaded in order, so the later in
@@ -1027,6 +1044,47 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 }
 #endif // LTJS_SDL_BACKEND
 
+static void set_working_directory(const char* path)
+{
+	if (!path || *path == '\0')
+	{
+		return;
+	}
+
+#if defined(_WIN32)
+	SetCurrentDirectory(path);
+#else
+	chdir(path);
+#endif
+}
+
+static void show_simple_error_message(const char* title, const char* message)
+{
+#if defined(_WIN32)
+	MessageBox(LTNULL, message, title, MB_OK);
+#elif defined(LTJS_SDL_BACKEND)
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, message, nullptr);
+#else
+	fprintf(stderr, "%s: %s\n", title, message);
+#endif
+}
+
+#if !defined(_WIN32)
+static void set_process_high_priority(bool enabled)
+{
+	const auto desired = enabled ? -10 : 0;
+	errno = 0;
+	if (setpriority(PRIO_PROCESS, 0, desired) != 0)
+	{
+		if (errno != 0)
+		{
+			dsi_ConsolePrint("Failed to set process priority to %d (errno=%d).", desired, errno);
+		}
+	}
+}
+#endif
+
+#if defined(_WIN32)
 int LTAllocHook(int allocType, void *userData, size_t size, int blockType, 
    long requestNumber, const unsigned char *filename, int lineNumber)
 {
@@ -1042,19 +1100,26 @@ int LTAllocHook(int allocType, void *userData, size_t size, int blockType,
 
     return LTTRUE;
 }
+#endif // _WIN32
 
 
-int RunClientApp(HINSTANCE hInstance) {
+int RunClientApp(LTJS_InstanceHandle hInstance) {
+#ifndef LTJS_SDL_BACKEND
     MSG         msg;
     WNDCLASS    wndclass;
+#endif
     ClientGlob  *pGlob;
     const char      *pArg;
+#ifndef LTJS_SDL_BACKEND
     RECT screenRect, wndRect;
+#endif
     int status, nExitValue;
     LTRESULT dResult;
     LTBOOL bOutOfMemory, bPrevHighPriority;
 
+#if defined(_WIN32)
     _CrtSetAllocHook(LTAllocHook);
+#endif
 
     nExitValue = 0;
 
@@ -1078,7 +1143,7 @@ int RunClientApp(HINSTANCE hInstance) {
     // Set the working directory.
     pArg = command_line_args->FindArgDash("workingdir");
     if (pArg) {
-        SetCurrentDirectory(pArg);
+        set_working_directory(pArg);
     }
 
     pGlob->m_bInputEnabled = LTTRUE;
@@ -1087,12 +1152,12 @@ int RunClientApp(HINSTANCE hInstance) {
     status = dsi_Init();
     if (status != 0) {
         if (status == 1) {
-            MessageBox(LTNULL, "Unable to load ltjs_ltmsg.dll.", "Error", MB_OK);
+            show_simple_error_message("Error", "Unable to load ltjs_ltmsg.dll.");
             dsi_Term();
             return -1;
         }
         else {
-            MessageBox(LTNULL, "Unknown error initializing engine.", "Error", MB_OK);
+            show_simple_error_message("Error", "Unknown error initializing engine.");
             dsi_Term();
             return -1;
         }
@@ -1166,12 +1231,16 @@ int RunClientApp(HINSTANCE hInstance) {
             if (g_CV_HighPriority != bPrevHighPriority) {
                 if (g_CV_HighPriority) {
                     dsi_ConsolePrint("Setting process to high priority");
-                    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-                }
-                else {
+                } else {
                     dsi_ConsolePrint("Setting process to normal priority");
-                    SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
                 }
+#if defined(_WIN32)
+                SetPriorityClass(
+                    GetCurrentProcess(),
+                    g_CV_HighPriority ? HIGH_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+#else
+                set_process_high_priority(g_CV_HighPriority != 0);
+#endif
             }
 
             if (g_bShowRunningTime) {
@@ -1254,7 +1323,9 @@ END_MAINLOOP:;
 
     LTBOOL bShowMemLeaks = LTFALSE;
     if (bShowMemLeaks) {
+#if defined(_WIN32)
         _CrtDumpMemoryLeaks();
+#endif
     }
 
     return nExitValue;
@@ -1408,7 +1479,7 @@ char* InsertCommandFile(const char* pszCmdFile, const char* pszCurrCmdLine, uint
 	{
 		char pszErrorMsg[512];
 		LTSNPrintF(pszErrorMsg, sizeof(pszErrorMsg), "Error opening the command file %s for reading", pszCmdFile);
-		MessageBox(LTNULL, pszErrorMsg, "Error", MB_OK);
+		show_simple_error_message("Error", pszErrorMsg);
 		return NULL;
 	}
 
@@ -1604,9 +1675,7 @@ bool SetupArgs(const char* pszCommandLine)
     return true;
 }
 
-
-
-extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow) 
+int ltjs_run_client_main(LTJS_InstanceHandle hInstance, const char* cmdline)
 {
 #ifdef LTJS_SDL_BACKEND
 	if (!initialize())
@@ -1620,7 +1689,12 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPST
     g_EngineStartMS = timeGetTime();
     
     // Setup our command line args.
-    if (SetupArgs(lpszCmdParam) == false) 
+	if (!cmdline)
+	{
+		cmdline = "";
+	}
+
+    if (SetupArgs(cmdline) == false)
 	{
         return -1;
     }
@@ -1651,3 +1725,9 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPST
 }
 
 
+#if defined(_WIN32)
+extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
+{
+	return ltjs_run_client_main(hInstance, lpszCmdParam);
+}
+#endif // _WIN32

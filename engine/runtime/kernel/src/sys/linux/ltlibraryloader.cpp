@@ -11,7 +11,7 @@
 // *********************************************************************** //
 
 #include <dlfcn.h>
-#include <linux/stddef.h>
+#include <stddef.h>
 #include <stdio.h>
 #include "syslibraryloader.h"
 

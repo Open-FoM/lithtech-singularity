@@ -1,7 +1,7 @@
 #ifndef __SYSUDPDRIVER_H__
 #define __SYSUDPDRIVER_H__
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/win/udpdriver.h"
 #elif __XBOX
 #elif _WIN32

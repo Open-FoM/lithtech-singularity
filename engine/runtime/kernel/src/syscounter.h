@@ -16,7 +16,7 @@
 #define __SYSCOUNTER_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/counter.h"
 #elif  __XBOX
 #include "sys/xbox/counter.h"

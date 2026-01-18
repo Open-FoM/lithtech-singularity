@@ -143,7 +143,11 @@ CSysSerialVar::CSysSerialVar()
 {
 	// allow a thread to call multiple times in a row
 	pthread_mutexattr_init(&m_MutexAttr);
+#if defined(PTHREAD_MUTEX_RECURSIVE_NP)
 	pthread_mutexattr_settype(&m_MutexAttr, PTHREAD_MUTEX_RECURSIVE_NP);
+#else
+	pthread_mutexattr_settype(&m_MutexAttr, PTHREAD_MUTEX_RECURSIVE);
+#endif
 	pthread_mutex_init(&m_Mutex, &m_MutexAttr);
 
 	
@@ -221,4 +225,3 @@ CSysEventVar::WaitFor(uint32 timeout_ms) {
 }
 
 #endif  // __LINUXTHREAD_H__
-

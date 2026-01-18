@@ -16,7 +16,7 @@
 
     class CBindModuleType;
 
-	typedef void (*StringShowFn)(char *pData, void *pUser);
+	typedef void (*StringShowFn)(const char *pData, void *pUser);
 
 	void str_Init();
 	void str_Term();
@@ -33,7 +33,7 @@
 //		uint8 *pBuffer, int bufferLen, int *pBufferLen);
 
 	HSTRING str_CreateString(uint8 *pBuffer);
-	HSTRING str_CreateStringAnsi(char *pString);
+	HSTRING str_CreateStringAnsi(const char *pString);
 	HSTRING str_CopyString(HSTRING hString);
 	void str_FreeString(HSTRING hString);
 	LTBOOL str_CompareStrings(HSTRING hString1, HSTRING hString2);
@@ -63,7 +63,7 @@ public:
 	interface_version(IStringMgr, 0);
     declare_interface(IStringMgr);
 
-	typedef void (*StringShowFn)(char *pData, void *pUser);
+	typedef void (*StringShowFn)(const char *pData, void *pUser);
 
 	virtual void Init() = 0;
 	virtual void Term() = 0;
@@ -78,7 +78,7 @@ public:
 		uint8 *pBuffer, int bufferLen, int *pBufferLen) = 0;
 
 	virtual HSTRING CreateString(uint8 *pBuffer) = 0;
-	virtual HSTRING CreateStringAnsi(char *pString) = 0;
+	virtual HSTRING CreateStringAnsi(const char *pString) = 0;
 	virtual HSTRING CopyString(HSTRING hString) = 0;
 	virtual void FreeString(HSTRING hString) = 0;
 	virtual bool CompareStrings(HSTRING hString1, HSTRING hString2) = 0;
@@ -95,4 +95,3 @@ public:
 };
 
 #endif  // __STRINGMGR_H__
-

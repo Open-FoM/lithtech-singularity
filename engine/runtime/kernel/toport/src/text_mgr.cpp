@@ -14,13 +14,15 @@
 // ----------------------------------------------------------------- //
 
 // All the fonts.
+struct DeFont {};
 static CGLinkedList<DeFont*> g_Fonts;
 
 // static HDC g_hTextDC = 0;
 // static HBITMAP g_hTextBitmap = 0;
 // static HBITMAP g_hOldTextBitmap = 0;
 // static HBRUSH g_hOldBrush=0;
-// static uint32 g_TextBitmapWidth=0, g_TextBitmapHeight=0, g_TextBitmapPitch=0;
+// static uint32 g_TextBitmapWidth=0, g_TextBitmapHeight=0;
+static uint32 g_TextBitmapPitch=0;
 // static uint8 *g_pTextBitmapBits=NULL;
 
 
@@ -163,7 +165,6 @@ void tmgr_Init()
 void tmgr_Term()
 {
 }
-
 
 
 

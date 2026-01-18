@@ -79,7 +79,7 @@ LTBOOL pcx_Create2(ILTStream *pStream, LoadedBitmap *pBitmap)
 		format.InitPValueFormat();
 	}
 
-	bytesPerPixel = format.GetNumPixelBytes();
+	bytesPerPixel = format.GetBytesPerPixel();
 
 
 	// Try to create a surface.
@@ -148,7 +148,7 @@ LTBOOL pcx_Create2(ILTStream *pStream, LoadedBitmap *pBitmap)
 					return FALSE;
 				}
 
-				if(pBitmap->m_Format.m_BPP == BPP_8P)
+				if(pBitmap->m_Format.GetType() == BPP_8P)
 				{
 					for( i=0; i < nInSpan; i++ )
 					{
@@ -246,5 +246,4 @@ void pcx_Destroy(LoadedBitmap *pBitmap)
 {
 	delete pBitmap;
 }
-
 

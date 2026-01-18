@@ -183,7 +183,7 @@ FfmpegVideoInst::Impl::Impl(
 #if defined(LTJS_USE_DILIGENT_RENDER)
 	surface_{},
 	surface_width_{},
-	surface_height_{},
+	surface_height_{}
 #else
 	d3d9_texture_{},
 	texture_width_{},

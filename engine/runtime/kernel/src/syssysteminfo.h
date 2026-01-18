@@ -1,7 +1,7 @@
 #ifndef __SYSSYSTEMINFO_H__
 #define __SYSSYSTEMINFO_H__
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/systeminfo.h"
 #elif __XBOX
 #elif _WIN32

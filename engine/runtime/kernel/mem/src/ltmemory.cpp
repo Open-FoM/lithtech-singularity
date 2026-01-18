@@ -123,5 +123,5 @@ in the global space
 extern "C" __declspec(dllexport) ILTMemory* LTGetILTMemory()
 {
 	static CLTMemory s_ILTMemory;
-	return &s_ILTMemory;
+	return static_cast<ILTMemory*>(&s_ILTMemory);
 }
