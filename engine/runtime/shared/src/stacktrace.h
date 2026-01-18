@@ -14,9 +14,16 @@
 #ifndef _STACKTRACE_H
 #define _STACKTRACE_H
 
+#if defined(_WIN32)
 void DoStackTrace ( LPTSTR szString  ,
                     DWORD  dwSize    ,
                     DWORD  dwNumSkip  );
+#else
+#include <cstdint>
+void DoStackTrace ( char*     szString  ,
+                    uint32_t  dwSize    ,
+                    uint32_t  dwNumSkip  );
+#endif
 
 
 #ifdef _DEBUG
@@ -696,5 +703,4 @@ protected   :
 
 #endif // _DEBUG
 #endif // _STACKTRACE_H
-
 

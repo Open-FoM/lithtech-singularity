@@ -13,14 +13,13 @@
 
 
 #include "bdefs.h"
+#include "stacktrace.h"
 
-#ifndef __LINUX
+#if defined(_WIN32)
 
 // Only used in debug builds of the engine...
 
-#if defined( _DEBUG ) && defined( _WIN32 )
-
-#include "stacktrace.h"
+#if defined( _DEBUG )
 #include <vector>
 
 // The address typedef.
@@ -306,8 +305,6 @@ void DoStackTrace ( LPTSTR szString  ,
 #endif // 0
 
 #else
-
-
 void DoStackTrace ( LPTSTR szString  ,
                     DWORD  dwSize    ,
                     DWORD  dwNumSkip  )
@@ -315,6 +312,84 @@ void DoStackTrace ( LPTSTR szString  ,
 	sprintf(szString, "DoStackTrace not supported in release builds");
 }
 
-#endif // _DEBUG _WIN32
+#endif // _DEBUG
 
-#endif
+#else
+
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <cstdio>
+#include <cstring>
+
+static void AppendLine(char* buffer, uint32_t buffer_size, uint32_t& used, const char* line)
+{
+	if (!buffer || buffer_size == 0 || !line)
+	{
+		return;
+	}
+
+	const size_t line_len = std::strlen(line);
+	if (used + line_len + 1 > buffer_size)
+	{
+		return;
+	}
+
+	std::memcpy(buffer + used, line, line_len);
+	used += static_cast<uint32_t>(line_len);
+	buffer[used] = '\0';
+}
+
+void DoStackTrace ( char*    szString  ,
+                    uint32_t dwSize    ,
+                    uint32_t dwNumSkip  )
+{
+	if (!szString || dwSize == 0)
+	{
+		return;
+	}
+
+	szString[0] = '\0';
+
+	void* frames[64];
+	const int frame_count = backtrace(frames, static_cast<int>(sizeof(frames) / sizeof(frames[0])));
+	uint32_t used = 0;
+
+	for (int i = 0; i < frame_count; ++i)
+	{
+		if (static_cast<uint32_t>(i) <= dwNumSkip)
+		{
+			continue;
+		}
+
+		Dl_info info;
+		const char* module_name = "<unknown module>";
+		const char* symbol_name = "<unknown symbol>";
+
+		if (dladdr(frames[i], &info))
+		{
+			if (info.dli_fname)
+			{
+				module_name = info.dli_fname;
+			}
+			if (info.dli_sname)
+			{
+				symbol_name = info.dli_sname;
+			}
+		}
+
+		char line[512];
+		const int written = std::snprintf(line, sizeof(line), "%s: %s\n", module_name, symbol_name);
+		if (written <= 0)
+		{
+			continue;
+		}
+
+		AppendLine(szString, dwSize, used, line);
+		if (used + 1 >= dwSize)
+		{
+			break;
+		}
+	}
+}
+
+#endif // _WIN32
