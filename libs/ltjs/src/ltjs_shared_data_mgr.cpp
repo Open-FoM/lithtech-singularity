@@ -178,7 +178,7 @@ SharedDataMgrImpl::SharedDataMgrImpl()
 
 	if (env_value_string)
 	{
-		auto env_value = std::uintptr_t{};
+		auto env_value = std::uint64_t{};
 
 		const auto env_value_string_size = c_string::get_size(env_value_string);
 
@@ -194,14 +194,15 @@ SharedDataMgrImpl::SharedDataMgrImpl()
 			throw SharedDataMgrImplException{"Invalid env value."};
 		}
 
-		const auto datas_ptr = reinterpret_cast<Datas*>(env_value);
+		const auto datas_ptr = reinterpret_cast<Datas*>(static_cast<std::uintptr_t>(env_value));
 		auto datas = DatasUPtr{datas_ptr, DatasUDeleter{false}};
 		datas_.swap(datas);
 	}
 	else
 	{
 		auto datas = DatasUPtr{new Datas{}, DatasUDeleter{true}};
-		const auto datas_ptr_as_integer = reinterpret_cast<std::uintptr_t>(datas.get());
+		const auto datas_ptr_as_integer = static_cast<std::uint64_t>(
+			reinterpret_cast<std::uintptr_t>(datas.get()));
 
 		constexpr auto char_buffer_size = 32;
 		char chars_buffer[char_buffer_size];

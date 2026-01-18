@@ -14,7 +14,7 @@
 #define __LTSYSOPTIM_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/linuxoptim.h"
 #elif _WIN32
 #include "sys/win/winoptim.h"

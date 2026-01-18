@@ -92,3 +92,11 @@ target_sources (
 		src/ltjs_utf32_detail.cpp
 		src/ltjs_windows_1252.cpp
 )
+
+if (NOT WIN32)
+	set_source_files_properties (
+		src/ltjs_iunknown_uresource.cpp
+		PROPERTIES
+			HEADER_FILE_ONLY ON
+	)
+endif ()

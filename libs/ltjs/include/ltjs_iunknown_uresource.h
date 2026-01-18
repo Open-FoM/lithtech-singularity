@@ -4,7 +4,11 @@
 
 #include <memory>
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+struct IUnknown;
+#endif
 
 
 namespace ltjs
@@ -18,6 +22,13 @@ struct IUnknownUDeleter
 	void operator()(
 		::IUnknown* iunknown);
 }; // IUnknownUDeleter
+
+#ifndef _WIN32
+inline void IUnknownUDeleter::operator()(
+	::IUnknown*)
+{
+}
+#endif
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 

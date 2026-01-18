@@ -211,6 +211,8 @@ Used for: Misc.
     }
 };
 
+#define LTJS_ILTSTREAM_DEFINED 1
+
 /*!
 Functions for all the default types.
 */
@@ -235,7 +237,6 @@ READWRITE_FN(double);
 
 
 #endif  //! __ILTSTREAM_H__
-
 
 
 

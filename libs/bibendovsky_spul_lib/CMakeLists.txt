@@ -86,6 +86,14 @@ add_library (
 	${headers}
 )
 
+set_target_properties (
+	bibendovsky_spul_lib
+	PROPERTIES
+		CXX_STANDARD 14
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+)
+
 target_include_directories (
 	bibendovsky_spul_lib
 	PUBLIC include

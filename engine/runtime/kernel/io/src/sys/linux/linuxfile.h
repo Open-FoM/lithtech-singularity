@@ -44,7 +44,7 @@
 		unsigned long	m_Date;			// File date/time identifier.
 		unsigned long	m_Size;			// File size.
 		void			*m_pInternal;
-	};
+	} LTFindInfo;
 
 
 
@@ -113,7 +113,6 @@
 	int df_Save(ILTStream *hFile, const char* pName);
 
 #endif  // __DE_FILE_ACCESS_H__
-
 
 
 

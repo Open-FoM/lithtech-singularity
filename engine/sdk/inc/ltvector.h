@@ -1,11 +1,6 @@
 #ifndef __LTVECTOR_H__
 #define __LTVECTOR_H__
 
-#ifndef __ILTSTREAM_H__
-	#include "iltstream.h"
-#endif
-
- 
 #ifndef _VECTOR_H_
 	#include "physics/vector.h"//vectors for math and physics
 #endif
@@ -212,22 +207,6 @@ struct TVector3 {
 typedef TVector3<float> LTVector;
 
 template<class T>
-inline void LTStream_Read(ILTStream *pStream, TVector3<T> &vec)
-{
-    STREAM_READ(vec.x);
-    STREAM_READ(vec.y);
-    STREAM_READ(vec.z);
-}
-
-template<class T>
-inline void LTStream_Write(ILTStream *pStream, const TVector3<T> &vec)
-{
-    STREAM_WRITE(vec.x);
-    STREAM_WRITE(vec.y);
-    STREAM_WRITE(vec.z);
-}
-
-template<class T>
 inline T TVector3<T>::MagApprox () const
 {
     T   min, med, max;
@@ -416,6 +395,28 @@ inline void TVector3<T>::NormApprox(T nVal)
     }
 
 #define VEC_EXPAND(v) (v).x, (v).y, (v).z
+
+#ifndef __ILTSTREAM_H__
+	#include "iltstream.h"
+#endif
+
+#ifdef LTJS_ILTSTREAM_DEFINED
+template<class T>
+inline void LTStream_Read(ILTStream *pStream, TVector3<T> &vec)
+{
+    STREAM_READ(vec.x);
+    STREAM_READ(vec.y);
+    STREAM_READ(vec.z);
+}
+
+template<class T>
+inline void LTStream_Write(ILTStream *pStream, const TVector3<T> &vec)
+{
+    STREAM_WRITE(vec.x);
+    STREAM_WRITE(vec.y);
+    STREAM_WRITE(vec.z);
+}
+#endif
 
 #define VEC_INIT(v) (v).x = (v).y = (v).z = 0;
 

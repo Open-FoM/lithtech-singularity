@@ -21,6 +21,11 @@
 #define __STDIO_H__
 #endif
 
+#ifndef __WCHAR_H__
+#include <wchar.h>
+#define __WCHAR_H__
+#endif
+
 #ifndef __LTASSERT_H__
 #include "ltassert.h"
 #endif
@@ -52,11 +57,12 @@
     {
 #define END_EXTERNC() };
 
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 	#define MODULE_EXPORT
 	#define MODULE_IMPORT
 	#define _MAX_PATH 256
 	#include <ctype.h>
+	#include <strings.h>
 	inline int stricmp(const char* string1, const char* string2)
 	{ return strcasecmp(string1, string2); }
 	inline char* strupr(char* s)
@@ -69,6 +75,13 @@
 #ifdef _WIN32
 	#define MODULE_EXPORT __declspec(dllexport)
 	#define MODULE_IMPORT __declspec(dllimport)
+#endif
+
+#ifndef _WIN32
+	#define _vsnprintf vsnprintf
+#ifndef __declspec
+	#define __declspec(x)
+#endif
 #endif
 
 class ILTBaseClass;

@@ -53,7 +53,7 @@
 #define __STDLIB_H__
 #endif
 
-#ifndef __LINUX
+#if !defined(__LINUX) && !defined(__APPLE__)
 #define LTMODULE_EXPORT __declspec(dllexport)
 #else
 #define LTMODULE_EXPORT

@@ -2,14 +2,20 @@
 #define __MEMORY_H__
 
     #ifndef __NEW_H__
-    #ifndef _LINUX
+    #if defined(_WIN32)
     #include <new.h>
-    #define __NEW_H__
+    #else
+    #include <new>
     #endif
+    #define __NEW_H__
     #endif
 
     #ifndef __MALLOC_H__
+    #if defined(_WIN32)
     #include <malloc.h>
+    #else
+    #include <stdlib.h>
+    #endif
     #define __MALLOC_H__
     #endif
 
@@ -19,4 +25,3 @@
 
 
 #endif //__MEMORY_H__
-

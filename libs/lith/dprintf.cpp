@@ -42,7 +42,7 @@
 ***************************************************************************/
 
 #include "dprintf.h"
-#ifndef _LINUX
+#if defined(_WIN32)
 #include <dos.h>
 #else
 #include <ctype.h>
@@ -60,6 +60,18 @@
 #define CPL 80          // Number of characters per line
 #define LPP 25          // number of lines per page
 #define ATTR 0x700      // the monochrome video attribute for white on black
+
+#if !defined(_WIN32)
+static char* strupr(char* s)
+{
+	while (*s)
+	{
+		*s = static_cast<char>(toupper(*s));
+		++s;
+	}
+	return s;
+}
+#endif
 
 #ifndef NODPRINTF
 
@@ -879,4 +891,3 @@ dprintfinittype::~dprintfinittype () {
   }
 }
 #endif
-

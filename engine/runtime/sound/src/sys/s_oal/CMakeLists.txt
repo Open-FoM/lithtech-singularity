@@ -42,6 +42,13 @@ if (MINGW)
 	)
 endif ()
 
+if (NOT MSVC AND NOT MINGW)
+	set (
+		libs
+		${OPENAL_LIBRARY}
+	)
+endif ()
+
 set_target_properties (
 	${PROJECT_NAME}
 	PROPERTIES

@@ -239,6 +239,7 @@ struct LTRotation
 
 
 // Read/write.
+#ifdef LTJS_ILTSTREAM_DEFINED
 inline void LTStream_Read(ILTStream *pStream, LTRotation &quat)
 {
 	STREAM_READ(quat.m_Quat[0]);
@@ -255,10 +256,10 @@ inline void LTStream_Write(ILTStream *pStream, LTRotation &quat)
 	STREAM_WRITE(quat.m_Quat[2]);
 	STREAM_WRITE(quat.m_Quat[3]);
 }
+#endif
 
 #endif//doxygen
 
 
 #endif
 //EOF
-

@@ -233,7 +233,7 @@ void CHelpers::FormatFilename(const char *pFilename, char *pOut, int outLen)
 
 	strncpy(pOut, pFilename, outLen);
 	pOut[outLen-1] = 0;
-	#if defined(__LINUX)
+	#if defined(__LINUX) || defined(__APPLE__)
 	while(*pOut != 0)
 	{
 //[dlj] stay with the correct case	*pOut = tolower(*pOut);
