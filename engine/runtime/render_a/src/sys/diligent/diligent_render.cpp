@@ -22,6 +22,7 @@
 #include "ltcodes.h"
 #include "texturescriptmgr.h"
 #include "texturescriptinstance.h"
+#include "texturescriptvarmgr.h"
 #include "ltb.h"
 #include "model.h"
 #include "debuggeometry.h"
@@ -46,6 +47,7 @@
 #include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
+#include "Platforms/interface/NativeWindow.h"
 #include "diligent_shaders_generated.h"
 #include "ltrenderstyle.h"
 
@@ -60,30 +62,28 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32) || defined(WIN32)
 #ifndef __WINDOWS_H__
 #include <windows.h>
 #define __WINDOWS_H__
 #endif
+#endif
 
-void d3d_InitViewBox2(
-	ViewBoxDef* pDef,
-	float nearZ,
-	float farZ,
-	const ViewParams& prev_params,
-	float screen_min_x,
-	float screen_min_y,
-	float screen_max_x,
-	float screen_max_y);
-bool d3d_InitFrustum2(
-	ViewParams* pParams,
-	ViewBoxDef* pViewBox,
-	float screenMinX,
-	float screenMinY,
-	float screenMaxX,
-	float screenMaxY,
-	const LTMatrix* pMat,
-	const LTVector& vScale,
-	ViewParams::ERenderMode eMode);
+#if !defined(_WIN32) && !defined(WIN32)
+using HWND = void*;
+#endif
+
+#ifndef MAX_PATH
+#define MAX_PATH _MAX_PATH
+#endif
+
+#ifndef CPLANE_NEAR_INDEX
+#define CPLANE_NEAR_INDEX 0
+#endif
+
+#ifndef NEARZ
+#define NEARZ SCREEN_NEAR_Z
+#endif
 
 namespace
 {
@@ -231,7 +231,16 @@ struct DiligentRBLightGroup
 };
 
 struct DiligentRenderWorld;
-struct DiligentRenderTexture;
+struct DiligentShadowRenderParams;
+struct DiligentRenderTexture
+{
+	Diligent::RefCntAutoPtr<Diligent::ITexture> texture;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> srv;
+	TextureData* texture_data = nullptr;
+	uint32 width = 0;
+	uint32 height = 0;
+	BPPIdent format = BPP_32;
+};
 
 struct DiligentRenderBlock
 {
@@ -278,6 +287,7 @@ struct DiligentWorldVertex
 	float color[4];
 	float uv0[2];
 	float uv1[2];
+	float normal[3];
 };
 
 struct DiligentWorldConstants
@@ -290,6 +300,9 @@ struct DiligentWorldConstants
 	float fog_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float dynamic_light_pos[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float dynamic_light_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	std::array<std::array<float, 16>, 4> tex_effect_matrices{};
+	std::array<std::array<int32, 4>, 4> tex_effect_params{};
+	std::array<std::array<int32, 4>, 4> tex_effect_uv{};
 };
 
 struct DiligentModelConstants
@@ -300,6 +313,13 @@ struct DiligentModelConstants
 	float camera_pos[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+};
+
+struct DiligentShadowProjectConstants
+{
+	std::array<float, 16> world_to_shadow{};
+	float light_dir[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float proj_center[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 struct DiligentWorldResources
@@ -911,6 +931,44 @@ enum DiligentWorldPipelineMode : uint8
 	kWorldPipelineShadowProject = 10
 };
 
+struct DiligentTextureEffectStage
+{
+	ETextureScriptChannel channel = TSChannel_Null;
+	bool use_uv1 = false;
+};
+
+uint32 diligent_get_texture_effect_stages(uint8 mode, std::array<DiligentTextureEffectStage, 4>& stages)
+{
+	stages = {};
+	switch (mode)
+	{
+		case kWorldPipelineTextured:
+		case kWorldPipelineGlowTextured:
+			stages[0] = {TSChannel_Base, false};
+			return 1;
+		case kWorldPipelineLightmap:
+			stages[0] = {TSChannel_Base, false};
+			stages[1] = {TSChannel_LightMap, true};
+			return 2;
+		case kWorldPipelineLightmapOnly:
+			stages[0] = {TSChannel_LightMap, true};
+			return 1;
+		case kWorldPipelineDualTexture:
+			stages[0] = {TSChannel_Base, false};
+			stages[1] = {TSChannel_DualTexture, true};
+			return 2;
+		case kWorldPipelineLightmapDual:
+			stages[0] = {TSChannel_Base, false};
+			stages[1] = {TSChannel_LightMap, true};
+			stages[2] = {TSChannel_DualTexture, true};
+			return 3;
+		default:
+			break;
+	}
+
+	return 0;
+}
+
 enum DiligentWorldBlendMode : uint8
 {
 	kWorldBlendSolid = 0,
@@ -1004,7 +1062,7 @@ Diligent::RefCntAutoPtr<Diligent::ITexture> g_debug_white_texture;
 Diligent::RefCntAutoPtr<Diligent::ITextureView> g_debug_white_texture_srv;
 std::unordered_map<HLTBUFFER, DiligentSurfaceGpuData> g_surface_cache;
 std::unique_ptr<DiligentRenderWorld> g_render_world;
-std::vector<const DiligentRenderBlock*> g_visible_render_blocks;
+std::vector<DiligentRenderBlock*> g_visible_render_blocks;
 std::vector<WorldModelInstance*> g_diligent_solid_world_models;
 std::vector<WorldModelInstance*> g_diligent_translucent_world_models;
 std::vector<ModelInstance*> g_diligent_translucent_models;
@@ -1028,6 +1086,58 @@ bool g_diligent_collect_translucent_models = false;
 constexpr uint32 kDiligentMaxDynamicLights = 64;
 DynamicLight* g_diligent_world_dynamic_lights[kDiligentMaxDynamicLights] = {};
 uint32 g_diligent_num_world_dynamic_lights = 0;
+
+using DiligentTextureArray = std::array<SharedTexture*, 4>;
+
+bool diligent_draw_sprite_list(
+	const std::vector<SpriteInstance*>& sprites,
+	const ViewParams& params,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode);
+
+bool diligent_draw_polygrid_list(
+	const std::vector<LTPolyGrid*>& grids,
+	const ViewParams& params,
+	float fog_near,
+	float fog_far,
+	DiligentWorldDepthMode depth_mode,
+	bool sort);
+
+bool diligent_draw_world_glow(
+	const DiligentWorldConstants& constants,
+	const std::vector<DiligentRenderBlock*>& blocks);
+
+Diligent::ITextureView* diligent_get_texture_view(SharedTexture* shared_texture, bool texture_changed);
+
+DiligentRenderWorld* diligent_find_world_model(const WorldModelInstance* instance);
+
+bool diligent_get_model_hook_data(ModelInstance* instance, ModelHookData& hook_data);
+
+bool diligent_get_model_transform(ModelInstance* instance, uint32 bone_index, LTMatrix& transform);
+
+bool diligent_shadow_render_texture(uint32 index, const DiligentShadowRenderParams& params);
+
+bool diligent_shadow_blur_texture(uint32 src_index, uint32 dest_index);
+
+bool diligent_draw_world_shadow_projection(
+	const ViewParams& params,
+	const DiligentShadowRenderParams& render_params,
+	Diligent::ITextureView* shadow_view);
+
+bool diligent_draw_mesh_with_pipeline_for_target(
+	ModelInstance* instance,
+	const DiligentMeshLayout& layout,
+	Diligent::IBuffer* const* vertex_buffers,
+	Diligent::IBuffer* index_buffer,
+	uint32 index_count,
+	const RenderPassOp& pass,
+	const RSRenderPassShaders& shader_pass,
+	const DiligentTextureArray& textures,
+	const LTMatrix& mvp,
+	const LTMatrix& model_matrix,
+	Diligent::TEXTURE_FORMAT color_format,
+	Diligent::TEXTURE_FORMAT depth_format);
 
 constexpr uint32 kDiligentGlowMinTextureSize = 16;
 constexpr uint32 kDiligentGlowMaxTextureSize = 512;
@@ -1111,20 +1221,6 @@ HWND g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND
 SDL_Window* g_sdl_window = nullptr;
 #endif
-
-bool d3d_InitFrustum(
-	ViewParams* params,
-	float x_fov,
-	float y_fov,
-	float near_z,
-	float far_z,
-	float screen_min_x,
-	float screen_min_y,
-	float screen_max_x,
-	float screen_max_y,
-	const LTVector* position,
-	const LTRotation* rotation,
-	ViewParams::ERenderMode render_mode);
 
 Diligent::RefCntAutoPtr<Diligent::IBuffer> diligent_create_buffer(
 	uint32 size,
@@ -1287,7 +1383,7 @@ bool diligent_is_sprite_texture(const char* filename)
 		return false;
 	}
 
-	return _stricmp(&filename[name_length - 4], ".spr") == 0;
+		return stricmp(&filename[name_length - 4], ".spr") == 0;
 }
 
 SharedTexture* diligent_load_sprite_data(DiligentRBSection& section, uint32 texture_index, const char* filename)
@@ -1736,6 +1832,9 @@ bool DiligentRenderBlock::EnsureGpuBuffers()
 		dst.uv0[1] = src.v0;
 		dst.uv1[0] = src.u1;
 		dst.uv1[1] = src.v1;
+		dst.normal[0] = src.normal.x;
+		dst.normal[1] = src.normal.y;
+		dst.normal[2] = src.normal.z;
 	}
 
 	const uint32 vertex_bytes = static_cast<uint32>(world_vertices.size() * sizeof(DiligentWorldVertex));
@@ -2292,7 +2391,7 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	sampler_desc.Desc.AddressU = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc.Desc.AddressV = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc.Desc.AddressW = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
-	sampler_desc.TextureName = "g_Texture";
+		sampler_desc.SamplerOrTextureName = "g_Texture";
 	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 
@@ -2440,7 +2539,7 @@ DiligentGlowBlurPipeline* diligent_get_glow_blur_pipeline(LTSurfaceBlend blend)
 	sampler_desc.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 	sampler_desc.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 	sampler_desc.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
-	sampler_desc.TextureName = "g_Texture";
+		sampler_desc.SamplerOrTextureName = "g_Texture";
 	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 
@@ -2527,8 +2626,8 @@ bool diligent_draw_glow_blur_quad(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
 	g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -2701,8 +2800,8 @@ bool diligent_draw_optimized_2d_vertices(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
 	g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -2765,8 +2864,8 @@ bool diligent_draw_optimized_2d_vertices_to_target(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
 	g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -2856,6 +2955,15 @@ void diligent_store_matrix_from_lt(const LTMatrix& matrix, std::array<float, 16>
 	out[13] = matrix.m[1][3];
 	out[14] = matrix.m[2][3];
 	out[15] = matrix.m[3][3];
+}
+
+void diligent_store_identity_matrix(std::array<float, 16>& out)
+{
+	out = {};
+	out[0] = 1.0f;
+	out[5] = 1.0f;
+	out[10] = 1.0f;
+	out[15] = 1.0f;
 }
 
 uint32 diligent_glow_truncate_to_power_of_two(uint32 value)
@@ -3240,7 +3348,8 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 2, Diligent::VT_FLOAT32, false}
+		Diligent::LayoutElement{3, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false}
 	};
 
 	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
@@ -3348,17 +3457,17 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	sampler_desc[0].TextureName = "g_Texture0";
+		sampler_desc[0].SamplerOrTextureName = "g_Texture0";
 	sampler_desc[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[1].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	sampler_desc[1].TextureName = "g_Texture1";
+		sampler_desc[1].SamplerOrTextureName = "g_Texture1";
 	sampler_desc[2].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[2].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	sampler_desc[2].TextureName = "g_Texture2";
+		sampler_desc[2].SamplerOrTextureName = "g_Texture2";
 
 	if (mode == kWorldPipelineVolumeEffect)
 	{
@@ -3414,7 +3523,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		sampler_desc[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
-		sampler_desc[0].TextureName = "g_ShadowTexture";
+				sampler_desc[0].SamplerOrTextureName = "g_ShadowTexture";
 		pipeline_info.PSODesc.ResourceLayout.Variables = variables + 3;
 		pipeline_info.PSODesc.ResourceLayout.NumVariables = 1u;
 		pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = sampler_desc;
@@ -3627,6 +3736,80 @@ void diligent_set_world_vertex_color(DiligentWorldVertex& vertex, uint32 color)
 	vertex.color[3] = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
 }
 
+void diligent_set_world_vertex_normal(DiligentWorldVertex& vertex, const LTVector& normal)
+{
+	vertex.normal[0] = normal.x;
+	vertex.normal[1] = normal.y;
+	vertex.normal[2] = normal.z;
+}
+
+void diligent_init_texture_effect_constants(DiligentWorldConstants& constants)
+{
+	for (auto& matrix : constants.tex_effect_matrices)
+	{
+		diligent_store_identity_matrix(matrix);
+	}
+	for (auto& params : constants.tex_effect_params)
+	{
+		params = {0, 3, 2, 0};
+	}
+	for (auto& uv : constants.tex_effect_uv)
+	{
+		uv = {0, 0, 0, 0};
+	}
+}
+
+void diligent_apply_texture_effect_constants(
+	const DiligentRBSection& section,
+	uint8 pipeline_mode,
+	DiligentWorldConstants& constants)
+{
+	diligent_init_texture_effect_constants(constants);
+
+	std::array<DiligentTextureEffectStage, 4> stages{};
+	const uint32 stage_count = diligent_get_texture_effect_stages(pipeline_mode, stages);
+	if (stage_count == 0)
+	{
+		return;
+	}
+
+	for (uint32 stage_index = 0; stage_index < stage_count; ++stage_index)
+	{
+		const auto& stage = stages[stage_index];
+		const int32 use_uv1 = stage.use_uv1 ? 1 : 0;
+		constants.tex_effect_uv[stage_index] = {use_uv1, 0, 0, 0};
+
+		TextureScriptStageData stage_data;
+		if (!section.texture_effect || !section.texture_effect->GetStageData(stage.channel, stage_data))
+		{
+			constants.tex_effect_params[stage_index] = {0, 3, 2, 0};
+			continue;
+		}
+
+		int32 coord_count = 2;
+		if (stage_data.flags & ITextureScriptEvaluator::FLAG_COORD1)
+		{
+			coord_count = 1;
+		}
+		else if (stage_data.flags & ITextureScriptEvaluator::FLAG_COORD2)
+		{
+			coord_count = 2;
+		}
+		else if (stage_data.flags & ITextureScriptEvaluator::FLAG_COORD3)
+		{
+			coord_count = 3;
+		}
+		else if (stage_data.flags & ITextureScriptEvaluator::FLAG_COORD4)
+		{
+			coord_count = 4;
+		}
+
+		const int32 projected = (stage_data.flags & ITextureScriptEvaluator::FLAG_PROJECTED) ? 1 : 0;
+		constants.tex_effect_params[stage_index] = {1, static_cast<int32>(stage_data.input_type), coord_count, projected};
+		diligent_store_matrix_from_lt(stage_data.transform, constants.tex_effect_matrices[stage_index]);
+	}
+}
+
 uint32 diligent_pack_line_color(const LSLinePoint& point, float alpha_scale)
 {
 	const uint8 r = static_cast<uint8>(LTCLAMP(point.r * 255.0f, 0.0f, 255.0f));
@@ -3756,8 +3939,8 @@ bool diligent_draw_world_immediate(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	g_immediate_context->SetIndexBuffer(g_world_resources.index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	uint8 mode = kWorldPipelineSolid;
@@ -3882,8 +4065,8 @@ bool diligent_draw_world_immediate_mode(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	g_immediate_context->SetIndexBuffer(g_world_resources.index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
@@ -3972,8 +4155,8 @@ bool diligent_draw_line_vertices(
 		1,
 		buffers,
 		offsets,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
 	auto* pipeline = diligent_get_line_pipeline(blend_mode, depth_mode);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
@@ -4056,6 +4239,7 @@ void diligent_fill_world_constants(
 	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
 	constants.fog_color[3] = fog_near;
 	constants.fog_params[0] = fog_far;
+	diligent_init_texture_effect_constants(constants);
 }
 
 struct DiligentSpriteVertex
@@ -4144,7 +4328,7 @@ bool diligent_clip_sprite(SpriteInstance* instance, HPOLY poly, T** points, uint
 }
 
 bool diligent_draw_render_blocks_with_constants(
-	const std::vector<const DiligentRenderBlock*>& blocks,
+	const std::vector<DiligentRenderBlock*>& blocks,
 	const DiligentWorldConstants& base_constants,
 	DiligentWorldBlendMode blend_mode,
 	DiligentWorldDepthMode depth_mode)
@@ -4164,20 +4348,11 @@ bool diligent_draw_render_blocks_with_constants(
 		return false;
 	}
 
-	void* mapped_constants = nullptr;
-	g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
-	if (!mapped_constants)
-	{
-		return false;
-	}
-	std::memcpy(mapped_constants, &base_constants, sizeof(base_constants));
-	g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
-
 	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
 	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	for (const auto* block : blocks)
+	for (auto* block : blocks)
 	{
 		if (!block || block->vertices.empty() || block->indices.empty())
 		{
@@ -4198,8 +4373,8 @@ bool diligent_draw_render_blocks_with_constants(
 			1,
 			buffers,
 			offsets,
-			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 		g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 		for (const auto& section_ptr : block->sections)
@@ -4310,6 +4485,17 @@ bool diligent_draw_render_blocks_with_constants(
 			{
 				continue;
 			}
+
+			DiligentWorldConstants constants = base_constants;
+			diligent_apply_texture_effect_constants(section, mode, constants);
+			void* mapped_constants = nullptr;
+			g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+			if (!mapped_constants)
+			{
+				continue;
+			}
+			std::memcpy(mapped_constants, &constants, sizeof(constants));
+			g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
 			if (mode == kWorldPipelineTextured || mode == kWorldPipelineGlowTextured)
 			{
@@ -4423,7 +4609,7 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 		std::memcpy(light_mapped_constants, &light_constants, sizeof(light_constants));
 		g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
-		for (const auto* block : blocks)
+		for (auto* block : blocks)
 		{
 			if (!block || block->vertices.empty() || block->indices.empty())
 			{
@@ -4442,8 +4628,8 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 				1,
 				buffers,
 				offsets,
-				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 			g_immediate_context->SetPipelineState(light_pipeline->pipeline_state);
@@ -4573,7 +4759,7 @@ bool diligent_draw_world_model_list_with_view(
 			continue;
 		}
 
-		std::vector<const DiligentRenderBlock*> blocks;
+		std::vector<DiligentRenderBlock*> blocks;
 		blocks.reserve(render_world->render_blocks.size());
 		for (const auto& block : render_world->render_blocks)
 		{
@@ -4666,7 +4852,7 @@ bool diligent_draw_world_models_glow(const std::vector<WorldModelInstance*>& mod
 			continue;
 		}
 
-		std::vector<const DiligentRenderBlock*> blocks;
+		std::vector<DiligentRenderBlock*> blocks;
 		blocks.reserve(render_world->render_blocks.size());
 		for (const auto& block : render_world->render_blocks)
 		{
@@ -4703,7 +4889,7 @@ bool diligent_collect_sky_extents(const ViewParams& params, float& min_x, float&
 	max_x = -FLT_MAX;
 	max_y = -FLT_MAX;
 
-	for (const auto* block : g_visible_render_blocks)
+	for (auto* block : g_visible_render_blocks)
 	{
 		if (!block)
 		{
@@ -5089,6 +5275,7 @@ bool diligent_draw_sprite_instance(
 		dst.uv0[1] = points[i].v;
 		dst.uv1[0] = 0.0f;
 		dst.uv1[1] = 0.0f;
+		diligent_set_world_vertex_normal(dst, LTVector(0.0f, 0.0f, 1.0f));
 	}
 
 	std::vector<uint16> indices;
@@ -5297,6 +5484,7 @@ bool diligent_draw_particle_system_instance(
 			diligent_set_world_vertex_color(v0, color);
 			v0.uv0[0] = 0.0f;
 			v0.uv0[1] = 0.0f;
+			diligent_set_world_vertex_normal(v0, normal);
 
 			auto& v1 = vertices[i * 4 + 1];
 			v1.position[0] = pos.x + offset_ur.x * size;
@@ -5305,6 +5493,7 @@ bool diligent_draw_particle_system_instance(
 			diligent_set_world_vertex_color(v1, color);
 			v1.uv0[0] = 1.0f;
 			v1.uv0[1] = 0.0f;
+			diligent_set_world_vertex_normal(v1, normal);
 
 			auto& v2 = vertices[i * 4 + 2];
 			v2.position[0] = pos.x + offset_br.x * size;
@@ -5313,6 +5502,7 @@ bool diligent_draw_particle_system_instance(
 			diligent_set_world_vertex_color(v2, color);
 			v2.uv0[0] = 1.0f;
 			v2.uv0[1] = 1.0f;
+			diligent_set_world_vertex_normal(v2, normal);
 
 			auto& v3 = vertices[i * 4 + 3];
 			v3.position[0] = pos.x + offset_bl.x * size;
@@ -5321,6 +5511,7 @@ bool diligent_draw_particle_system_instance(
 			diligent_set_world_vertex_color(v3, color);
 			v3.uv0[0] = 0.0f;
 			v3.uv0[1] = 1.0f;
+			diligent_set_world_vertex_normal(v3, normal);
 
 			particle = particle->m_pNext;
 			--remaining;
@@ -5458,13 +5649,6 @@ struct DiligentShadowProjectionRequest
 {
 	DiligentShadowRenderParams params{};
 	uint32 texture_index = 0;
-};
-
-struct DiligentShadowProjectConstants
-{
-	std::array<float, 16> world_to_shadow{};
-	float light_dir[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float proj_center[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 std::vector<std::unique_ptr<DiligentShadowTexture>> g_diligent_shadow_textures;
@@ -6388,9 +6572,9 @@ bool diligent_update_world_constants_buffer(const DiligentWorldConstants& consta
 	return true;
 }
 
-void diligent_draw_shadow_projection_blocks(const std::vector<const DiligentRenderBlock*>& blocks)
+void diligent_draw_shadow_projection_blocks(const std::vector<DiligentRenderBlock*>& blocks)
 {
-	for (const auto* block : blocks)
+	for (auto* block : blocks)
 	{
 		if (!block || block->vertices.empty() || block->indices.empty())
 		{
@@ -6409,8 +6593,8 @@ void diligent_draw_shadow_projection_blocks(const std::vector<const DiligentRend
 			1,
 			buffers,
 			offsets,
-			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 		g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 		for (const auto& section_ptr : block->sections)
@@ -6580,7 +6764,7 @@ bool diligent_draw_world_shadow_projection(
 			continue;
 		}
 
-		std::vector<const DiligentRenderBlock*> blocks;
+		std::vector<DiligentRenderBlock*> blocks;
 		blocks.reserve(render_world->render_blocks.size());
 		for (const auto& block : render_world->render_blocks)
 		{
@@ -6639,7 +6823,7 @@ bool diligent_draw_world_model_shadow_projection(
 			continue;
 		}
 
-		std::vector<const DiligentRenderBlock*> blocks;
+		std::vector<DiligentRenderBlock*> blocks;
 		blocks.reserve(render_world->render_blocks.size());
 		for (const auto& block : render_world->render_blocks)
 		{
@@ -7122,6 +7306,7 @@ bool diligent_draw_volume_effect_instance(
 			dst.uv0[1] = src.v;
 			dst.uv1[0] = 0.0f;
 			dst.uv1[1] = 0.0f;
+			diligent_set_world_vertex_normal(dst, LTVector(0.0f, 0.0f, 1.0f));
 		}
 
 		if (use_lighting && effect->m_DPLighting == VolumeEffectInfo::kSinglePointNonDirectional)
@@ -7307,6 +7492,7 @@ bool diligent_draw_line_system_instance(
 			vertex.uv0[1] = 0.0f;
 			vertex.uv1[0] = 0.0f;
 			vertex.uv1[1] = 0.0f;
+			diligent_set_world_vertex_normal(vertex, LTVector(0.0f, 0.0f, 1.0f));
 			vertices.push_back(vertex);
 		}
 
@@ -7368,6 +7554,7 @@ static LTVector diligent_compute_polygrid_normal(
 	float y_scale)
 {
 	const int32 width = static_cast<int32>(grid->m_Width);
+	const int32 height = static_cast<int32>(grid->m_Height);
 	const int8* data = reinterpret_cast<const int8*>(grid->m_Data);
 
 	const int32 x0 = x_index > 0 ? x_index - 1 : x_index;
@@ -7543,10 +7730,11 @@ bool diligent_draw_polygrid_instance(
 					diligent_set_world_vertex_color(vertex, color_lookup[*data_pos]);
 					vertex.uv0[0] = curr_u;
 					vertex.uv0[1] = curr_v;
+					const LTVector local_pos(curr_x, height_value, curr_z);
+					const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
+					diligent_set_world_vertex_normal(vertex, local_normal);
 					if (use_env_map)
 					{
-						const LTVector local_pos(curr_x, height_value, curr_z);
-						const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
 						diligent_compute_envmap_uv(params, world_matrix, local_pos, local_normal, vertex.uv1[0], vertex.uv1[1]);
 					}
 					else
@@ -7597,10 +7785,11 @@ bool diligent_draw_polygrid_instance(
 				diligent_set_world_vertex_color(vertex, color_lookup[*data_pos]);
 				vertex.uv0[0] = curr_u;
 				vertex.uv0[1] = curr_v;
+				const LTVector local_pos(curr_x, height_value, curr_z);
+				const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
+				diligent_set_world_vertex_normal(vertex, local_normal);
 				if (use_env_map)
 				{
-					const LTVector local_pos(curr_x, height_value, curr_z);
-					const LTVector local_normal = diligent_compute_polygrid_normal(grid, x_index, y_index, spacing_x, spacing_z, y_scale);
 					diligent_compute_envmap_uv(params, world_matrix, local_pos, local_normal, vertex.uv1[0], vertex.uv1[1]);
 				}
 				else
@@ -7681,7 +7870,7 @@ bool diligent_draw_polygrid_list(
 	return true;
 }
 
-bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std::vector<const DiligentRenderBlock*>& blocks)
+bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std::vector<DiligentRenderBlock*>& blocks)
 {
 	if (blocks.empty())
 	{
@@ -7698,16 +7887,7 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 		return false;
 	}
 
-	void* mapped_constants = nullptr;
-	g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
-	if (!mapped_constants)
-	{
-		return false;
-	}
-	std::memcpy(mapped_constants, &constants, sizeof(constants));
-	g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
-
-	for (const auto* block : blocks)
+	for (auto* block : blocks)
 	{
 		if (!block || block->vertices.empty() || block->indices.empty())
 		{
@@ -7726,8 +7906,8 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			1,
 			buffers,
 			offsets,
-			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 		g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 		for (const auto& section_ptr : block->sections)
@@ -7769,6 +7949,17 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 					texture_var->Set(texture_view);
 				}
 			}
+
+			DiligentWorldConstants section_constants = constants;
+			diligent_apply_texture_effect_constants(section, mode, section_constants);
+			void* mapped_constants = nullptr;
+			g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+			if (!mapped_constants)
+			{
+				continue;
+			}
+			std::memcpy(mapped_constants, &section_constants, sizeof(section_constants));
+			g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
 			g_immediate_context->SetPipelineState(pipeline->pipeline_state);
 			g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -7877,8 +8068,6 @@ private:
 
 DiligentPsoCache g_pso_cache;
 std::unordered_map<DiligentModelPipelineKey, DiligentModelPipeline, DiligentModelPipelineKeyHash> g_model_pipelines;
-
-using DiligentTextureArray = std::array<SharedTexture*, 4>;
 
 DiligentTextureArray diligent_resolve_textures(const RenderPassOp& pass, SharedTexture** texture_list)
 {
@@ -8031,7 +8220,7 @@ Diligent::COMPARISON_FUNCTION diligent_map_test_mode(ERenStyle_TestMode test_mod
 	}
 }
 
-void diligent_fill_model_depth_desc(const RenderPassOp& pass, Diligent::DepthStencilDesc& desc)
+void diligent_fill_model_depth_desc(const RenderPassOp& pass, Diligent::DepthStencilStateDesc& desc)
 {
 	switch (pass.ZBufferMode)
 	{
@@ -8051,7 +8240,7 @@ void diligent_fill_model_depth_desc(const RenderPassOp& pass, Diligent::DepthSte
 	desc.DepthFunc = diligent_map_test_mode(pass.ZBufferTestMode);
 }
 
-void diligent_fill_model_raster_desc(const RenderPassOp& pass, Diligent::RasterizerDesc& desc)
+void diligent_fill_model_raster_desc(const RenderPassOp& pass, Diligent::RasterizerStateDesc& desc)
 {
 	switch (pass.CullMode)
 	{
@@ -8156,7 +8345,7 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	sampler_desc.TextureName = "g_Texture0";
+	sampler_desc.SamplerOrTextureName = "g_Texture0";
 
 	if (uses_texture)
 	{
@@ -8212,16 +8401,6 @@ DiligentModelPipeline* diligent_get_model_pipeline(
 		swap_desc.DepthBufferFormat);
 }
 
-struct DiligentRenderTexture
-{
-	Diligent::RefCntAutoPtr<Diligent::ITexture> texture;
-	Diligent::RefCntAutoPtr<Diligent::ITextureView> srv;
-	TextureData* texture_data = nullptr;
-	uint32 width = 0;
-	uint32 height = 0;
-	BPPIdent format = BPP_32;
-};
-
 SharedTexture* g_drawprim_texture = nullptr;
 
 Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
@@ -8231,7 +8410,7 @@ Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
 		case BPP_32:
 			return Diligent::TEX_FORMAT_RGBA8_UNORM;
 		case BPP_24:
-			return Diligent::TEX_FORMAT_RGB8_UNORM;
+			return Diligent::TEX_FORMAT_RGBA8_UNORM;
 		case BPP_16:
 			return Diligent::TEX_FORMAT_B5G6R5_UNORM;
 		case BPP_S3TC_DXT1:
@@ -9635,7 +9814,7 @@ bool diligent_CreateSwapChain(uint32 width, uint32 height)
 	swap_chain_desc.Width = width;
 	swap_chain_desc.Height = height;
 
-	Diligent::Win32NativeWindow window{g_native_window_handle};
+	Diligent::NativeWindow window{g_native_window_handle};
 	g_engine_factory->CreateSwapChainVk(g_render_device, g_immediate_context, swap_chain_desc, window, &g_swap_chain);
 	if (!g_swap_chain)
 	{
@@ -9959,7 +10138,10 @@ bool diligent_get_model_hook_data(ModelInstance* instance, ModelHookData& hook_d
 	hook_data.m_HookFlags = MHF_USETEXTURE;
 	hook_data.m_hObject = reinterpret_cast<HLOCALOBJ>(instance);
 	hook_data.m_LightAdd = g_diligent_scene_desc->m_GlobalModelLightAdd;
-	hook_data.m_ObjectColor = {instance->m_ColorR, instance->m_ColorG, instance->m_ColorB};
+		hook_data.m_ObjectColor = {
+			static_cast<float>(instance->m_ColorR),
+			static_cast<float>(instance->m_ColorG),
+			static_cast<float>(instance->m_ColorB)};
 
 	if (g_diligent_scene_desc->m_ModelHookFn)
 	{
@@ -10569,7 +10751,7 @@ void diligent_process_model_object_glow(LTObject* object, const CRenderStyleMap&
 	}
 }
 
-void diligent_collect_world_dynamic_lights(const ViewParams& params, const WorldTreeNode* node)
+void diligent_collect_world_dynamic_lights(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10602,7 +10784,7 @@ void diligent_collect_world_dynamic_lights(const ViewParams& params, const World
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10617,7 +10799,7 @@ void diligent_collect_world_dynamic_lights(const ViewParams& params, const World
 	}
 }
 
-void diligent_filter_world_node_for_models(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_models(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10650,7 +10832,7 @@ void diligent_filter_world_node_for_models(const ViewParams& params, const World
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10665,7 +10847,7 @@ void diligent_filter_world_node_for_models(const ViewParams& params, const World
 	}
 }
 
-void diligent_filter_world_node_for_world_models(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_world_models(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10698,7 +10880,7 @@ void diligent_filter_world_node_for_world_models(const ViewParams& params, const
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10713,7 +10895,7 @@ void diligent_filter_world_node_for_world_models(const ViewParams& params, const
 	}
 }
 
-void diligent_filter_world_node_for_sprites(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_sprites(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10746,7 +10928,7 @@ void diligent_filter_world_node_for_sprites(const ViewParams& params, const Worl
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10761,7 +10943,7 @@ void diligent_filter_world_node_for_sprites(const ViewParams& params, const Worl
 	}
 }
 
-void diligent_filter_world_node_for_line_systems(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_line_systems(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10794,7 +10976,7 @@ void diligent_filter_world_node_for_line_systems(const ViewParams& params, const
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10809,7 +10991,7 @@ void diligent_filter_world_node_for_line_systems(const ViewParams& params, const
 	}
 }
 
-void diligent_filter_world_node_for_particle_systems(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_particle_systems(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10842,7 +11024,7 @@ void diligent_filter_world_node_for_particle_systems(const ViewParams& params, c
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10857,7 +11039,7 @@ void diligent_filter_world_node_for_particle_systems(const ViewParams& params, c
 	}
 }
 
-void diligent_filter_world_node_for_volume_effects(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_volume_effects(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10890,7 +11072,7 @@ void diligent_filter_world_node_for_volume_effects(const ViewParams& params, con
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10905,7 +11087,7 @@ void diligent_filter_world_node_for_volume_effects(const ViewParams& params, con
 	}
 }
 
-void diligent_filter_world_node_for_polygrids(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_polygrids(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10938,7 +11120,7 @@ void diligent_filter_world_node_for_polygrids(const ViewParams& params, const Wo
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -10953,7 +11135,7 @@ void diligent_filter_world_node_for_polygrids(const ViewParams& params, const Wo
 	}
 }
 
-void diligent_filter_world_node_for_canvases(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_canvases(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -10986,7 +11168,7 @@ void diligent_filter_world_node_for_canvases(const ViewParams& params, const Wor
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -11001,7 +11183,7 @@ void diligent_filter_world_node_for_canvases(const ViewParams& params, const Wor
 	}
 }
 
-void diligent_filter_world_node_for_canvases_main(const ViewParams& params, const WorldTreeNode* node)
+void diligent_filter_world_node_for_canvases_main(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
 	{
@@ -11034,7 +11216,7 @@ void diligent_filter_world_node_for_canvases_main(const ViewParams& params, cons
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -11049,7 +11231,7 @@ void diligent_filter_world_node_for_canvases_main(const ViewParams& params, cons
 	}
 }
 
-void diligent_filter_world_node_for_models_glow(const ViewParams& params, const WorldTreeNode* node, const CRenderStyleMap& render_style_map)
+void diligent_filter_world_node_for_models_glow(const ViewParams& params, WorldTreeNode* node, const CRenderStyleMap& render_style_map)
 {
 	if (!node)
 	{
@@ -11082,7 +11264,7 @@ void diligent_filter_world_node_for_models_glow(const ViewParams& params, const 
 
 	for (uint32 child_index = 0; child_index < MAX_WTNODE_CHILDREN; ++child_index)
 	{
-		const WorldTreeNode* child = node->GetChild(child_index);
+		WorldTreeNode* child = node->GetChild(child_index);
 		if (!child || child->GetNumObjectsOnOrBelow() == 0)
 		{
 			continue;
@@ -12636,7 +12818,7 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 	}
 
 	ViewParams saved_view = g_ViewParams;
-	std::vector<const DiligentRenderBlock*> saved_blocks = g_visible_render_blocks;
+	std::vector<DiligentRenderBlock*> saved_blocks = g_visible_render_blocks;
 
 	constexpr float kGlowNearZ = 7.0f;
 	float glow_far_z = g_CV_ScreenGlowFogEnable.m_Val ? g_CV_ScreenGlowFogFarZ.m_Val : g_CV_FarZ.m_Val;
@@ -13455,14 +13637,19 @@ LTRESULT diligent_GetOccluderEnabled(uint32, bool*)
 	return LT_NOTFOUND;
 }
 
-uint32 diligent_GetTextureEffectVarID(const char*, uint32)
+uint32 diligent_GetTextureEffectVarID(const char* name, uint32 stage)
 {
-	return 0;
+	if (!name)
+	{
+		return 0;
+	}
+
+	return CTextureScriptVarMgr::GetID(name, stage);
 }
 
-bool diligent_SetTextureEffectVar(uint32, uint32, float)
+bool diligent_SetTextureEffectVar(uint32 var_id, uint32 var, float value)
 {
-	return false;
+	return CTextureScriptVarMgr::GetSingleton().SetVar(var_id, var, value);
 }
 
 bool diligent_IsObjectGroupEnabled(uint32)

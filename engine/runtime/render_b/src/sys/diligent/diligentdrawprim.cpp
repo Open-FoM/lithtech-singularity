@@ -33,20 +33,6 @@ extern int32 g_ScreenWidth;
 extern int32 g_ScreenHeight;
 extern ViewParams g_ViewParams;
 
-bool d3d_InitFrustum(
-	ViewParams* pParams,
-	float xFov,
-	float yFov,
-	float nearZ,
-	float farZ,
-	float screenMinX,
-	float screenMinY,
-	float screenMaxX,
-	float screenMaxY,
-	const LTVector* pPos,
-	const LTRotation* pRotation,
-	ViewParams::ERenderMode eMode);
-
 namespace
 {
 struct DrawPrimConstants

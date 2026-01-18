@@ -67,4 +67,39 @@ public:
 	ERenderMode m_eRenderMode;
 };
 
+void d3d_InitViewBox2(
+	ViewBoxDef* pDef,
+	float nearZ,
+	float farZ,
+	const ViewParams& prev_params,
+	float screen_min_x,
+	float screen_min_y,
+	float screen_max_x,
+	float screen_max_y);
+
+bool d3d_InitFrustum2(
+	ViewParams* pParams,
+	ViewBoxDef* pViewBox,
+	float screenMinX,
+	float screenMinY,
+	float screenMaxX,
+	float screenMaxY,
+	const LTMatrix* pMat,
+	const LTVector& vScale,
+	ViewParams::ERenderMode eMode);
+
+bool d3d_InitFrustum(
+	ViewParams* params,
+	float x_fov,
+	float y_fov,
+	float near_z,
+	float far_z,
+	float screen_min_x,
+	float screen_min_y,
+	float screen_max_x,
+	float screen_max_y,
+	const LTVector* position,
+	const LTRotation* rotation,
+	ViewParams::ERenderMode render_mode);
+
 #endif

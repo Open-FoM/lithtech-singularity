@@ -17,6 +17,7 @@
 #include <cmath>
 
 #include <algorithm>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -32,7 +33,9 @@
 #include "ltsysoptim.h"
 #include "ltfontparams.h"
 #include "iltclient.h"
+#if defined(_WIN32) || defined(WIN32)
 #include "interface_helpers.h"
+#endif
 
 #include "SDL3/SDL.h"
 
@@ -44,6 +47,82 @@
 #include "ltjs_shell_resource_mgr.h"
 #include "ltjs_ucs.h"
 #include "ltjs_windows_1252.h"
+#include "ltjs_index_type.h"
+
+#if !defined(_WIN32) && !defined(WIN32)
+static ltjs::Index dsi_get_file_size(
+	const char* path) noexcept
+{
+	if (!path)
+	{
+		return 0;
+	}
+
+	auto* file = std::fopen(path, "rb");
+
+	if (!file)
+	{
+		return 0;
+	}
+
+	if (std::fseek(file, 0, SEEK_END) != 0)
+	{
+		std::fclose(file);
+		return 0;
+	}
+
+	const auto size = std::ftell(file);
+	std::fclose(file);
+
+	if (size < 0)
+	{
+		return 0;
+	}
+
+	return static_cast<ltjs::Index>(size);
+}
+
+static bool dsi_load_file_into_memory(
+	const char* path,
+	void* buffer,
+	ltjs::Index max_buffer_size) noexcept
+{
+	if (!path || !buffer || max_buffer_size <= 0)
+	{
+		return false;
+	}
+
+	auto* file = std::fopen(path, "rb");
+
+	if (!file)
+	{
+		return false;
+	}
+
+	const auto bytes_read = std::fread(
+		buffer,
+		1,
+		static_cast<size_t>(max_buffer_size),
+		file);
+
+	std::fclose(file);
+	return bytes_read == static_cast<size_t>(max_buffer_size);
+}
+
+static int MulDiv(
+	int nNumber,
+	int nNumerator,
+	int nDenominator) noexcept
+{
+	if (nDenominator == 0)
+	{
+		return 0;
+	}
+
+	const auto product = static_cast<long long>(nNumber) * nNumerator;
+	return static_cast<int>(product / nDenominator);
+}
+#endif
 
 
 // get the ILTTexInterface from the interface database

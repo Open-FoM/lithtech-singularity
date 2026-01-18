@@ -267,3 +267,46 @@ bool d3d_InitFrustum(
 		LTVector(1.0f, 1.0f, 1.0f),
 		render_mode);
 }
+
+void d3d_InitViewBox2(
+	ViewBoxDef* pDef,
+	float nearZ,
+	float farZ,
+	const ViewParams& prev_params,
+	float /*screen_min_x*/,
+	float /*screen_min_y*/,
+	float /*screen_max_x*/,
+	float /*screen_max_y*/)
+{
+	if (!pDef)
+	{
+		return;
+	}
+
+	*pDef = prev_params.m_ViewBox;
+	pDef->m_NearZ = nearZ;
+	pDef->m_FarZ = farZ;
+}
+
+bool d3d_InitFrustum2(
+	ViewParams* pParams,
+	ViewBoxDef* pViewBox,
+	float screenMinX,
+	float screenMinY,
+	float screenMaxX,
+	float screenMaxY,
+	const LTMatrix* pMat,
+	const LTVector& vScale,
+	ViewParams::ERenderMode eMode)
+{
+	return lt_InitFrustum2(
+		pParams,
+		pViewBox,
+		screenMinX,
+		screenMinY,
+		screenMaxX,
+		screenMaxY,
+		pMat,
+		vScale,
+		eMode);
+}
