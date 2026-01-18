@@ -28,7 +28,7 @@
 #ifdef __WIN32
 #include "sys/win/winstdlterror.h"
 CWINError STDLTError;
-#elif __LINUX
+#elif defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/linuxstdlterror.h"
 CLINUXError STDLTError;
 #else

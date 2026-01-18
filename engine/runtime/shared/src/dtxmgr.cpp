@@ -374,6 +374,10 @@ LTRESULT dtx_Create(ILTStream *pStream, TextureData **ppOut, uint32& nBaseWidth,
 		pTmpBuffer = NULL; 
 	}
 #else
+	TextureMipData* pMip = nullptr;
+	uint32 y = 0;
+	uint32 size = 0;
+	bool bSkipImageData = false;
 
 	// Allocate it.
 	pRet = dtx_Alloc(hdr.GetBPPIdent(), nTexWidth, nTexHeight, nNumMips, &allocSize, &textureDataSize);
@@ -441,4 +445,3 @@ void dtx_SetupDTXFormat2(BPPIdent bpp, PFormat *pFormat)
 		pFormat->Init(bpp, 0, 0, 0, 0); 
 	}
 }
-

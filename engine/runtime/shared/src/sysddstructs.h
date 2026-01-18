@@ -14,7 +14,7 @@
 #define __SYSDDSTRUCTS_H__
 
 // This is a redirector to get the system dependent include
-#ifdef __LINUX
+#if defined(__LINUX) || defined(__APPLE__)
 #include "sys/linux/linuxddstructs.h"
 #elif _WIN32
 #include "sys/win/diligentddstructs.h"
