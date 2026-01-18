@@ -92,7 +92,7 @@ set (diligent_shader_generated_dir ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set (diligent_shader_generated_cpp ${diligent_shader_generated_dir}/diligent_shaders_generated.cpp)
 set (diligent_shader_generated_h ${diligent_shader_generated_dir}/diligent_shaders_generated.h)
 
-set (diligent_shader_generator_cmake ${CMAKE_CURRENT_SOURCE_DIR}/../../../../winbuild/lithtech/cmake/generate_diligent_shaders.cmake)
+set (diligent_shader_generator_cmake ${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_diligent_shaders.cmake)
 
 add_custom_command (
 	OUTPUT

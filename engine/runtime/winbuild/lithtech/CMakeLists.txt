@@ -286,10 +286,10 @@ add_custom_command (
 		-DOUTPUT_CPP=${diligent_shader_generated_cpp}
 		-DOUTPUT_H=${diligent_shader_generated_h}
 		-DSHADERS=${diligent_shader_sources}
-		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_diligent_shaders.cmake
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/cmake/generate_diligent_shaders.cmake
 	DEPENDS
 		${diligent_shader_files}
-		${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_diligent_shaders.cmake
+		${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/cmake/generate_diligent_shaders.cmake
 	VERBATIM
 )
 
@@ -408,7 +408,7 @@ target_sources (
 		../../client/src/predict.h
 		../../client/src/setupobject.h
 		../../client/src/sprite.h
-		../../client/src/sys/win/winclientde_impl.h
+		../../client/src/clientde_impl_sys.h
 		../../client/src/sys/win/winconsole_impl.h
 		../../client/src/sysclient.h
 		../../client/src/sysclientde_impl.h
@@ -437,7 +437,7 @@ target_sources (
 		../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.h
 		../../kernel/src/sys/win/ltjs_fmv_player.h
 		../../kernel/src/sys/win/input.h
-		../../kernel/src/sys/win/interface_helpers.h
+		../../kernel/src/interface_helpers.h
 		../../kernel/src/sys/win/load_pcx.h
 		../../kernel/src/sys/win/ltdirectmusic_impl.h
 		../../kernel/src/sys/win/ltdirectmusiccontrolfile.h
@@ -446,7 +446,7 @@ target_sources (
 		../../kernel/src/sys/win/ltrendermgr_impl.h
 		../../kernel/src/sys/win/ltthread.h
 		../../kernel/src/sys/win/musicdriver.h
-		../../kernel/src/sys/win/render.h
+		../../kernel/src/render.h
 		../../kernel/src/sys/win/streamsim.h
 		../../kernel/src/sys/win/stringmgr.h
 		../../kernel/src/sys/win/systeminfo.h
@@ -617,9 +617,9 @@ target_sources (
 		../../client/src/shelltransfer.cpp
 		../../client/src/shellutil.cpp
 		../../client/src/sprite.cpp
-		../../client/src/sys/win/customfontfilemgr.cpp
-		../../client/src/sys/win/texturestringimage.cpp
-		../../client/src/sys/win/winclientde_impl.cpp
+		../../client/src/customfontfilemgr.cpp
+		../../client/src/texturestringimage.cpp
+		../../client/src/clientde_impl_sys.cpp
 		../../client/src/sys/win/winconsole_impl.cpp
 		../../client/src/texturestring.cpp
 		../../client/src/volumeeffect.cpp
@@ -645,7 +645,7 @@ target_sources (
 		../../kernel/src/sys/win/ltjs_fmv_player.cpp
 		../../kernel/src/sys/win/input.cpp
 		../../kernel/src/sys/win/inputsim.cpp
-		../../kernel/src/sys/win/interface_helpers.cpp
+		../../kernel/src/interface_helpers.cpp
 		../../kernel/src/sys/win/load_pcx.cpp
 		../../kernel/src/sys/win/lt_cursor_impl.cpp
 		../../kernel/src/sys/win/ltdirectmusic_impl.cpp
