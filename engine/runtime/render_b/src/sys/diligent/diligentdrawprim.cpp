@@ -465,7 +465,7 @@ static DrawPrimPipeline* GetPipeline(
 		sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		sampler_desc.TextureName = "g_Texture";
+		sampler_desc.SamplerOrTextureName = "g_Texture";
 		pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 		pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 	}
@@ -596,6 +596,29 @@ LTRESULT CDiligentDrawPrim::SetEffectShaderID(uint32 nEffectShaderID)
 	return LT_OK;
 }
 
+void CDiligentDrawPrim::SaveViewport()
+{
+	BuildViewport(m_saved_viewport);
+	m_has_saved_viewport = true;
+}
+
+void CDiligentDrawPrim::RestoreViewport()
+{
+	if (!m_has_saved_viewport)
+	{
+		return;
+	}
+
+	auto* context = r_GetImmediateContext();
+	if (!context)
+	{
+		return;
+	}
+
+	context->SetViewports(1, &m_saved_viewport, 0, 0);
+	m_has_saved_viewport = false;
+}
+
 void CDiligentDrawPrim::SetUVWH(LT_POLYGT4* pPrim, HTEXTURE pTex, float u, float v, float w, float h)
 {
 	if (!pPrim)
@@ -720,15 +743,8 @@ bool CDiligentDrawPrim::UpdateTransformMatrix()
 	return true;
 }
 
-void CDiligentDrawPrim::ApplyViewport()
+void CDiligentDrawPrim::BuildViewport(Diligent::Viewport& viewport) const
 {
-	auto* context = r_GetImmediateContext();
-	if (!context)
-	{
-		return;
-	}
-
-	Diligent::Viewport viewport;
 	viewport.MinDepth = 0.0f;
 	viewport.MaxDepth = m_bReallyClose ? 0.1f : 1.0f;
 
@@ -742,7 +758,6 @@ void CDiligentDrawPrim::ApplyViewport()
 			viewport.TopLeftY = static_cast<float>(camera->m_Top);
 			viewport.Width = static_cast<float>(camera->m_Right - camera->m_Left);
 			viewport.Height = static_cast<float>(camera->m_Bottom - camera->m_Top);
-			context->SetViewports(1, &viewport, 0, 0);
 			return;
 		}
 	}
@@ -751,6 +766,18 @@ void CDiligentDrawPrim::ApplyViewport()
 	viewport.TopLeftY = 0.0f;
 	viewport.Width = static_cast<float>(g_ScreenWidth);
 	viewport.Height = static_cast<float>(g_ScreenHeight);
+}
+
+void CDiligentDrawPrim::ApplyViewport()
+{
+	auto* context = r_GetImmediateContext();
+	if (!context)
+	{
+		return;
+	}
+
+	Diligent::Viewport viewport;
+	BuildViewport(viewport);
 	context->SetViewports(1, &viewport, 0, 0);
 }
 
@@ -854,11 +881,11 @@ LTRESULT CDiligentDrawPrim::SubmitDraw(const std::vector<DrawPrimVertex>& vertic
 
 	Diligent::IBuffer* buffers[] = {resources.vertex_buffer};
 	Diligent::Uint64 offsets[] = {0};
-	context->SetVertexBuffers(0, 1, buffers, offsets, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	context->SetVertexBuffers(0, 1, buffers, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
 	if (pipeline->srb)
 	{
-		context->CommitShaderResources(pipeline->srb, Diligent::COMMIT_SHADER_RESOURCES_FLAG_TRANSITION_RESOURCES);
+		context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
 
 	Diligent::DrawAttribs draw_attribs;

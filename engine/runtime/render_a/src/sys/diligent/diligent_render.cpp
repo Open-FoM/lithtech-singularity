@@ -85,6 +85,11 @@ using HWND = void*;
 #define NEARZ SCREEN_NEAR_Z
 #endif
 
+RenderStruct* g_render_struct = nullptr;
+SceneDesc* g_diligent_scene_desc = nullptr;
+uint32 g_diligent_object_frame_code = 0;
+ViewParams g_ViewParams;
+
 namespace
 {
 static IWorldClientBSP* world_bsp_client = nullptr;
@@ -1078,7 +1083,6 @@ std::vector<LTPolyGrid*> g_diligent_solid_polygrids;
 std::vector<LTPolyGrid*> g_diligent_early_translucent_polygrids;
 std::vector<LTPolyGrid*> g_diligent_translucent_polygrids;
 CRenderObject* g_render_object_list_head = nullptr;
-uint32 g_diligent_object_frame_code = 0;
 LTSurfaceBlend g_optimized_2d_blend = LTSURFACEBLEND_ALPHA;
 HLTCOLOR g_optimized_2d_color = 0xFFFFFFFF;
 bool g_diligent_collect_translucent_models = false;
@@ -1208,11 +1212,8 @@ struct DiligentSceneDescScope
 Diligent::RefCntAutoPtr<Diligent::IRenderDevice> g_render_device;
 Diligent::RefCntAutoPtr<Diligent::IDeviceContext> g_immediate_context;
 Diligent::RefCntAutoPtr<Diligent::ISwapChain> g_swap_chain;
-RenderStruct* g_render_struct = nullptr;
-SceneDesc* g_diligent_scene_desc = nullptr;
 uint32 g_screen_width = 0;
 uint32 g_screen_height = 0;
-ViewParams g_ViewParams;
 bool g_is_in_3d = false;
 bool g_is_in_optimized_2d = false;
 bool g_diligent_glow_mode = false;

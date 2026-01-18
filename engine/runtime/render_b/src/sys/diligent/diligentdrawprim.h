@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
 
 struct DiligentDrawPrimResources;
@@ -35,6 +36,8 @@ public:
 	LTRESULT SetFogEnable(bool bFogEnable) override;
 	LTRESULT SetReallyClose(bool bReallyClose) override;
 	LTRESULT SetEffectShaderID(uint32 nEffectShaderID) override;
+	void SaveViewport() override;
+	void RestoreViewport() override;
 
 	void SetUVWH(LT_POLYGT4* pPrim, HTEXTURE pTex, float u, float v, float w, float h) override;
 
@@ -82,12 +85,15 @@ private:
 
 	bool VerifyValid() const;
 	bool UpdateTransformMatrix();
+	void BuildViewport(Diligent::Viewport& viewport) const;
 	void ApplyViewport();
 	LTRESULT SubmitDraw(const std::vector<DrawPrimVertex>& vertices, Diligent::PRIMITIVE_TOPOLOGY topology, bool textured);
 
 	std::unique_ptr<DiligentDrawPrimResources> m_resources;
 	int32 m_block_count = 0;
 	bool m_transform_dirty = true;
+	Diligent::Viewport m_saved_viewport{};
+	bool m_has_saved_viewport = false;
 };
 
 #endif
