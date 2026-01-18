@@ -39,6 +39,13 @@
 #include "ltrendererstats.h"
 #include "rendererframestats.h"
 
+#ifdef LTJS_SDL_BACKEND
+#include "ltjs_shared_data_mgr.h"
+#include "ltjs_shell_resource_mgr.h"
+#include <cctype>
+#include <string>
+#include <vector>
+#endif // LTJS_SDL_BACKEND
 #include "soundmgr.h"
 
 #if LTJS_USE_D3DX9
@@ -1302,7 +1309,216 @@ uint32 CLTClient::GetContainedObjects(HOBJECT hContainer,
 
 HSTRING CLTClient::FormatString(int messageCode, ...)
 {
-#ifndef LTJS_SDL_BACKEND
+#ifdef LTJS_SDL_BACKEND
+	auto* cres_mgr = ltjs::get_shared_data_mgr().get_cres_mgr();
+	if (!cres_mgr)
+	{
+		return LTNULL;
+	}
+
+	const auto* shell_string = cres_mgr->find_string(messageCode);
+	if (!shell_string || !shell_string->data.data)
+	{
+		return LTNULL;
+	}
+
+	auto format_message = [](const char* format, va_list args) -> std::string
+	{
+		if (!format)
+		{
+			return {};
+		}
+
+		auto get_spec_type = [](const char* spec_begin, const char* spec_end) -> char
+		{
+			for (auto* p = spec_end; p != spec_begin; --p)
+			{
+				const auto ch = *(p - 1);
+				if (std::isalpha(static_cast<unsigned char>(ch)) != 0)
+				{
+					return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+				}
+			}
+
+			return 's';
+		};
+
+		auto parse_token = [&](const char* text, size_t start, int& out_index, char& out_type, size_t& out_next) -> bool
+		{
+			if (!text || text[start] != '%')
+			{
+				return false;
+			}
+
+			auto pos = start + 1;
+			if (text[pos] == '%')
+			{
+				out_index = -1;
+				out_type = '\0';
+				out_next = pos + 1;
+				return true;
+			}
+
+			int index = 0;
+			while (text[pos] && std::isdigit(static_cast<unsigned char>(text[pos])) != 0)
+			{
+				index = (index * 10) + (text[pos] - '0');
+				++pos;
+			}
+
+			if (index <= 0 || text[pos] != '!')
+			{
+				return false;
+			}
+
+			const auto* spec_begin = &text[pos + 1];
+			const auto* spec_end = strchr(spec_begin, '!');
+			if (!spec_end)
+			{
+				return false;
+			}
+
+			out_index = index;
+			out_type = get_spec_type(spec_begin, spec_end);
+			out_next = static_cast<size_t>(spec_end - text + 1);
+			return true;
+		};
+
+		auto collect_types = [&](const char* text)
+		{
+			int max_index = 0;
+			std::vector<char> types;
+
+			for (size_t i = 0; text[i] != '\0'; )
+			{
+				int index = 0;
+				char type = '\0';
+				size_t next = 0;
+				if (parse_token(text, i, index, type, next))
+				{
+					if (index > 0)
+					{
+						if (index > max_index)
+						{
+							types.resize(static_cast<size_t>(index + 1), '\0');
+							max_index = index;
+						}
+
+						if (types[static_cast<size_t>(index)] == '\0')
+						{
+							types[static_cast<size_t>(index)] = type;
+						}
+					}
+
+					i = next;
+					continue;
+				}
+
+				++i;
+			}
+
+			return types;
+		};
+
+		auto format_arg = [](va_list& arg_list, char type) -> std::string
+		{
+			char buffer[128];
+			switch (type)
+			{
+				case 'd':
+				case 'i':
+				{
+					const auto value = va_arg(arg_list, int);
+					snprintf(buffer, sizeof(buffer), "%d", value);
+					return buffer;
+				}
+				case 'u':
+				{
+					const auto value = va_arg(arg_list, unsigned int);
+					snprintf(buffer, sizeof(buffer), "%u", value);
+					return buffer;
+				}
+				case 'x':
+				{
+					const auto value = va_arg(arg_list, unsigned int);
+					snprintf(buffer, sizeof(buffer), "%x", value);
+					return buffer;
+				}
+				case 'f':
+				{
+					const auto value = va_arg(arg_list, double);
+					snprintf(buffer, sizeof(buffer), "%f", value);
+					return buffer;
+				}
+				case 'p':
+				{
+					const auto value = va_arg(arg_list, void*);
+					snprintf(buffer, sizeof(buffer), "%p", value);
+					return buffer;
+				}
+				case 's':
+				default:
+				{
+					const auto value = va_arg(arg_list, const char*);
+					return (value ? value : "");
+				}
+			}
+		};
+
+		const auto types = collect_types(format);
+		const auto max_index = static_cast<int>(types.size()) - 1;
+
+		std::vector<std::string> values;
+		values.resize(static_cast<size_t>(max_index + 1));
+
+		va_list args_copy;
+		va_copy(args_copy, args);
+
+		for (int index = 1; index <= max_index; ++index)
+		{
+			const auto type = types[static_cast<size_t>(index)];
+			values[static_cast<size_t>(index)] = format_arg(args_copy, type ? type : 's');
+		}
+
+		va_end(args_copy);
+
+		std::string out;
+		out.reserve(strlen(format) + 32);
+
+		for (size_t i = 0; format[i] != '\0'; )
+		{
+			int index = 0;
+			char type = '\0';
+			size_t next = 0;
+			if (parse_token(format, i, index, type, next))
+			{
+				if (index < 0)
+				{
+					out.push_back('%');
+				}
+				else if (index > 0 && static_cast<size_t>(index) < values.size())
+				{
+					out.append(values[static_cast<size_t>(index)]);
+				}
+
+				i = next;
+				continue;
+			}
+
+			out.push_back(format[i]);
+			++i;
+		}
+
+		return out;
+	};
+
+	va_list marker;
+	va_start(marker, messageCode);
+	const auto formatted = format_message(shell_string->data.data, marker);
+	va_end(marker);
+
+	return str_CreateStringAnsi(formatted.c_str());
+#else
 	uint8 *pBuffer;
 	int bufferLen;
 	va_list marker;

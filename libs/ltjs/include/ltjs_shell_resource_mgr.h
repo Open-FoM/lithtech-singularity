@@ -78,6 +78,10 @@ public:
 	virtual void initialize(
 		const char* base_path) noexcept = 0;
 
+	virtual void initialize_paths(
+		const char* const* base_paths,
+		Index base_path_count) noexcept = 0;
+
 	virtual void set_language(
 		const char* language_id_name) noexcept = 0;
 

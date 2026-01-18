@@ -69,6 +69,10 @@ public:
 		sample_rate_{},
 		waves_{},
 		length_{},
+		qbpm_{default_qbpm},
+		beats_per_measure_{4},
+		beat_{4},
+		grids_per_beat_{4},
 		channel_{},
 		current_variation_{},
 		variation_list_{},
@@ -126,6 +130,26 @@ public:
 	int api_get_length() const
 	{
 		return length_;
+	}
+
+	int api_get_qbpm() const
+	{
+		return qbpm_;
+	}
+
+	int api_get_beats_per_measure() const
+	{
+		return beats_per_measure_;
+	}
+
+	int api_get_beat_value() const
+	{
+		return beat_;
+	}
+
+	int api_get_grids_per_beat() const
+	{
+		return grids_per_beat_;
 	}
 
 	int api_get_channel() const
@@ -1321,6 +1345,10 @@ private:
 	int sample_rate_;
 	Waves waves_;
 	int length_; // (in bytes)
+	int qbpm_;
+	int beats_per_measure_;
+	int beat_;
+	int grids_per_beat_;
 	std::uint32_t channel_;
 	std::uint32_t current_variation_;
 	VariationList variation_list_;
@@ -2332,6 +2360,41 @@ private:
 			break;
 		}
 
+		qbpm_ = qbpm;
+
+		// Get time signature.
+		//
+		auto beats_per_measure = beats_per_measure_;
+		auto beat = beat_;
+		auto grids_per_beat = grids_per_beat_;
+
+		for (const auto& io_track : io_tracks)
+		{
+			if (io_track.times_.empty())
+			{
+				continue;
+			}
+
+			const auto& time_item = io_track.times_.front();
+			beats_per_measure = static_cast<int>(time_item.beats_per_measure_);
+			beat = static_cast<int>(time_item.beat_);
+			grids_per_beat = static_cast<int>(time_item.grids_per_beat_);
+			break;
+		}
+
+		if (beats_per_measure > 0)
+		{
+			beats_per_measure_ = beats_per_measure;
+		}
+		if (beat > 0)
+		{
+			beat_ = beat;
+		}
+		if (grids_per_beat > 0)
+		{
+			grids_per_beat_ = grids_per_beat;
+		}
+
 		// Calculate bytes per one music time unit.
 		//
 		// qbps = quarter_beats_per_second = qbpm / 60
@@ -2948,6 +3011,26 @@ void DMusicSegment::close()
 int DMusicSegment::get_length() const
 {
 	return impl_->api_get_length();
+}
+
+int DMusicSegment::get_qbpm() const
+{
+	return impl_->api_get_qbpm();
+}
+
+int DMusicSegment::get_beats_per_measure() const
+{
+	return impl_->api_get_beats_per_measure();
+}
+
+int DMusicSegment::get_beat_value() const
+{
+	return impl_->api_get_beat_value();
+}
+
+int DMusicSegment::get_grids_per_beat() const
+{
+	return impl_->api_get_grids_per_beat();
 }
 
 int DMusicSegment::get_channel() const

@@ -26,7 +26,7 @@ void DoStackTrace ( char*     szString  ,
 #endif
 
 
-#ifdef _DEBUG
+#if defined(_WIN32) && defined(_DEBUG)
 /*----------------------------------------------------------------------
        John Robbins - Microsoft Systems Journal Bugslayer Column
 ------------------------------------------------------------------------
@@ -703,4 +703,3 @@ protected   :
 
 #endif // _DEBUG
 #endif // _STACKTRACE_H
-

@@ -40,6 +40,10 @@
 		link_to_implementation(CUIWidgetManager, Default);
 		link_to_implementation(CUIMessageQueue,	Default);
 
+#ifndef LTJS_USE_DIRECT_MUSIC8
+		link_to_implementation(DMusicManager, Default);
+#endif // LTJS_USE_DIRECT_MUSIC8
+
         //D3D render LIB implements interfaces.
 		#ifdef __D3D
 		link_to_implementation(CSysTexInterface, Default);
@@ -76,4 +80,3 @@
  
 
 #endif // DE_SERVER_COMPILE
-

@@ -83,6 +83,29 @@ public:
 	int get_length() const;
 
 	//
+	// Gets quarter beats per minute.
+	//
+	// Returns:
+	//    - Quarter beats per minute.
+	//
+	int get_qbpm() const;
+
+	//
+	// Gets beats per measure.
+	//
+	int get_beats_per_measure() const;
+
+	//
+	// Gets beat value (denominator).
+	//
+	int get_beat_value() const;
+
+	//
+	// Gets grids per beat.
+	//
+	int get_grids_per_beat() const;
+
+	//
 	// Gets a performance channel assigned to the segment.
 	//
 	// Returns:

@@ -50,6 +50,13 @@ class ILTDirectMusicMgr : public IBase {
 public:
     interface_version(ILTDirectMusicMgr, 0);
 
+/*!
+Notes for ltjs (non-DirectMusic8) builds:
+- Playback is driven by decoded segments; no DirectMusic runtime is used.
+- Enact timing supports Immediate/Beat/Measure/Grid/Segment based on the active segment's tempo/time signature.
+- Marker-based enact timing is not supported (treated as next segment end).
+- Secondary segments and motifs are mixed as additional segments (no dedicated DirectMusic track support).
+*/
 
 /*! 
 \return LT_OK if successful or LT_ERROR if not successful.
@@ -230,6 +237,7 @@ If the name is NULL then all secondary segments that are currently playing will 
 Stop playing all secondary segments with the name specified. If the name is NULL, then 
 stop playing all secondary segments. 
 
+Note: On ltjs builds, stop timing is immediate (nStart is ignored).
 
 Used for: Music.
 */
@@ -248,6 +256,9 @@ the motif will begin playing.
 
 Begin playing a motif.
 
+Note: On ltjs builds, motifs are resolved via the control file and treated as
+segments; the style name is only used for matching, not for DirectMusic-style
+style/motif loading.
 
 Used for: Music.
 */
@@ -268,6 +279,7 @@ that are playing will be stopped.
 Stop all motifs with the specified name in the specified style.  If the Style name is 
 NULL then all styles will be searched.  If the Motif names is NULL all motifs will be stopped.
 
+Note: On ltjs builds, stop timing is immediate (nStart is ignored).
 
 Used for: Music.
 */
@@ -419,4 +431,3 @@ Used for: Music.
 };
 	
 #endif //! __ILTDIRECTMUSIC_H__
-

@@ -80,6 +80,10 @@ public:
 	void initialize(
 		const char* base_path) noexcept override;
 
+	void initialize_paths(
+		const char* const* base_paths,
+		Index base_path_count) noexcept override;
+
 	void set_language(
 		const char* language_id_name) noexcept override;
 
@@ -204,7 +208,7 @@ private:
 	}; // Context
 
 
-	file_system::Path base_path_{};
+	std::vector<file_system::Path> base_paths_{};
 	std::string language_id_name_{};
 
 	ShellResourceCodePage code_page_{};
@@ -429,14 +433,44 @@ void ShellResourceMgrImpl::CStringPool::swap(
 void ShellResourceMgrImpl::initialize(
 	const char* base_path) noexcept
 {
-	if (base_path)
+	base_paths_.clear();
+
+	if (base_path && base_path[0] != '\0')
 	{
-		base_path_ = base_path;
+		base_paths_.emplace_back(base_path);
 	}
 	else
 	{
 		assert(!"Null base path.");
-		base_path_.clear();
+	}
+
+	reset();
+}
+
+void ShellResourceMgrImpl::initialize_paths(
+	const char* const* base_paths,
+	Index base_path_count) noexcept
+{
+	base_paths_.clear();
+
+	if (!base_paths || base_path_count <= 0)
+	{
+		assert(!"Null or empty base paths.");
+		reset();
+		return;
+	}
+
+	base_paths_.reserve(static_cast<std::size_t>(base_path_count));
+
+	for (Index i = 0; i < base_path_count; ++i)
+	{
+		const auto* base_path = base_paths[i];
+		if (!base_path || base_path[0] == '\0')
+		{
+			continue;
+		}
+
+		base_paths_.emplace_back(base_path);
 	}
 
 	reset();
@@ -459,9 +493,13 @@ try
 	auto context = Context{};
 
 	auto& paths = context.paths;
-	paths.reserve(4);
-	paths.emplace_back(base_path_);
-	paths.emplace_back(base_path_ / language_id_name);
+	paths.reserve(base_paths_.size() * 2);
+
+	for (const auto& base_path : base_paths_)
+	{
+		paths.emplace_back(base_path);
+		paths.emplace_back(base_path / language_id_name);
+	}
 
 	load_code_pages(context);
 	load_cursors(context);

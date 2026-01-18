@@ -38,6 +38,20 @@
 #include "bindmgr.h"
 #include "clientshell.h"
 #include "servermgr.h"
+#ifdef LTJS_SDL_BACKEND
+#include "ltjs_language_mgr.h"
+#include "ltjs_shared_data_mgr.h"
+#include "ltjs_shell_resource_mgr.h"
+#include "bibendovsky_spul_ascii_utils.h"
+#include "bibendovsky_spul_path_utils.h"
+#include <sys/stat.h>
+#if !defined(_WIN32)
+#include <dirent.h>
+#endif
+#include <algorithm>
+#include <string>
+#include <vector>
+#endif // LTJS_SDL_BACKEND
 #include "systimer.h"
 #include "iltclient.h"
 #include "ltbenchmark_impl.h"
@@ -78,6 +92,210 @@ define_holder(IWorldClientBSP, world_bsp_client);
 static IClientFileMgr *client_file_mgr;
 define_holder(IClientFileMgr, client_file_mgr);
 
+#ifdef LTJS_SDL_BACKEND
+namespace
+{
+namespace ul = bibendovsky::spul;
+
+static bool ltjs_is_directory(const char* path)
+{
+	if (!path || path[0] == '\0')
+	{
+		return false;
+	}
+
+	struct stat st{};
+	if (stat(path, &st) != 0)
+	{
+		return false;
+	}
+
+	return (st.st_mode & S_IFDIR) != 0;
+}
+
+static bool ltjs_equals_ci(const char* lhs, const char* rhs)
+{
+	if (!lhs || !rhs)
+	{
+		return false;
+	}
+
+	return ul::AsciiUtils::to_lower(lhs) == ul::AsciiUtils::to_lower(rhs);
+}
+
+static bool ltjs_is_resources_dir(const char* path)
+{
+	if (!path || path[0] == '\0')
+	{
+		return false;
+	}
+
+	const auto* name = ul::PathUtils::get_file_name(path);
+	return (name && ltjs_equals_ci(name, "Resources"));
+}
+
+static bool ltjs_find_resources_child_dir(const std::string& base_dir, std::string& out_path)
+{
+	if (base_dir.empty())
+	{
+		return false;
+	}
+
+#if defined(_WIN32)
+	const auto resources_path = ul::PathUtils::append(base_dir, "Resources");
+	if (ltjs_is_directory(resources_path.c_str()))
+	{
+		out_path = resources_path;
+		return true;
+	}
+
+	const auto resources_path_lc = ul::PathUtils::append(base_dir, "resources");
+	if (ltjs_is_directory(resources_path_lc.c_str()))
+	{
+		out_path = resources_path_lc;
+		return true;
+	}
+
+	return false;
+#else
+	auto* dir = opendir(base_dir.c_str());
+	if (!dir)
+	{
+		return false;
+	}
+
+	while (auto* entry = readdir(dir))
+	{
+		if (entry->d_name[0] == '\0' || entry->d_name[0] == '.')
+		{
+			continue;
+		}
+
+		if (!ltjs_equals_ci(entry->d_name, "Resources"))
+		{
+			continue;
+		}
+
+		const auto candidate = ul::PathUtils::append(base_dir, entry->d_name);
+		if (ltjs_is_directory(candidate.c_str()))
+		{
+			out_path = candidate;
+			closedir(dir);
+			return true;
+		}
+	}
+
+	closedir(dir);
+	return false;
+#endif
+}
+
+static void ltjs_add_unique_path(std::vector<std::string>& paths, const std::string& path)
+{
+	if (path.empty())
+	{
+		return;
+	}
+
+	const auto path_lc = ul::AsciiUtils::to_lower(path.c_str());
+	for (const auto& existing : paths)
+	{
+		if (ul::AsciiUtils::to_lower(existing.c_str()) == path_lc)
+		{
+			return;
+		}
+	}
+
+	paths.emplace_back(path);
+}
+
+static void ltjs_add_resources_path(std::vector<std::string>& paths, const std::string& base_dir)
+{
+	if (base_dir.empty())
+	{
+		return;
+	}
+
+	if (ltjs_is_resources_dir(base_dir.c_str()) && ltjs_is_directory(base_dir.c_str()))
+	{
+		ltjs_add_unique_path(paths, base_dir);
+		return;
+	}
+
+	std::string resources_path;
+	if (ltjs_find_resources_child_dir(base_dir, resources_path))
+	{
+		ltjs_add_unique_path(paths, resources_path);
+	}
+}
+
+static void ltjs_configure_cres_resources(
+	const char* const* res_trees,
+	const TreeType* tree_types,
+	uint32 res_tree_count)
+{
+	auto& shared_data_mgr = ltjs::get_shared_data_mgr();
+	auto* cres_mgr = shared_data_mgr.get_cres_mgr();
+	if (!cres_mgr)
+	{
+		return;
+	}
+
+	std::vector<std::string> resource_paths;
+	resource_paths.reserve(res_tree_count + 2);
+
+	ltjs_add_resources_path(resource_paths, ".");
+
+	for (uint32 i = 0; i < res_tree_count; ++i)
+	{
+		const auto* res_tree = res_trees[i];
+		if (!res_tree || res_tree[0] == '\0')
+		{
+			continue;
+		}
+
+		std::string base_dir;
+		if (tree_types && tree_types[i] == DosTree)
+		{
+			base_dir = res_tree;
+		}
+		else
+		{
+			base_dir = ul::PathUtils::get_parent_path(res_tree);
+			if (base_dir.empty())
+			{
+				base_dir = ".";
+			}
+		}
+
+		ltjs_add_resources_path(resource_paths, base_dir);
+	}
+
+	if (!resource_paths.empty())
+	{
+		std::vector<const char*> resource_path_ptrs;
+		resource_path_ptrs.reserve(resource_paths.size());
+		for (const auto& path : resource_paths)
+		{
+			resource_path_ptrs.emplace_back(path.c_str());
+		}
+
+		cres_mgr->initialize_paths(
+			resource_path_ptrs.data(),
+			static_cast<ltjs::Index>(resource_path_ptrs.size()));
+	}
+	else
+	{
+		cres_mgr->initialize("Resources");
+	}
+
+	const auto* language_mgr = shared_data_mgr.get_language_mgr();
+	const auto* language = (language_mgr ? language_mgr->get_current() : nullptr);
+	const auto* language_id = (language ? language->id_string.data : "en");
+	cres_mgr->set_language(language_id);
+}
+} // namespace
+#endif // LTJS_SDL_BACKEND
 //IClientShell game client shell object.
 #include "iclientshell.h"
 static IClientShell *i_client_shell;
@@ -266,6 +484,10 @@ LTRESULT CClientMgr::Init(const char *resTrees[MAX_RESTREES], uint32 nResTrees, 
         ProcessError(LT_CANTLOADGAMERESOURCES);
         RETURN_ERROR(1, CClientMgr::Init, LT_CANTLOADGAMERESOURCES);
     }
+
+#ifdef LTJS_SDL_BACKEND
+	ltjs_configure_cres_resources(resTrees, treeTypes, nResTrees);
+#endif // LTJS_SDL_BACKEND
 
     // The path to the DLLs is either the dos tree or NULL, in which case
     // it'll check the registry.

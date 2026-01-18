@@ -1685,7 +1685,15 @@ static LTRESULT cis_GetEngineHook(const char *pName, void **pData)
 	}
 	else if(stricmp(pName, "cresl_hinstance")==0)
 	{
+#ifdef LTJS_SDL_BACKEND
+		if (pData)
+		{
+			*pData = nullptr;
+		}
+		return LT_ERROR;
+#else
 		return bm_GetInstanceHandle(g_pClientMgr->m_hLocalizedClientResourceModule, pData);
+#endif // LTJS_SDL_BACKEND
 	}
 	else if(stricmp(pName, "cshell_hinstance")==0)
 	{
@@ -2203,7 +2211,7 @@ static LTRESULT cis_End3D(uint flags)
 			con_Draw(); }
 		else if(g_nConsoleLines > 0) {
 			con_DrawSmall( g_nConsoleLines ); }	} // Show the last 4 or so lines.
-#endif _FINAL
+#endif // _FINAL
 
 	r_GetRenderStruct()->End3D();
 	return LT_OK;
@@ -2358,7 +2366,5 @@ unsigned long GetInterfaceSurfaceMemory()
 
 	return total;
 }
-
-
 
 

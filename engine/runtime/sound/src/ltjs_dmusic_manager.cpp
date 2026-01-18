@@ -17,12 +17,14 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include <functional>
 #include <list>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include "bibendovsky_spul_algorithm.h"
@@ -59,9 +61,6 @@ namespace ltjs
 namespace ul = bibendovsky::spul;
 
 
-define_interface(DMusicManager, ILTDirectMusicMgr)
-
-
 class DMusicManager::Impl
 {
 public:
@@ -90,6 +89,7 @@ public:
 		current_segment_index_{},
 		current_segment_{},
 		transition_dm_segment_{},
+		current_dm_segment_{},
 		waves_{},
 		decoder_buffer_{},
 		device_buffer_{},
@@ -136,6 +136,7 @@ public:
 		current_segment_index_{std::move(that.current_segment_index_)},
 		current_segment_{std::move(that.current_segment_)},
 		transition_dm_segment_{std::move(that.transition_dm_segment_)},
+		current_dm_segment_{std::move(that.current_dm_segment_)},
 		waves_{std::move(that.waves_)},
 		decoder_buffer_{std::move(that.decoder_buffer_)},
 		device_buffer_{std::move(that.device_buffer_)},
@@ -309,6 +310,18 @@ public:
 			return LT_ERROR;
 		}
 
+		if (!read_secondary_segments(control_file))
+		{
+			return LT_ERROR;
+		}
+
+		if (!read_motifs(control_file))
+		{
+			return LT_ERROR;
+		}
+
+		reserve_segment_cache();
+
 		// Load all segments for intensities.
 		//
 		for (auto& intensity : intensities_)
@@ -355,6 +368,32 @@ public:
 			transition_item.second.segment_ = segment;
 		}
 
+		// Load all secondary segments.
+		//
+		for (auto& secondary_item : secondary_segments_)
+		{
+			auto segment = cache_segment(secondary_item.second.name_);
+			if (!segment)
+			{
+				return LT_ERROR;
+			}
+
+			secondary_item.second.segment_ = segment;
+		}
+
+		// Load all motifs.
+		//
+		for (auto& motif_item : motifs_)
+		{
+			auto segment = cache_segment(motif_item.motif_path_);
+			if (!segment)
+			{
+				return LT_ERROR;
+			}
+
+			motif_item.segment_ = segment;
+		}
+
 		// Initialize a music stream.
 		//
 		const auto mix_sample_size = byte_depth * channel_count;
@@ -382,6 +421,8 @@ public:
 		current_segment_index_ = 0;
 		current_segment_ = {};
 		transition_dm_segment_ = nullptr;
+		current_dm_segment_ = nullptr;
+		current_dm_segment_ = nullptr;
 		waves_.clear();
 		decoder_buffer_.resize(mix_sample_count_);
 		device_buffer_.resize(mix_sample_count_);
@@ -443,6 +484,8 @@ public:
 		intensities_.clear();
 		transition_map_.clear();
 		segment_cache_.clear();
+		secondary_segments_.clear();
+		motifs_.clear();
 
 		mix_sample_count_ = 0;
 		mix_s16_size_ = 0;
@@ -598,20 +641,101 @@ public:
 		const char* segment_name,
 		const LTDMEnactTypes start_type)
 	{
-		static_cast<void>(segment_name);
-		static_cast<void>(start_type);
+		if (!is_level_initialized_)
+		{
+			return LT_ERROR;
+		}
 
-		return LT_ERROR;
+		if (!segment_name || segment_name[0] == '\0')
+		{
+			return LT_ERROR;
+		}
+
+		const auto segment_name_lc = ul::AsciiUtils::to_lower(segment_name);
+		DMusicSegment* segment = nullptr;
+		LTDMEnactTypes enact_type = start_type;
+
+		auto secondary_it = secondary_segments_.find(segment_name_lc);
+		if (secondary_it != secondary_segments_.cend())
+		{
+			segment = secondary_it->second.segment_;
+			if (enact_type == LTDMEnactDefault)
+			{
+				enact_type = secondary_it->second.default_enact_;
+			}
+		}
+
+		if (!segment)
+		{
+			segment = find_cached_segment(segment_name);
+		}
+
+		if (!segment)
+		{
+			return LT_ERROR;
+		}
+
+		if (enact_type == LTDMEnactDefault || enact_type == LTDMEnactInvalid)
+		{
+			enact_type = LTDMEnactImmediately;
+		}
+
+		std::int64_t start_offset = 0;
+		{
+			MtLockGuard mixer_lock{mt_mixer_mutex_};
+			start_offset = select_enact_offset(enact_type);
+			queue_segment_waves(segment, start_offset, WaveKind::secondary);
+		}
+
+		mt_notify_mixer();
+
+		return LT_OK;
 	}
 
 	LTRESULT api_stop_secondary(
 		const char* segment_name,
 		const LTDMEnactTypes start_type)
 	{
-		static_cast<void>(segment_name);
 		static_cast<void>(start_type);
+		if (!is_level_initialized_)
+		{
+			return LT_ERROR;
+		}
 
-		return LT_ERROR;
+		MtLockGuard mixer_lock{mt_mixer_mutex_};
+
+		if (!segment_name || segment_name[0] == '\0')
+		{
+			waves_.remove_if(
+				[](const auto& item)
+				{
+					return item.kind_ == WaveKind::secondary;
+				});
+			return LT_OK;
+		}
+
+		const auto segment_name_lc = ul::AsciiUtils::to_lower(segment_name);
+		DMusicSegment* segment = nullptr;
+		auto secondary_it = secondary_segments_.find(segment_name_lc);
+		if (secondary_it != secondary_segments_.cend())
+		{
+			segment = secondary_it->second.segment_;
+		}
+		else
+		{
+			segment = find_cached_segment(segment_name);
+		}
+
+		if (segment)
+		{
+			waves_.remove_if(
+				[&](const auto& item)
+				{
+					return item.kind_ == WaveKind::secondary && item.segment_ == segment;
+				});
+		}
+
+		return LT_OK;
 	}
 
 	LTRESULT api_play_motif(
@@ -619,13 +743,67 @@ public:
 		const char* motif_name,
 		const LTDMEnactTypes start_type)
 	{
-		static_cast<void>(style_name);
-		static_cast<void>(motif_name);
-		static_cast<void>(start_type);
+		if (!is_level_initialized_)
+		{
+			return LT_ERROR;
+		}
 
-		log_error(unsupported_method_message);
+		if (!motif_name || motif_name[0] == '\0')
+		{
+			return LT_ERROR;
+		}
 
-		return LT_ERROR;
+		const auto motif_name_lc = ul::AsciiUtils::to_lower(motif_name);
+		const auto style_name_lc = style_name ? ul::AsciiUtils::to_lower(style_name) : std::string{};
+		LTDMEnactTypes enact_type = start_type;
+		DMusicSegment* segment = nullptr;
+
+		for (const auto& motif : motifs_)
+		{
+			if (!style_name_lc.empty() && motif.style_name_ != style_name_lc)
+			{
+				continue;
+			}
+
+			if (motif.motif_name_ != motif_name_lc)
+			{
+				continue;
+			}
+
+			segment = motif.segment_;
+			if (enact_type == LTDMEnactDefault)
+			{
+				enact_type = motif.default_enact_;
+			}
+
+			break;
+		}
+
+		if (!segment)
+		{
+			segment = find_cached_segment(motif_name);
+		}
+
+		if (!segment)
+		{
+			return LT_ERROR;
+		}
+
+		if (enact_type == LTDMEnactDefault || enact_type == LTDMEnactInvalid)
+		{
+			enact_type = LTDMEnactImmediately;
+		}
+
+		std::int64_t start_offset = 0;
+		{
+			MtLockGuard mixer_lock{mt_mixer_mutex_};
+			start_offset = select_enact_offset(enact_type);
+			queue_segment_waves(segment, start_offset, WaveKind::motif);
+		}
+
+		mt_notify_mixer();
+
+		return LT_OK;
 	}
 
 	LTRESULT api_stop_motif(
@@ -633,13 +811,70 @@ public:
 		const char* motif_name,
 		const LTDMEnactTypes start_type)
 	{
-		static_cast<void>(style_name);
-		static_cast<void>(motif_name);
 		static_cast<void>(start_type);
+		if (!is_level_initialized_)
+		{
+			return LT_ERROR;
+		}
 
-		log_error(unsupported_method_message);
+		MtLockGuard mixer_lock{mt_mixer_mutex_};
 
-		return LT_ERROR;
+		if ((!style_name || style_name[0] == '\0') && (!motif_name || motif_name[0] == '\0'))
+		{
+			waves_.remove_if(
+				[](const auto& item)
+				{
+					return item.kind_ == WaveKind::motif;
+				});
+			return LT_OK;
+		}
+
+		const auto motif_name_lc = motif_name ? ul::AsciiUtils::to_lower(motif_name) : std::string{};
+		const auto style_name_lc = style_name ? ul::AsciiUtils::to_lower(style_name) : std::string{};
+
+		waves_.remove_if(
+			[&](const auto& item)
+			{
+				if (item.kind_ != WaveKind::motif || !item.segment_)
+				{
+					return false;
+				}
+
+				for (const auto& motif : motifs_)
+				{
+					if (!style_name_lc.empty() && motif.style_name_ != style_name_lc)
+					{
+						continue;
+					}
+
+					if (!motif_name_lc.empty() && motif.motif_name_ != motif_name_lc)
+					{
+						continue;
+					}
+
+					if (motif.segment_ == item.segment_)
+					{
+						return true;
+					}
+				}
+
+				return false;
+			});
+
+		if (!motif_name_lc.empty())
+		{
+			auto segment = find_cached_segment(motif_name);
+			if (segment)
+			{
+				waves_.remove_if(
+					[&](const auto& item)
+					{
+						return item.kind_ == WaveKind::motif && item.segment_ == segment;
+					});
+			}
+		}
+
+		return LT_OK;
 	}
 
 	int api_get_cur_intensity()
@@ -657,7 +892,45 @@ public:
 	LTDMEnactTypes api_string_to_enact_type(
 		const char* name)
 	{
-		log_error(unsupported_method_message);
+		if (!name || name[0] == '\0')
+		{
+			return LTDMEnactInvalid;
+		}
+
+		const auto name_lc = ul::AsciiUtils::to_lower(name);
+
+		if (name_lc == "invalid")
+		{
+			return LTDMEnactInvalid;
+		}
+		if (name_lc == "default")
+		{
+			return LTDMEnactDefault;
+		}
+		if (name_lc == "immediatly" || name_lc == "immediately" || name_lc == "immediate")
+		{
+			return LTDMEnactImmediately;
+		}
+		if (name_lc == "nextbeat" || name_lc == "beat")
+		{
+			return LTDMEnactNextBeat;
+		}
+		if (name_lc == "nextmeasure" || name_lc == "measure")
+		{
+			return LTDMEnactNextMeasure;
+		}
+		if (name_lc == "nextgrid" || name_lc == "grid")
+		{
+			return LTDMEnactNextGrid;
+		}
+		if (name_lc == "nextsegment" || name_lc == "segment")
+		{
+			return LTDMEnactNextSegment;
+		}
+		if (name_lc == "nextmarker" || name_lc == "marker")
+		{
+			return LTDMEnactNextMarker;
+		}
 
 		return LTDMEnactInvalid;
 	}
@@ -666,14 +939,41 @@ public:
 		LTDMEnactTypes type,
 		char* name)
 	{
-		log_error(unsupported_method_message);
-
 		if (!name)
 		{
 			return;
 		}
 
-		*name = '\0';
+		switch (type)
+		{
+			case LTDMEnactInvalid:
+				::strcpy(name, "Invalid");
+				break;
+			case LTDMEnactDefault:
+				::strcpy(name, "Default");
+				break;
+			case LTDMEnactImmediately:
+				::strcpy(name, "Immediate");
+				break;
+			case LTDMEnactNextBeat:
+				::strcpy(name, "Beat");
+				break;
+			case LTDMEnactNextMeasure:
+				::strcpy(name, "Measure");
+				break;
+			case LTDMEnactNextGrid:
+				::strcpy(name, "Grid");
+				break;
+			case LTDMEnactNextSegment:
+				::strcpy(name, "Segment");
+				break;
+			case LTDMEnactNextMarker:
+				::strcpy(name, "Marker");
+				break;
+			default:
+				*name = '\0';
+				break;
+		}
 	}
 
 	int api_get_num_intensities()
@@ -791,12 +1091,40 @@ private:
 
 	using SegmentCache = std::unordered_map<std::string, DMusicSegment>;
 
+	enum class WaveKind
+	{
+		primary,
+		secondary,
+		motif
+	};
+
+	struct SecondarySegmentInfo
+	{
+		std::string name_;
+		LTDMEnactTypes default_enact_;
+		DMusicSegment* segment_;
+	};
+
+	struct MotifInfo
+	{
+		std::string style_name_;
+		std::string motif_name_;
+		std::string motif_path_;
+		LTDMEnactTypes default_enact_;
+		DMusicSegment* segment_;
+	};
+
+	using SecondarySegmentMap = std::unordered_map<std::string, SecondarySegmentInfo>;
+	using MotifList = std::vector<MotifInfo>;
+
 
 	struct Wave
 	{
 		bool is_active_;
 		bool is_started_;
 		bool is_finished_;
+		WaveKind kind_;
+		DMusicSegment* segment_;
 		std::uint32_t channel_;
 		int decoded_offset_; // (in bytes)
 		int length_; // (in bytes)
@@ -810,6 +1138,8 @@ private:
 			is_active_{},
 			is_started_{},
 			is_finished_{},
+			kind_{WaveKind::primary},
+			segment_{},
 			channel_{},
 			decoded_offset_{},
 			length_{},
@@ -859,6 +1189,8 @@ private:
 	Intensities intensities_;
 	TransitionMap transition_map_;
 	SegmentCache segment_cache_;
+	SecondarySegmentMap secondary_segments_;
+	MotifList motifs_;
 
 	int mix_sample_count_;
 	int mix_s16_size_;
@@ -881,6 +1213,7 @@ private:
 
 	Segment current_segment_;
 	DMusicSegment* transition_dm_segment_;
+	DMusicSegment* current_dm_segment_;
 
 	Waves waves_;
 
@@ -1245,6 +1578,168 @@ private:
 		return true;
 	}
 
+	bool read_secondary_segments(
+		CControlFileMgr& control_file)
+	{
+		secondary_segments_.clear();
+
+		auto key_ptr = control_file.GetKey(nullptr, "SECONDARYSEGMENT");
+
+		while (key_ptr)
+		{
+			auto word_ptr = key_ptr->GetFirstWord();
+			if (!word_ptr)
+			{
+				log_error("Expected secondary segment name.");
+				return false;
+			}
+
+			const auto segment_name = word_ptr->GetVal();
+			if (!segment_name || segment_name[0] == '\0')
+			{
+				log_error("Invalid secondary segment name.");
+				return false;
+			}
+
+			auto default_enact = LTDMEnactDefault;
+			word_ptr = word_ptr->Next();
+			if (word_ptr)
+			{
+				default_enact = api_string_to_enact_type(word_ptr->GetVal());
+				if (default_enact == LTDMEnactInvalid)
+				{
+					default_enact = LTDMEnactDefault;
+				}
+			}
+
+			const auto name_lc = ul::AsciiUtils::to_lower(segment_name);
+			SecondarySegmentInfo info{};
+			info.name_ = segment_name;
+			info.default_enact_ = default_enact;
+			info.segment_ = nullptr;
+
+			secondary_segments_[name_lc] = std::move(info);
+
+			key_ptr = key_ptr->NextWithSameName();
+		}
+
+		return true;
+	}
+
+	bool read_motifs(
+		CControlFileMgr& control_file)
+	{
+		motifs_.clear();
+
+		auto key_ptr = control_file.GetKey(nullptr, "MOTIF");
+
+		while (key_ptr)
+		{
+			auto word_ptr = key_ptr->GetFirstWord();
+			if (!word_ptr)
+			{
+				log_error("Expected motif style name.");
+				return false;
+			}
+
+			const auto style_name = word_ptr->GetVal();
+			word_ptr = word_ptr->Next();
+			if (!word_ptr)
+			{
+				log_error("Expected motif name.");
+				return false;
+			}
+
+			const auto motif_name = word_ptr->GetVal();
+			if (!motif_name || motif_name[0] == '\0')
+			{
+				log_error("Invalid motif name.");
+				return false;
+			}
+
+			auto default_enact = LTDMEnactDefault;
+			auto motif_path = std::string{motif_name};
+			word_ptr = word_ptr->Next();
+			if (word_ptr)
+			{
+				const auto first_extra = word_ptr->GetVal();
+				auto enact_candidate = api_string_to_enact_type(first_extra);
+				if (enact_candidate != LTDMEnactInvalid)
+				{
+					default_enact = enact_candidate;
+					word_ptr = word_ptr->Next();
+					if (word_ptr)
+					{
+						motif_path = word_ptr->GetVal();
+					}
+				}
+				else
+				{
+					motif_path = first_extra;
+					word_ptr = word_ptr->Next();
+					if (word_ptr)
+					{
+						enact_candidate = api_string_to_enact_type(word_ptr->GetVal());
+						if (enact_candidate != LTDMEnactInvalid)
+						{
+							default_enact = enact_candidate;
+						}
+					}
+				}
+			}
+
+			MotifInfo info{};
+			info.style_name_ = style_name ? ul::AsciiUtils::to_lower(style_name) : std::string{};
+			info.motif_name_ = ul::AsciiUtils::to_lower(motif_name);
+			info.motif_path_ = motif_path;
+			info.default_enact_ = default_enact;
+			info.segment_ = nullptr;
+
+			motifs_.push_back(std::move(info));
+
+			key_ptr = key_ptr->NextWithSameName();
+		}
+
+		return true;
+	}
+
+	void reserve_segment_cache()
+	{
+		std::unordered_set<std::string> names;
+		names.reserve(64);
+
+		for (const auto& intensity : intensities_)
+		{
+			for (const auto& name : intensity.segments_names_)
+			{
+				names.emplace(ul::AsciiUtils::to_lower(name));
+			}
+		}
+
+		for (const auto& transition_item : transition_map_)
+		{
+			if (!transition_item.second.segment_name_.empty())
+			{
+				names.emplace(ul::AsciiUtils::to_lower(transition_item.second.segment_name_));
+			}
+		}
+
+		for (const auto& secondary_item : secondary_segments_)
+		{
+			names.emplace(ul::AsciiUtils::to_lower(secondary_item.second.name_));
+		}
+
+		for (const auto& motif_item : motifs_)
+		{
+			names.emplace(ul::AsciiUtils::to_lower(motif_item.motif_path_));
+		}
+
+		if (!names.empty())
+		{
+			segment_cache_.reserve(names.size());
+		}
+	}
+
 	DMusicSegment* cache_segment(
 		const std::string& segment_name)
 	{
@@ -1272,6 +1767,19 @@ private:
 		auto cache_item_it = segment_cache_.emplace(segment_name_lc, std::move(segment)).first;
 
 		return &cache_item_it->second;
+	}
+
+	DMusicSegment* find_cached_segment(
+		const std::string& segment_name)
+	{
+		const auto segment_name_lc = ul::AsciiUtils::to_lower(segment_name);
+		auto found_segment_it = segment_cache_.find(segment_name_lc);
+		if (found_segment_it == segment_cache_.cend())
+		{
+			return nullptr;
+		}
+
+		return &found_segment_it->second;
 	}
 
 	bool mix_prepare_segments()
@@ -1464,6 +1972,7 @@ private:
 		{
 			dm_segment = intensities_[current_intensity_index_].segments_[current_segment_index_];
 		}
+		current_dm_segment_ = dm_segment;
 
 		const auto channel = dm_segment->get_channel();
 		const auto variation = dm_segment->select_next_variation();
@@ -1485,6 +1994,8 @@ private:
 			wave.length_ = segment_wave.length_;
 			wave.channel_ = channel;
 			wave.mix_offset_ = current_segment_.begin_mix_offset_ + segment_wave.mix_offset_;
+			wave.kind_ = WaveKind::primary;
+			wave.segment_ = dm_segment;
 
 			if (!wave.stream_.open(segment_wave.data_, segment_wave.data_size_))
 			{
@@ -1492,6 +2003,134 @@ private:
 			}
 
 			waves_.emplace_back(std::move(wave));
+		}
+	}
+
+	void queue_segment_waves(
+		DMusicSegment* segment,
+		const std::int64_t start_offset,
+		const WaveKind kind)
+	{
+		if (!segment)
+		{
+			return;
+		}
+
+		const auto channel = segment->get_channel();
+		const auto variation = segment->select_next_variation();
+		const auto& segment_waves = segment->get_waves();
+
+		for (const auto& segment_wave : segment_waves)
+		{
+			if ((segment_wave.variations_ & variation) == 0)
+			{
+				continue;
+			}
+
+			auto wave = Wave{};
+			wave.length_ = segment_wave.length_;
+			wave.channel_ = channel;
+			wave.mix_offset_ = start_offset + segment_wave.mix_offset_;
+			wave.kind_ = kind;
+			wave.segment_ = segment;
+
+			if (!wave.stream_.open(segment_wave.data_, segment_wave.data_size_))
+			{
+				continue;
+			}
+
+			waves_.emplace_back(std::move(wave));
+		}
+	}
+
+	std::int64_t select_enact_offset(
+		const LTDMEnactTypes enact_type) const
+	{
+		const auto segment_end = current_segment_.end_mix_offset_;
+		if (!current_dm_segment_ || segment_end <= mix_offset_)
+		{
+			return mix_offset_;
+		}
+
+		switch (enact_type)
+		{
+			case LTDMEnactNextBeat:
+			case LTDMEnactNextMeasure:
+			case LTDMEnactNextGrid:
+			{
+				auto qbpm = current_dm_segment_->get_qbpm();
+				if (qbpm <= 0)
+				{
+					qbpm = 120;
+				}
+
+				auto beat_value = current_dm_segment_->get_beat_value();
+				if (beat_value <= 0)
+				{
+					beat_value = 4;
+				}
+
+				auto beats_per_measure = current_dm_segment_->get_beats_per_measure();
+				if (beats_per_measure <= 0)
+				{
+					beats_per_measure = 4;
+				}
+
+				auto grids_per_beat = current_dm_segment_->get_grids_per_beat();
+				if (grids_per_beat <= 0)
+				{
+					grids_per_beat = 4;
+				}
+
+				const auto seconds_per_quarter = 60.0 / static_cast<double>(qbpm);
+				const auto beat_factor = 4.0 / static_cast<double>(beat_value);
+				const auto beat_seconds = seconds_per_quarter * beat_factor;
+				const auto bytes_per_second = static_cast<double>(sample_rate_ * sample_size);
+				const auto beat_bytes_raw = beat_seconds * bytes_per_second;
+				auto beat_bytes = static_cast<std::int64_t>(beat_bytes_raw);
+				if (beat_bytes <= 0)
+				{
+					return segment_end;
+				}
+
+				beat_bytes += sample_size - 1;
+				beat_bytes /= sample_size;
+				beat_bytes *= sample_size;
+
+				std::int64_t unit_bytes = beat_bytes;
+				if (enact_type == LTDMEnactNextGrid)
+				{
+					unit_bytes = beat_bytes / grids_per_beat;
+				}
+				else if (enact_type == LTDMEnactNextMeasure)
+				{
+					unit_bytes = beat_bytes * beats_per_measure;
+				}
+
+				if (unit_bytes <= 0)
+				{
+					return segment_end;
+				}
+
+				const auto segment_begin = current_segment_.begin_mix_offset_;
+				auto relative_offset = mix_offset_ - segment_begin;
+				if (relative_offset < 0)
+				{
+					relative_offset = 0;
+				}
+
+				const auto unit_index = relative_offset / unit_bytes;
+				const auto next_offset = segment_begin + ((unit_index + 1) * unit_bytes);
+				return (next_offset < segment_end) ? next_offset : segment_end;
+			}
+			case LTDMEnactNextSegment:
+			case LTDMEnactNextMarker:
+				return segment_end;
+			case LTDMEnactImmediately:
+			case LTDMEnactDefault:
+			case LTDMEnactInvalid:
+			default:
+				return mix_offset_;
 		}
 	}
 
@@ -2182,4 +2821,9 @@ int DMusicManager::GetVolumeOffset()
 } // ltjs
 
 
+#endif // LTJS_USE_DIRECT_MUSIC8
+
+#ifndef LTJS_USE_DIRECT_MUSIC8
+using ltjs::DMusicManager;
+define_interface(DMusicManager, ILTDirectMusicMgr)
 #endif // LTJS_USE_DIRECT_MUSIC8
