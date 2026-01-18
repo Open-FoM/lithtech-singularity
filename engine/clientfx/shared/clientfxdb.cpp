@@ -226,7 +226,7 @@ void CClientFXDB::Term()
 bool CClientFXDB::LoadFxDll()
 {
 
-#ifdef WIN32
+#ifdef _WIN32
 
 	//make sure that we don't have any other dll's already bound
 	UnloadFxDll();
@@ -234,7 +234,7 @@ bool CClientFXDB::LoadFxDll()
 	// Load the library
 	const char *sName = "ClientFX.fxd";
 	char sTmp[MAX_PATH + 1];
-	LTSNPrintF(sTmp, sizeof(sTmp), "Game\\%s", sName);
+	LTSNPrintF(sTmp, sizeof(sTmp), "Resources\\%s", sName);
 
 	//if we have a local copy use it
 	if( CWinUtil::FileExist( sTmp ))
@@ -348,7 +348,7 @@ bool CClientFXDB::LoadFxDll()
 void CClientFXDB::UnloadFxDll()
 {
 
-#ifdef WIN32
+#ifdef _WIN32
 
 	if (!m_hDLLInst) 
 		return;

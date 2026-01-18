@@ -41,7 +41,7 @@
     #define IS_WIN32
     #define IS_32
   #else
-    #ifdef WIN32
+    #ifdef _WIN32
       #define IS_WINDOWS
       #define IS_WIN32
       #define IS_32

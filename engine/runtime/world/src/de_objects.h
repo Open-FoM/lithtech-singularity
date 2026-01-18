@@ -36,6 +36,12 @@ struct ObjectCreateStruct;
 #include "bdefs.h"
 #endif
 
+#if defined(_WIN32)
+#include "sys/win/diligentddstructs.h"
+#else
+#include "sys/linux/linuxddstructs.h"
+#endif
+
 #ifndef __DE_WORLD_H__
 #include "de_world.h"
 #endif
@@ -900,4 +906,3 @@ void obj_SetupWorldModelTransform(WorldModelInstance *pWorldModel);
 
 
 #endif  // __DE_OBJECTS_H__
-

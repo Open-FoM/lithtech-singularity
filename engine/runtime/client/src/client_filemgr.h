@@ -6,6 +6,12 @@
 #ifndef __CLIENT_FILEMGR_H__
 #define __CLIENT_FILEMGR_H__
 
+#if defined(_WIN32)
+#include "sys/win/de_file.h"
+#else
+#include "sys/linux/linuxfile.h"
+#endif
+
 class CBaseConn;
 typedef void* HLTFileTree; //class HLTFileTree;
 struct FTClient;
@@ -126,7 +132,6 @@ public:
 
 
 #endif  // __CLIENT_FILEMGR_H__
-
 
 
 

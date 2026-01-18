@@ -62,14 +62,14 @@
 #include <utility>
 #include <vector>
 
-#if defined(_WIN32) || defined(WIN32)
+#if defined(_WIN32)
 #ifndef __WINDOWS_H__
 #include <windows.h>
 #define __WINDOWS_H__
 #endif
 #endif
 
-#if !defined(_WIN32) && !defined(WIN32)
+#if !defined(_WIN32)
 using HWND = void*;
 #endif
 

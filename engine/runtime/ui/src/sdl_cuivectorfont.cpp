@@ -33,7 +33,7 @@
 #include "ltsysoptim.h"
 #include "ltfontparams.h"
 #include "iltclient.h"
-#if defined(_WIN32) || defined(WIN32)
+#if defined(_WIN32)
 #include "interface_helpers.h"
 #endif
 
@@ -49,7 +49,7 @@
 #include "ltjs_windows_1252.h"
 #include "ltjs_index_type.h"
 
-#if !defined(_WIN32) && !defined(WIN32)
+#if !defined(_WIN32)
 static ltjs::Index dsi_get_file_size(
 	const char* path) noexcept
 {
