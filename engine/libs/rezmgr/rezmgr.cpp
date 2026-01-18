@@ -6,10 +6,13 @@
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <string>
 #include "ltmem.h"
 #ifdef _WIN32
 #include <io.h>
 #else
+#include <dirent.h>
+#include <fnmatch.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -24,28 +27,278 @@
 #endif
 
 #ifndef _WIN32
-const unsigned int _MAX_DRIVE = 3;
-const unsigned int _MAX_DIR = 256;
-const unsigned int _MAX_FNAME = 256;
-const unsigned int _MAX_EXT = 256;
-void _splitpath(const char* path, char* drive, char* dir, char* fname, char* ext)
-{
-  ASSERT(FALSE && "no splitpath implementation on Linux");
-}
-
-struct _finddata_t {
-	unsigned int attrib;
-	time_t time_create;
-	time_t time_access;
-	time_t time_write;
-	unsigned long size;
-	char name[260];
+namespace {
+struct ltjs_find_handle {
+	DIR* dir{};
+	std::string directory;
+	std::string pattern;
 };
 
-enum { _S_IFDIR, _A_SUBDIR };
-std::intptr_t _findfirst(char* filespec, _finddata_t* fileinfo) { return -1; }
-int _findnext(long handle, _finddata_t* fileinfo) { return -1; }
-int _findclose(long handle) { return -1; } 
+static std::string normalize_path(const char* path)
+{
+	std::string out = (path ? path : "");
+	for (auto& ch : out)
+	{
+		if (ch == '\\')
+		{
+			ch = '/';
+		}
+	}
+	return out;
+}
+
+static void split_filespec(const char* filespec, std::string& directory, std::string& pattern)
+{
+	const auto normalized = normalize_path(filespec);
+	const auto sep = normalized.find_last_of('/');
+	if (sep == std::string::npos)
+	{
+		directory = ".";
+		pattern = normalized;
+	}
+	else
+	{
+		directory = normalized.substr(0, sep);
+		if (directory.empty())
+		{
+			directory = "/";
+		}
+		pattern = normalized.substr(sep + 1);
+	}
+
+	if (pattern.empty())
+	{
+		pattern = "*";
+	}
+	if (pattern == "*.*")
+	{
+		pattern = "*";
+	}
+}
+
+static bool match_pattern(const std::string& pattern, const char* name)
+{
+	int flags = FNM_NOESCAPE;
+#ifdef FNM_CASEFOLD
+	flags |= FNM_CASEFOLD;
+#endif
+	if (fnmatch(pattern.c_str(), name, flags) == 0)
+	{
+		return true;
+	}
+
+	const auto dot_pos = pattern.rfind(".*");
+	if (dot_pos != std::string::npos && dot_pos == pattern.size() - 2)
+	{
+		const auto base = pattern.substr(0, dot_pos);
+		if (base == name)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int fill_finddata(const std::string& directory, const char* name, _finddata_t* fileinfo)
+{
+	if (!fileinfo || !name)
+	{
+		return -1;
+	}
+
+	const auto path = (directory == "/")
+		? (directory + name)
+		: (directory + "/" + name);
+
+	struct stat st{};
+	if (stat(path.c_str(), &st) != 0)
+	{
+		return -1;
+	}
+
+	fileinfo->attrib = 0;
+	if (S_ISDIR(st.st_mode))
+	{
+		fileinfo->attrib |= _A_SUBDIR;
+	}
+
+	fileinfo->size = static_cast<unsigned long>(st.st_size);
+	fileinfo->time_create = st.st_ctime;
+	fileinfo->time_access = st.st_atime;
+	fileinfo->time_write = st.st_mtime;
+
+	strncpy(fileinfo->name, name, sizeof(fileinfo->name) - 1);
+	fileinfo->name[sizeof(fileinfo->name) - 1] = '\0';
+	return 0;
+}
+} // namespace
+
+void _splitpath(const char* path, char* drive, char* dir, char* fname, char* ext)
+{
+	auto copy_part = [](char* dst, size_t dst_size, const std::string& src)
+	{
+		if (!dst || dst_size == 0)
+		{
+			return;
+		}
+
+		size_t copy_len = src.size();
+		if (copy_len >= dst_size)
+		{
+			copy_len = dst_size - 1;
+		}
+
+		if (copy_len > 0)
+		{
+			memcpy(dst, src.c_str(), copy_len);
+		}
+		dst[copy_len] = '\0';
+	};
+
+	if (drive)
+	{
+		drive[0] = '\0';
+	}
+	if (!path)
+	{
+		if (dir) dir[0] = '\0';
+		if (fname) fname[0] = '\0';
+		if (ext) ext[0] = '\0';
+		return;
+	}
+
+	const auto normalized = normalize_path(path);
+	const auto sep = normalized.find_last_of('/');
+	const auto dot = normalized.find_last_of('.');
+
+	const bool has_sep = (sep != std::string::npos);
+	const bool has_ext = (dot != std::string::npos && (!has_sep || dot > sep));
+
+	if (dir)
+	{
+		if (has_sep)
+		{
+			const auto dir_part = normalized.substr(0, sep + 1);
+			copy_part(dir, _MAX_DIR, dir_part);
+		}
+		else
+		{
+			dir[0] = '\0';
+		}
+	}
+
+	if (fname)
+	{
+		const auto start = has_sep ? (sep + 1) : 0;
+		const auto end = has_ext ? dot : normalized.size();
+		const auto len = (end > start) ? (end - start) : 0;
+		if (len > 0)
+		{
+			const auto name_part = normalized.substr(start, len);
+			copy_part(fname, _MAX_FNAME, name_part);
+		}
+		else
+		{
+			fname[0] = '\0';
+		}
+	}
+
+	if (ext)
+	{
+		if (has_ext)
+		{
+			const auto ext_part = normalized.substr(dot);
+			copy_part(ext, _MAX_EXT, ext_part);
+		}
+		else
+		{
+			ext[0] = '\0';
+		}
+	}
+}
+
+std::intptr_t _findfirst(char* filespec, _finddata_t* fileinfo)
+{
+	if (!filespec || !fileinfo)
+	{
+		return -1;
+	}
+
+	std::string directory;
+	std::string pattern;
+	split_filespec(filespec, directory, pattern);
+
+	auto* dir = opendir(directory.c_str());
+	if (!dir)
+	{
+		return -1;
+	}
+
+	auto* handle = new ltjs_find_handle{};
+	handle->dir = dir;
+	handle->directory = directory;
+	handle->pattern = pattern;
+
+	const auto result = _findnext(static_cast<long>(reinterpret_cast<std::intptr_t>(handle)), fileinfo);
+	if (result != 0)
+	{
+		_findclose(static_cast<long>(reinterpret_cast<std::intptr_t>(handle)));
+		return -1;
+	}
+
+	return reinterpret_cast<std::intptr_t>(handle);
+}
+
+int _findnext(long handle, _finddata_t* fileinfo)
+{
+	auto* h = reinterpret_cast<ltjs_find_handle*>(static_cast<std::intptr_t>(handle));
+	if (!h || !h->dir || !fileinfo)
+	{
+		return -1;
+	}
+
+	for (;;)
+	{
+		auto* entry = readdir(h->dir);
+		if (!entry)
+		{
+			return -1;
+		}
+
+		const char* name = entry->d_name;
+		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+		{
+			continue;
+		}
+
+		if (!match_pattern(h->pattern, name))
+		{
+			continue;
+		}
+
+		if (fill_finddata(h->directory, name, fileinfo) == 0)
+		{
+			return 0;
+		}
+	}
+}
+
+int _findclose(long handle)
+{
+	auto* h = reinterpret_cast<ltjs_find_handle*>(static_cast<std::intptr_t>(handle));
+	if (!h)
+	{
+		return -1;
+	}
+
+	if (h->dir)
+	{
+		closedir(h->dir);
+	}
+	delete h;
+	return 0;
+}
 
 #endif // !_WIN32
 
@@ -2270,7 +2523,11 @@ BOOL CRezMgr::IsDirectory(const char* sFileName) {
    if( result != 0 ) return FALSE;
 
    // is this a directory
+#if defined(_WIN32)
    if ((buf.st_mode & _S_IFDIR) == _S_IFDIR) return TRUE;
+#else
+   if (S_ISDIR(buf.st_mode)) return TRUE;
+#endif
    else return FALSE;
 }
 
