@@ -39,6 +39,7 @@ void lt_InitViewBox(ViewBoxDef* view_box, float near_z, float far_z, float x_fov
 	view_box->m_WindowSize[1] = static_cast<float>(std::cos(y_temp) / std::sin(y_temp));
 	view_box->m_COP.Init(0.0f, 0.0f, 1.0f);
 }
+}
 
 bool lt_InitFrustrum(
 	ViewParams* params,
@@ -227,7 +228,6 @@ bool lt_InitFrustrum(
 	params->m_mWorldEnvMap.SetBasisVectors(&params->m_Right, &params->m_Up, &params->m_Forward);
 	params->m_eRenderMode = render_mode;
 	return true;
-}
 }
 
 bool d3d_InitFrustum(
