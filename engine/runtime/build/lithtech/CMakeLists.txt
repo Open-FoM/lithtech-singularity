@@ -1,13 +1,8 @@
 cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
 project (ltjs_lith_tech VERSION 0.0.1 LANGUAGES CXX)
 
-option (LTJS_USE_DIRECT_MUSIC8 "Use DirectMusic8 for music." OFF)
 option (LTJS_USE_FFMPEG_VIDEO_MGR "Use video manager implemented via FFmpeg." ON)
 option (LTJS_USE_SAFE_SEH "Use Safe Exception Handlers." OFF)
-
-if (LTJS_USE_DIRECT_MUSIC8)
-	set (LTJS_USE_BUNDLED_DIRECTX ON)
-endif ()
 
 include (ltjs_common)
 
@@ -37,7 +32,6 @@ target_compile_definitions (
 		DSNDMGR_NO_MFC
 		DIRECTENGINE_COMPILE
 		MODEL_SUPPORT_ABC
-		$<$<CONFIG:DEBUG>:D3D_DEBUG_INFO>
 )
 
 target_compile_definitions (
@@ -62,21 +56,7 @@ if (NOT MSVC)
 	)
 endif ()
 
-if (LTJS_USE_DIRECT_MUSIC8)
-	target_compile_definitions (
-		${PROJECT_NAME}
-		PRIVATE
-			LTJS_USE_DIRECT_MUSIC8
-	)
-endif ()
 
-if (LTJS_USE_BUNDLED_DIRECTX)
-	target_compile_definitions (
-		${PROJECT_NAME}
-		PRIVATE
-			LTJS_USE_BUNDLED_DIRECTX
-	)
-endif ()
 
 set (libs "")
 
@@ -101,42 +81,14 @@ if (MSVC)
 		set (LTJS_TMP_LINKER_FLAGS "${LTJS_TMP_LINKER_FLAGS} /SAFESEH:NO")
 	endif ()
 
-	if (LTJS_USE_BUNDLED_DIRECTX)
-		if (CMAKE_SIZEOF_VOID_P EQUAL 4)
-			set (
-				path_to_dx_libs
-				${CMAKE_SOURCE_DIR}/directx/lib/x86
-			)
-		elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
-			set (
-				path_to_dx_libs
-				${CMAKE_SOURCE_DIR}/directx/lib/x64
-			)
-		else ()
-			message (FATAL_ERROR "Unsupported platform.")
-		endif ()
-
-		list(
-			APPEND
-			libs
-			${path_to_dx_libs}/ddraw.lib
-			${path_to_dx_libs}/dxguid.lib
-			${path_to_dx_libs}/dinput8.lib
-			${path_to_dx_libs}/dplayx.lib
-			winmm
-		)
-
-	else ()
-		list(
-			APPEND
-			libs
-			dxguid
-			dinput8
-			winmm
-			ws2_32
-		)
-
-	endif ()
+	list(
+		APPEND
+		libs
+		dxguid
+		dinput8
+		winmm
+		ws2_32
+	)
 endif ()
 
 set_target_properties (
@@ -188,7 +140,6 @@ target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
 		.
-		../../../../libs/DirectXMath/Inc
 		../../../../libs/diligent/DiligentCore
 		../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
 		../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
@@ -218,7 +169,6 @@ target_include_directories (
 		../../render_b/src
 		../../server/src
 		../../shared/src
-		../../shared/src/sys/win
 		../../sound/src
 		../../state_mgr/src
 		../../ui/src
@@ -230,12 +180,12 @@ if (WIN32)
 		${PROJECT_NAME}
 		PRIVATE
 			../../kernel/src/sys/win
+			../../shared/src/sys/win
 	)
 else ()
 	target_include_directories (
 		${PROJECT_NAME}
 		PRIVATE
-			../../kernel/src/sys/win
 			../../kernel/src/sys/linux
 			../../kernel/toport/src
 			../../shared/src/sys/linux
@@ -316,13 +266,6 @@ target_include_directories (
 		${diligent_shader_generated_dir}
 )
 
-if (LTJS_USE_BUNDLED_DIRECTX)
-	target_include_directories (
-		${PROJECT_NAME}
-		PRIVATE
-			../../../../directx/include
-	)
-endif ()
 
 target_sources (
 	${PROJECT_NAME}
@@ -345,7 +288,6 @@ target_sources (
 		../../../sdk/inc/iltcommon.h
 		../../../sdk/inc/iltcsbase.h
 		../../../sdk/inc/iltcursor.h
-		../../../sdk/inc/iltdirectmusic.h
 		../../../sdk/inc/iltdrawprim.h
 		../../../sdk/inc/iltfontmanager.h
 		../../../sdk/inc/iltinfo.h
@@ -426,52 +368,23 @@ target_sources (
 		../../client/src/setupobject.h
 		../../client/src/sprite.h
 		../../client/src/clientde_impl_sys.h
-		../../client/src/sys/win/winconsole_impl.h
 		../../client/src/sysclient.h
 		../../client/src/sysclientde_impl.h
 		../../client/src/sysconsole_impl.h
 		../../client/src/texturestring.h
 		../../client/src/texturestringimage.h
 		../../client/src/volumeeffect.h
-		../../client/src/watermark.h
 		../../controlfilemgr/controlfilemgr.h
-		../../kernel/io/src/sys/win/de_file.h
 		../../kernel/io/src/sysfile.h
 		../../kernel/mem/src/de_memory.h
 		../../kernel/net/src/localdriver.h
 		../../kernel/net/src/netmgr.h
 		../../kernel/net/src/packet.h
-		../../kernel/net/src/sys/win/socket.h
 		../../kernel/src/dsys.h
 		../../kernel/src/icommandlineargs.h
 		../../kernel/src/ithread.h
-		../../kernel/src/sys/win/appresource.h
-		../../kernel/src/sys/win/bindmgr.h
-		../../kernel/src/sys/win/binkvideomgrimpl.h
-		../../kernel/src/sys/win/counter.h
-		../../kernel/src/sys/win/dsys_interface.h
-		../../kernel/src/sys/win/dutil.h
-		../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.h
-		../../kernel/src/sys/win/ltjs_fmv_player.h
-		../../kernel/src/sys/win/input.h
 		../../kernel/src/interface_helpers.h
-		../../kernel/src/sys/win/load_pcx.h
-		../../kernel/src/sys/win/ltdirectmusic_impl.h
-		../../kernel/src/sys/win/ltdirectmusiccontrolfile.h
-		../../kernel/src/sys/win/ltdirectmusicloader.h
-		../../kernel/src/sys/win/lthread.h
-		../../kernel/src/sys/win/ltrendermgr_impl.h
-		../../kernel/src/sys/win/ltthread.h
-		../../kernel/src/sys/win/musicdriver.h
 		../../kernel/src/render.h
-		../../kernel/src/sys/win/streamsim.h
-		../../kernel/src/sys/win/stringmgr.h
-		../../kernel/src/sys/win/systeminfo.h
-		../../kernel/src/sys/win/text_mgr.h
-		../../kernel/src/sys/win/timemgr.h
-		../../kernel/src/sys/win/version_resource.h
-		../../kernel/src/sys/win/videomgr.h
-		../../kernel/src/sys/win/winbind.h
 		../../kernel/src/syscounter.h
 		../../kernel/src/sysdebugging.h
 		../../kernel/src/sysinput.h
@@ -556,16 +469,10 @@ target_sources (
 		../../shared/src/staticfifo.h
 		../../shared/src/stdlterror.h
 		../../shared/src/strtools.h
-		../../shared/src/sys/win/dstreamopenqueuemgr.h
-		../../shared/src/sys/win/renderstruct.h
-		../../shared/src/sys/win/winstdlterror.h
-		../../shared/src/sys/win/winsync.h
 		../../shared/src/sysddstructs.h
 		../../shared/src/varsetter.h
 		../../shared/src/version_info.h
 		../../sound/src/iltsound.h
-		../../sound/src/ltjs_dmusic_manager.h
-		../../sound/src/ltjs_dmusic_segment.h
 		../../sound/src/soundbuffer.h
 		../../sound/src/sounddata.h
 		../../sound/src/soundinstance.h
@@ -637,36 +544,23 @@ target_sources (
 		../../client/src/customfontfilemgr.cpp
 		../../client/src/texturestringimage.cpp
 		../../client/src/clientde_impl_sys.cpp
-		../../client/src/sys/win/winconsole_impl.cpp
 		../../client/src/texturestring.cpp
 		../../client/src/volumeeffect.cpp
-		../../client/src/watermark.cpp
 		../../client/src/world_client_bsp.cpp
 		../../controlfilemgr/controlfilemgr.cpp
 		../../kernel/mem/src/ltmemory.cpp
 		../../kernel/net/src/localdriver.cpp
 		../../kernel/net/src/netmgr.cpp
 		../../kernel/net/src/packet.cpp
-		../../kernel/net/src/sys/win/udpdriver.cpp
 		$<$<NOT:$<PLATFORM_ID:Windows>>:../../kernel/net/src/sys/linux/linux_ltthread.cpp>
 		../../kernel/src/debugging.cpp
 		../../kernel/src/icommandlineargs.cpp
-		../../kernel/src/sys/win/binkvideomgrimpl.cpp
-		../../kernel/src/sys/win/client.cpp
-		../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.cpp
-		../../kernel/src/sys/win/ltjs_fmv_player.cpp
 		../../kernel/src/interface_helpers.cpp
-		../../kernel/src/sys/win/ltdirectmusiccontrolfile.cpp
-		../../kernel/src/sys/win/ltrendermgr_impl.cpp
-		../../kernel/src/sys/win/render.cpp
-		../../kernel/src/sys/win/sdl_input.cpp
-		../../kernel/src/sys/win/sdl_lt_cursor_impl.cpp
-		../../kernel/src/sys/win/videomgr.cpp
 		../../model/src/animtracker.cpp
 		../../model/src/model.cpp
 		../../model/src/model_load.cpp
 		../../model/src/modelallocations.cpp
-		../../model/src/d3d_model_load.cpp
+		../../model/src/model_render_object.cpp
 		../../model/src/transformmaker.cpp
 		../../render_b/src/sys/diligent/diligentdrawprim.cpp
 		../../render_b/src/systexinterface.cpp
@@ -734,8 +628,6 @@ target_sources (
 		../../shared/src/strtools.cpp
 		../../shared/src/transformlt_impl.cpp
 		../../shared/src/version_info.cpp
-		../../sound/src/ltjs_dmusic_manager.cpp
-		../../sound/src/ltjs_dmusic_segment.cpp
 		../../sound/src/soundbuffer.cpp
 		../../sound/src/sounddata.cpp
 		../../sound/src/soundinstance.cpp
@@ -760,6 +652,44 @@ if (WIN32)
 	target_sources (
 		${PROJECT_NAME}
 		PRIVATE
+			../../client/src/sys/win/winconsole_impl.h
+			../../kernel/io/src/sys/win/de_file.h
+			../../kernel/net/src/sys/win/socket.h
+			../../kernel/src/sys/win/appresource.h
+			../../kernel/src/sys/win/bindmgr.h
+			../../kernel/src/sys/win/counter.h
+			../../kernel/src/sys/win/dsys_interface.h
+			../../kernel/src/sys/win/dutil.h
+			../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.h
+			../../kernel/src/sys/win/ltjs_fmv_player.h
+			../../kernel/src/sys/win/input.h
+			../../kernel/src/sys/win/load_pcx.h
+			../../kernel/src/sys/win/lthread.h
+			../../kernel/src/sys/win/ltrendermgr_impl.h
+			../../kernel/src/sys/win/ltthread.h
+			../../kernel/src/sys/win/musicdriver.h
+			../../kernel/src/sys/win/streamsim.h
+			../../kernel/src/sys/win/stringmgr.h
+			../../kernel/src/sys/win/systeminfo.h
+			../../kernel/src/sys/win/text_mgr.h
+			../../kernel/src/sys/win/timemgr.h
+			../../kernel/src/sys/win/version_resource.h
+			../../kernel/src/sys/win/videomgr.h
+			../../kernel/src/sys/win/winbind.h
+			../../shared/src/sys/win/dstreamopenqueuemgr.h
+			../../shared/src/sys/win/renderstruct.h
+			../../shared/src/sys/win/winstdlterror.h
+			../../shared/src/sys/win/winsync.h
+			../../client/src/sys/win/winconsole_impl.cpp
+			../../kernel/net/src/sys/win/udpdriver.cpp
+			../../kernel/src/sys/win/client.cpp
+			../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.cpp
+			../../kernel/src/sys/win/ltjs_fmv_player.cpp
+			../../kernel/src/sys/win/ltrendermgr_impl.cpp
+			../../kernel/src/sys/win/render.cpp
+			../../kernel/src/sys/win/sdl_input.cpp
+			../../kernel/src/sys/win/sdl_lt_cursor_impl.cpp
+			../../kernel/src/sys/win/videomgr.cpp
 			../../kernel/io/src/sys/win/de_file.cpp
 			../../kernel/mem/src/sys/win/de_memory.cpp
 			../../kernel/src/sys/win/bindmgr.cpp
@@ -770,8 +700,6 @@ if (WIN32)
 			../../kernel/src/sys/win/inputsim.cpp
 			../../kernel/src/sys/win/load_pcx.cpp
 			../../kernel/src/sys/win/lt_cursor_impl.cpp
-			../../kernel/src/sys/win/ltdirectmusic_impl.cpp
-			../../kernel/src/sys/win/ltdirectmusicloader.cpp
 			../../kernel/src/sys/win/lthread.cpp
 			../../kernel/src/sys/win/ltlibraryloader.cpp
 			../../kernel/src/sys/win/ltthread.cpp

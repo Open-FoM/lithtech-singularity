@@ -236,7 +236,7 @@ LTRESULT dtx_Create(ILTStream *pStream, TextureData **ppOut, uint32& nBaseWidth,
 	uint32 nTexHeight = hdr.m_BaseHeight / (1 << nMipOffset);
 	uint32 nNumMips	  = hdr.m_nMipmaps - nMipOffset;
 
-	// For D3D I'm supporting converts to DD texture formats (the sys mem copy will be in DD format - so it's fast copy & minimal mem storage).
+	// Renderer-specific: convert to DD texture formats (sysmem copy in DD format for fast copy/minimal memory).
 #ifdef __D3D
 
 	PFormat DstFormat;

@@ -55,14 +55,7 @@ extern ILTSoundSys* SoundSys( bool bTerminate = false );
 #endif
 
 #if defined(_WIN32) && !defined(__APPLE__)
-#ifdef LTJS_USE_DIRECT_MUSIC8
-#ifndef __DMUSICI_H__
-#include <dmusici.h>
-#define __DMUSICI_H__
-#endif
-#else
 #include "dsound.h"
-#endif // LTJS_USE_DIRECT_MUSIC8
 #endif // _WIN32 && !__APPLE__
 
 #ifndef __SOUNDINSTANCE_H__
@@ -182,11 +175,6 @@ public:
 
 #if defined(_WIN32)
 	LPDIRECTSOUND8 GetDirectSound( );
-
-#ifdef LTJS_USE_DIRECT_MUSIC8
-	IDirectMusicPerformance8* GetDirectMusicPerformance( );
-	IDirectMusic* GetDirectMusic();
-#endif // LTJS_USE_DIRECT_MUSIC8
 #endif // _WIN32
 
 	LHDIGDRIVER	GetDigDriver( ) const { return m_hDigDriver; }
@@ -196,8 +184,6 @@ public:
 //	===========================================================================
 
 	LPDIRECTSOUND GetDirectSound( );
-	IDirectMusicPerformance8* GetDirectMusicPerformance( );
-	IDirectMusic* GetDirectMusic();
 	HDIGDRIVER	GetDigDriver( ) const { return m_hDigDriver; }
 
 //	===========================================================================

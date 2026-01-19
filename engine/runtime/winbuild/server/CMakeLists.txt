@@ -44,15 +44,10 @@ if (MSVC)
 	endif ()
 
 	set (
-		path_to_dx_libs
-		${CMAKE_SOURCE_DIR}/directx/lib/x86
-	)
-
-	set (
 		libs
-		${path_to_dx_libs}/dxguid.lib
-		${path_to_dx_libs}/dplayx.lib
+		dxguid
 		winmm
+		ws2_32
 	)
 endif ()
 
@@ -87,7 +82,6 @@ target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
 		.
-		../../../../directx/include
 		../../../../libs/bibendovsky_spul_lib/include
 		../../../../libs/lith
 		../../../../libs/stdlith
@@ -126,7 +120,6 @@ target_sources (
 		../../../sdk/inc/iltclient.h
 		../../../sdk/inc/iltcommon.h
 		../../../sdk/inc/iltcsbase.h
-		../../../sdk/inc/iltdirectmusic.h
 		../../../sdk/inc/iltdrawprim.h
 		../../../sdk/inc/iltinfo.h
 		../../../sdk/inc/iltmessage.h
@@ -334,7 +327,7 @@ target_sources (
 		../../model/src/model.cpp
 		../../model/src/model_load.cpp
 		../../model/src/modelallocations.cpp
-		../../model/src/d3d_model_load.cpp
+		../../model/src/model_render_object.cpp
 		../../model/src/transformmaker.cpp
 		../../server/src/classmgr.cpp
 		../../server/src/game_serialize.cpp

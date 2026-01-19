@@ -2,7 +2,6 @@
 #include "bdefs.h"
 #include "videomgr.h"
 
-#include "binkvideomgrimpl.h"
 #include "ltjs_ffmpeg_video_mgr_impl.h"
 
 
@@ -58,51 +57,9 @@ void VideoMgr::OnRenderTerm()
 // -------------------------------------------------------------------------------- //
 VideoMgr* CreateVideoMgr( const char *pszName )
 {
-	bool want_bink    = (stricmp( pszName, "BINK" ) == 0);
 	const auto want_ffmpeg = (::stricmp(pszName, "FFMPEG") == 0);
 
-	// load bink
-
-	if( want_bink ) 
-	{
-
-
-//
-//	!!!!! BINK IS NOT ENABLED
-//
-//		IHAVEPURCHASEDBINK Define that allows bink video player to function. ( Separate license/SDK available from rad game tools http://www.radgametools.com/)
-//
-//		You must recompile Exe_Lithtech with IHAVEPURCHASEDBINK defined in the project settings: 
-//
-//    From the SDK you purchased from bink place bink.h rad.h radbase.h and smack.h into the Engine/runtime/kernel/src/sys/win directory.
-// 	Also requires bink32.dll in your path when running 
-//
-
-
-#if defined ( IHAVEPURCHASEDBINK )
-
-		// load bink //
-
-		// Note: Bink can play Smacker files.
-		VideoMgr* pVidMgr;
-		LT_MEM_TRACK_ALLOC(pVidMgr = new BinkVideoMgr(),LT_MEM_TYPE_MISC);
-		if( pVidMgr )
-		{
-			if(((BinkVideoMgr*)pVidMgr)->Init() == LT_OK)
-			{
-				//success, give them back the video manager
-				return pVidMgr;
-			}
-
-			//we failed to initialize
-			delete pVidMgr;
-			pVidMgr = NULL;
-		}
-
-#endif
-
-	}
-	else if (want_ffmpeg)
+	if (want_ffmpeg)
 	{
 #ifdef LTJS_USE_FFMPEG_VIDEO_MGR
 		auto video_mgr_uptr = std::make_unique<ltjs::FfmpegVideoMgr>();
@@ -119,4 +76,3 @@ VideoMgr* CreateVideoMgr( const char *pszName )
   
 	return LTNULL;
 }
-

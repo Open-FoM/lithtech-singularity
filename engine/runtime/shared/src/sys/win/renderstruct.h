@@ -219,9 +219,7 @@ struct RenderStruct
         void            (*Term)(bool bFullTerm);
 
 #if !defined(LTJS_USE_DILIGENT_RENDER)
-		void* (*GetD3DDevice)(); // Note: In spring the renderer will link directly with the engine.
-							//  RenderStruct will go away - the renderer will be the only thing that
-							//  needs d3d. The DrawPrim interface lives in the engine for now (and it needs the Device).
+		void* (*GetD3DDevice)(); // Note: The renderer is expected to own this device; DrawPrim still needs it for now.
 #endif
 
 		Diligent::IRenderDevice* (*GetRenderDevice)();
@@ -377,4 +375,3 @@ typedef void (*RenderDLLSetupFn)(RenderStruct *pStruct);
 
 
 #endif  // __RENDERSTRUCT_H__
-

@@ -7,7 +7,7 @@
 #include "ltrendererstats.h"
 #endif
 
-// Stub for non-D3D renderers: clears stats and reports success.
+// Stub for non-legacy renderers: clears stats and reports success.
 inline bool GetFrameStats(LTRendererStats &refStats)
 {
 	std::memset(&refStats, 0, sizeof(refStats));

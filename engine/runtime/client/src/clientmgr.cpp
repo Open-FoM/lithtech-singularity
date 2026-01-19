@@ -573,28 +573,10 @@ LTRESULT CClientMgr::Init(const char *resTrees[MAX_RESTREES], uint32 nResTrees, 
     // properly initialized.
 
 
-//
-//	!!!!! BINK IS NOT ENABLED
-//
-//		IHAVEPURCHASEDBINK Define that allows bink video player to function. ( Separate license/SDK available from rad game tools http://www.radgametools.com/)
-//
-//		You must recompile Exe_Lithtech with IHAVEPURCHASEDBINK defined in the project settings: 
-//
-//    From the SDK you purchased from bink place bink.h rad.h radbase.h and smack.h into the Engine/runtime/kernel/src/sys/win directory.
-// 	Also requires bink32.dll in your path when running 
-//
-
 	m_pVideoMgr = LTNULL;
 
 #if defined(LTJS_USE_FFMPEG_VIDEO_MGR)
 	m_pVideoMgr = ::CreateVideoMgr("FFMPEG");
-#endif
-
-#if defined(IHAVEPURCHASEDBINK)
-	if (!m_pVideoMgr)
-	{
-		m_pVideoMgr = CreateVideoMgr("BINK");
-	}
 #endif
 
 
@@ -611,9 +593,6 @@ LTRESULT CClientMgr::Init(const char *resTrees[MAX_RESTREES], uint32 nResTrees, 
     rGraphMgr.bottom = defaultMode.m_Height;
     graph_mgr->Mgr()->Init(&rGraphMgr);
 
-#ifdef COMPILE_JUPITER_EVAL
-	m_WaterMark.Init();
-#endif // COMPILE_JUPITER_EVAL
 
     return dResult;
 }
@@ -1506,9 +1485,6 @@ void CClientMgr::Term()
     // be restored for any demo playbacks.
     EndShell();
 
-#ifdef COMPILE_JUPITER_EVAL
-	m_WaterMark.Term();
-#endif // COMPILE_JUPITER_EVAL
 
 	if (m_pOldShell != NULL)
 	{
@@ -2137,9 +2113,6 @@ bool CClientMgr::Render(CameraInstance *pCamera, int drawMode, LTObject **pObjec
 			renderStatus = pRenderStruct->RenderScene(&sceneDesc);
 		}
 
-#ifdef COMPILE_JUPITER_EVAL
-    	m_WaterMark.Draw();
-#endif // COMPILE_JUPITER_EVAL
 
         // Reset the camera to NULL
         // This is required for the console to draw properly

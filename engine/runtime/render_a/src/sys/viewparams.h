@@ -67,7 +67,7 @@ public:
 	ERenderMode m_eRenderMode;
 };
 
-void d3d_InitViewBox2(
+void lt_InitViewBoxFromParams(
 	ViewBoxDef* pDef,
 	float nearZ,
 	float farZ,
@@ -88,7 +88,7 @@ bool lt_InitFrustrum(
 	const LTVector& vScale,
 	ViewParams::ERenderMode eMode);
 
-bool d3d_InitFrustum(
+bool lt_InitViewFrustum(
 	ViewParams* params,
 	float x_fov,
 	float y_fov,

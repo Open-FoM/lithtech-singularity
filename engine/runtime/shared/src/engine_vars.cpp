@@ -165,8 +165,6 @@ int32	g_CV_ConsoleTop = -1;	//	that positive fraction of the screen dimension.  
 int32	g_CV_ConsoleRight = -1;
 int32	g_CV_ConsoleBottom = -2;
 
-// The LithTech DirectMusic console output level
-int32	g_CV_LTDMConsoleOutput = 2;
 
 int32	g_CV_CompressLightGrid		 = 2;
 
@@ -285,8 +283,6 @@ static LTEngineVar g_LTEngineVars[] =
 	EV_LONG("ShowConnStats", &g_CV_ShowConnStats),
 	EV_LONG("MasterPaletteMode", &g_CV_MasterPaletteMode),
 
-	EV_LONG("LTDMConsoleOutput", &g_CV_LTDMConsoleOutput),
-
 	EV_LONG("MipMapOffset", &g_CV_TextureMipMapOffset),
 	EV_LONG("GroupOffset0", &g_CV_TextureGroupOffset[0]),
 	EV_LONG("GroupOffset1", &g_CV_TextureGroupOffset[1]),
@@ -352,4 +348,3 @@ static LTEngineVar g_LTEngineVars[] =
 // Functions that other modules call.
 LTEngineVar* GetEngineVars() {return g_LTEngineVars;}
 int GetNumEngineVars() {return sizeof(g_LTEngineVars) / sizeof(LTEngineVar);}
-

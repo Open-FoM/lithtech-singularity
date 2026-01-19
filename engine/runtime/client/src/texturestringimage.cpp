@@ -1,8 +1,5 @@
 #include "bdefs.h"
 #include "texturestringimage.h"
-#if defined(_WIN32)
-#include "d3d_texture.h"
-#endif
 #include <algorithm>
 
 #if defined(_WIN32)

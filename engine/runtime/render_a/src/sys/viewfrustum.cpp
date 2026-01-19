@@ -230,7 +230,7 @@ bool lt_InitFrustrum(
 	return true;
 }
 
-bool d3d_InitFrustum(
+bool lt_InitViewFrustum(
 	ViewParams* params,
 	float x_fov,
 	float y_fov,
@@ -268,7 +268,7 @@ bool d3d_InitFrustum(
 		render_mode);
 }
 
-void d3d_InitViewBox2(
+void lt_InitViewBoxFromParams(
 	ViewBoxDef* pDef,
 	float nearZ,
 	float farZ,

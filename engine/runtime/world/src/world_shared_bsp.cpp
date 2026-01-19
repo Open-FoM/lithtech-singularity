@@ -627,7 +627,7 @@ void CWorldSharedBSP::AddStaticLights(ILTStream *pStream) {
 					//null terminate it
 					pszData[nStrLen] = '\0';
 
-					if (stricmp(pszData, "D3D") == 0)
+					if (stricmp(pszData, "Legacy") == 0 || stricmp(pszData, "D3D") == 0)
 						light_attenuation = eAttenuation_D3D;
 					else if (stricmp(pszData, "Quartic") == 0)
 						light_attenuation = eAttenuation_Quartic;
@@ -784,5 +784,3 @@ WorldData *CWorldSharedBSP::GetWorldDataFromHPoly(WorldData **&world_models, uin
 //    //couldnt find it.
 //    return NULL;
 //}
-
-

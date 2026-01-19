@@ -1021,46 +1021,6 @@ LPDIRECTSOUND8 CSoundMgr::GetDirectSound()
 }
 #endif // _WIN32 && !__APPLE__
 
-/*
-//----------------------------------------------------------------------------------------------
-//
-//  CSoundMgr::GetDirectMusicPerformance()
-//
-//  Gets the DirectMusic performance object
-// 
-//----------------------------------------------------------------------------------------------
-IDirectMusicPerformance8* CSoundMgr::GetDirectMusicPerformance()
-{
-	IDirectMusicPerformance8* pPerformance;
-
-    if (!m_bValid)
-        return LTNULL;
-
-//	GetSoundSys()->GetDirectMusicPerformance( (void**) &pPerformance );
-    
-    return pPerformance;
-}
-
-//----------------------------------------------------------------------------------------------
-//
-//  CSoundMgr::GetDirectMusic()
-//
-//  Gets the DirectMusic object
-// 
-//----------------------------------------------------------------------------------------------
-IDirectMusic* CSoundMgr::GetDirectMusic()
-{
-	IDirectMusic* pDirectMusic;
-
-    if (!m_bValid)
-        return LTNULL;
-
-//	GetSoundSys()->GetDirectMusic( (void**) &pDirectMusic );
-    
-    return pDirectMusic;
-}
-*/
-
 //----------------------------------------------------------------------------------------------
 //
 //  CSoundMgr::CreateBuffer()

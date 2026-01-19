@@ -108,7 +108,7 @@
 #define DeleteP(x)      { delete x; x=NULL; }
 #define DeleteIf(x)     { if (x) { delete x; x=NULL; } }
 
-// Make sure D3D doesn't define this guy...
+// Prevent graphics headers from defining this.
 #define MAKE_FOURCC
 
 // Includes
@@ -222,6 +222,5 @@ extern const char *g_ReturnErrString;
 
 
 #endif  // __BDEFS_H__
-
 
 

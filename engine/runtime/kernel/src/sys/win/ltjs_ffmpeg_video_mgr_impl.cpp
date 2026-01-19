@@ -5,7 +5,6 @@
 
 
 #include "ltjs_ffmpeg_video_mgr_impl.h"
-#include <array>
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -57,31 +56,6 @@ private:
 	static constexpr auto default_format_string = "[FfmpegVideoInst] %s";
 
 
-	struct Vertex
-	{
-		LTVector position_;
-		float rhw_;
-		float u_;
-		float v_;
-
-
-		void initialize(
-			const float x,
-			const float y,
-			const float u,
-			const float v)
-		{
-			position_.Init(x, y);
-
-			rhw_ = 1.0f;
-			u_ = u;
-			v_ = v;
-		}
-	}; // Vertex
-
-	using Vertices = std::array<Vertex, 4>;
-
-
 	bool is_initialized_;
 
 	VideoMgr* video_mgr_ptr_;
@@ -96,11 +70,6 @@ private:
 	HLTBUFFER surface_;
 	std::uint32_t surface_width_;
 	std::uint32_t surface_height_;
-#else
-	LPDIRECT3DTEXTURE9 d3d9_texture_;
-	std::uint32_t texture_width_;
-	std::uint32_t texture_height_;
-	Vertices vertices_;
 #endif
 
 
@@ -153,11 +122,6 @@ private:
 		const int width,
 		const int height);
 
-	// Calculates dimension for texture nearest to the two power of N.
-	//
-	static std::uint32_t calculate_texture_dimension(
-		const std::uint32_t value);
-
 	bool clear_surface();
 
 	LTRESULT init_screen();
@@ -184,11 +148,6 @@ FfmpegVideoInst::Impl::Impl(
 	surface_{},
 	surface_width_{},
 	surface_height_{}
-#else
-	d3d9_texture_{},
-	texture_width_{},
-	texture_height_{},
-	vertices_{}
 #endif
 {
 }
@@ -242,16 +201,6 @@ void FfmpegVideoInst::Impl::api_on_render_term()
 
 	surface_width_ = 0;
 	surface_height_ = 0;
-#else
-	// release any textures if present
-	if(d3d9_texture_)
-	{
-		d3d9_texture_->Release();
-		d3d9_texture_ = NULL;
-	}
-
-	texture_width_ = 0;
-	texture_height_ = 0;
 #endif
 }
 
@@ -503,19 +452,6 @@ void FfmpegVideoInst::Impl::video_present_func_proxy(
 	return instance->video_present_func(data, width, height);
 }
 
-std::uint32_t FfmpegVideoInst::Impl::calculate_texture_dimension(
-	const std::uint32_t value)
-{
-	auto dimension = std::uint32_t{1};
-
-	while (dimension < value)
-	{
-		dimension <<= 1;
-	}
-
-	return dimension;
-}
-
 bool FfmpegVideoInst::Impl::clear_surface()
 {
 #if defined(LTJS_USE_DILIGENT_RENDER)
@@ -539,47 +475,7 @@ bool FfmpegVideoInst::Impl::clear_surface()
 	::r_GetRenderStruct()->UnlockSurface(surface_);
 	return true;
 #else
-	if (!d3d9_texture_)
-	{
-		return false;
-	}
-
-	auto d3d9_surface = LPDIRECT3DSURFACE9{};
-
-	if (FAILED(d3d9_texture_->GetSurfaceLevel(0, &d3d9_surface)))
-	{
-		return false;
-	}
-
-	D3DSURFACE_DESC	d3d9_surface_desc;
-
-	if (FAILED(d3d9_surface->GetDesc(&d3d9_surface_desc)))
-	{
-		static_cast<void>(d3d9_surface->Release());
-		return false;
-	}
-
-	D3DLOCKED_RECT locked_rect;
-
-	if (FAILED(d3d9_surface->LockRect(&locked_rect, nullptr, 0)))
-	{
-		static_cast<void>(d3d9_surface->Release());
-		return false;
-	}
-
-	auto dst_data_ptr = static_cast<uint8*>(locked_rect.pBits);
-
-	for (auto i_line = 0U; i_line < d3d9_surface_desc.Height; ++i_line)
-	{
-		std::uninitialized_fill_n(dst_data_ptr, d3d9_surface_desc.Width * 4, std::uint8_t{});
-
-		dst_data_ptr += locked_rect.Pitch;
-	}
-
-	static_cast<void>(d3d9_surface->UnlockRect());
-	static_cast<void>(d3d9_surface->Release());
-
-	return true;
+	return false;
 #endif
 }
 
@@ -616,44 +512,8 @@ LTRESULT FfmpegVideoInst::Impl::init_screen()
 
 	return LT_OK;
 #else
-	auto* d3d9_device = static_cast<IDirect3DDevice9*>(::r_GetRenderStruct()->GetD3DDevice());
-
-	if (!d3d9_device)
-	{
-		RETURN_ERROR(1, FfmpegVideoInst::Impl::init_screen, LT_NOTINITIALIZED);
-	}
-
-	const auto fmv_width = fmv_player_.get_width();
-	const auto fmv_height = fmv_player_.get_height();
-
-	const auto texture_width = calculate_texture_dimension(fmv_width);
-	const auto texture_height = calculate_texture_dimension(fmv_height);
-
-	if (FAILED(d3d9_device->CreateTexture(
-		texture_width,
-		texture_height,
-		1,
-		0,
-		D3DFMT_A8R8G8B8,
-		D3DPOOL_MANAGED,
-		&d3d9_texture_,
-		nullptr)))
-	{
-		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::init_screen, LT_ERROR, "Failed to create texture.");
-	}
-
-	if (!clear_surface())
-	{
-		static_cast<void>(d3d9_texture_->Release());
-		d3d9_texture_ = nullptr;
-
-		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::init_screen, LT_ERROR, "Failed to clear texture.");
-	}
-
-	texture_width_ = texture_width;
-	texture_height_ = texture_height;
-
-	return LT_OK;
+	RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::init_screen, LT_NOTSUPPORTED,
+		"FFmpeg video requires the Diligent renderer.");
 #endif
 }
 
@@ -737,161 +597,8 @@ LTRESULT FfmpegVideoInst::Impl::update_on_screen(
 
 	return LT_OK;
 #else
-	if (!::r_IsRenderInitted() || !d3d9_texture_)
-	{
-		RETURN_ERROR(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTINITIALIZED);
-	}
-
-	auto* d3d9_device = static_cast<IDirect3DDevice9*>(::r_GetRenderStruct()->GetD3DDevice());
-
-	if (!d3d9_device)
-	{
-		RETURN_ERROR(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTINITIALIZED);
-	}
-
-	auto hr = HRESULT{};
-	auto d3d9_surface = LPDIRECT3DSURFACE9{};
-
-	hr = d3d9_texture_->GetSurfaceLevel(0, &d3d9_surface);
-
-	if (FAILED(hr))
-	{
-		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::update_on_screen, LT_ERROR, "Failed to get texture's surface.");
-	}
-
-	D3DLOCKED_RECT locked_rect;
-
-	hr = d3d9_surface->LockRect(&locked_rect, nullptr, 0);
-
-	if (FAILED(hr))
-	{
-		static_cast<void>(d3d9_surface->Release());
-		RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::update_on_screen, LT_ERROR, "Failed to lock texture's surface.");
-	}
-
-	const auto src_pitch = 4 * width;
-
-	for (auto i = 0; i < height; ++i)
-	{
-		const auto src_data_ptr = static_cast<const std::uint8_t*>(data_ptr) + (i * src_pitch);
-		const auto dst_data_ptr = static_cast<std::uint8_t*>(locked_rect.pBits) + (i * locked_rect.Pitch);
-
-		std::uninitialized_copy_n(src_data_ptr, src_pitch, dst_data_ptr);
-	}
-
-	hr = d3d9_surface->UnlockRect();
-	static_cast<void>(d3d9_surface->Release());
-
-	bool is_set_3d_state = !::r_GetRenderStruct()->IsIn3D();
-
-	if (is_set_3d_state)
-	{
-		::r_GetRenderStruct()->Start3D();
-
-		D3DVIEWPORT9 vp;
-		vp.X = 0;
-		vp.Y = 0;
-		vp.Width = ::r_GetRenderStruct()->m_Width;
-		vp.Height = ::r_GetRenderStruct()->m_Height;
-		vp.MinZ = 0.0F;
-		vp.MaxZ = 1.0F;
-		hr = d3d9_device->SetViewport(&vp);
-
-		LTRGBColor color;
-		color.dwordVal = 0x00000000;
-
-		::r_GetRenderStruct()->Clear(nullptr, CLEARSCREEN_SCREEN, color);
-	}
-
-	hr = d3d9_device->SetTexture(0, d3d9_texture_);
-	hr = d3d9_device->SetVertexShader(nullptr);
-	hr = d3d9_device->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
-
-	// We now need to figure out the position and dimensions of the video since we want to
-	// maintain the aspect ratio.
-	//
-	auto screen_width = ::r_GetRenderStruct()->m_Width;
-	auto screen_height = ::r_GetRenderStruct()->m_Height;
-
-	// We can basically fit either the width or height to the screen width or height and maintain
-	//aspect ratio, so we will simply try both.
-	//
-	auto image_width = screen_width;
-	auto image_height = (image_width * height) / width;
-
-	if (image_height > screen_height)
-	{
-		image_height = screen_height;
-		image_width = (image_height * width) / height;
-	}
-
-	// Sanity check.
-	//
-	assert(image_width <= screen_width);
-	assert(image_height <= screen_height);
-
-	// Now figure out the offsets.
-	//
-	const auto x_offset = (screen_width - image_width) / 2;
-	const auto y_offset = (screen_height - image_height) / 2;
-
-	// And the rectangle for the actual video to be rendered to.
-	//
-	const auto image_left = static_cast<float>(x_offset);
-	const auto image_top = static_cast<float>(y_offset);
-	const auto image_right = static_cast<float>(x_offset + image_width);
-	const auto image_bottom = static_cast<float>(y_offset + image_height);
-
-	// Figure out our bilinear offset.
-	//
-	const auto filtering_offset_x = 0.5F / static_cast<float>(texture_width_);
-	const auto filtering_offset_y = 0.5F / static_cast<float>(texture_height_);
-
-	// The texture locations since the video didn't necessarily fill the entire texture.
-	//
-	const auto texture_left = filtering_offset_x;
-	const auto texture_top = filtering_offset_y;
-	const auto texture_right = static_cast<float>(width) / static_cast<float>(texture_width_) - filtering_offset_x;
-	const auto texture_bottom = static_cast<float>(height) / static_cast<float>(texture_height_) - filtering_offset_y;
-
-	// Setup our vertices (static to avoid possible memory transfer issues).
-	//
-	vertices_[0].initialize(image_left, image_top, texture_left, texture_top);
-	vertices_[1].initialize(image_right, image_top, texture_right, texture_top);
-	vertices_[2].initialize(image_right, image_bottom, texture_right, texture_bottom);
-	vertices_[3].initialize(image_left, image_bottom, texture_left, texture_bottom);
-
-	// Now setup the texture and the texture stage states.
-	//
-	hr = d3d9_device->SetTexture(0, d3d9_texture_);
-	hr = d3d9_device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-	hr = d3d9_device->SetRenderState(D3DRS_FOGENABLE, FALSE);
-	hr = d3d9_device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
-	hr = d3d9_device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-
-	hr = d3d9_device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-	hr = d3d9_device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-
-	hr = d3d9_device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-	hr = d3d9_device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-
-	hr = d3d9_device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-	hr = d3d9_device->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-
-	// And we are ready to render.
-	//
-	hr = d3d9_device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, vertices_.data(), static_cast<UINT>(sizeof(Vertex)));
-
-	// Disable that texture.
-	//
-	hr = d3d9_device->SetTexture(0, nullptr);
-
-	if (is_set_3d_state)
-	{
-		::r_GetRenderStruct()->End3D();
-	}
-
-	return LT_OK;
+	RETURN_ERROR_PARAM(1, FfmpegVideoInst::Impl::update_on_screen, LT_NOTSUPPORTED,
+		"FFmpeg video requires the Diligent renderer.");
 #endif
 }
 

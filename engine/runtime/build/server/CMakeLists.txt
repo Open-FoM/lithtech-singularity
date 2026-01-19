@@ -44,15 +44,10 @@ if (MSVC)
 	endif ()
 
 	set (
-		path_to_dx_libs
-		${CMAKE_SOURCE_DIR}/directx/lib/x86
-	)
-
-	set (
 		libs
-		${path_to_dx_libs}/dxguid.lib
-		${path_to_dx_libs}/dplayx.lib
+		dxguid
 		winmm
+		ws2_32
 	)
 endif ()
 
@@ -87,7 +82,6 @@ target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
 		.
-		../../../../directx/include
 		../../../../libs/bibendovsky_spul_lib/include
 		../../../../libs/lith
 		../../../../libs/stdlith
@@ -107,7 +101,6 @@ target_include_directories (
 		../../physics/src
 		../../server/src
 		../../shared/src
-		../../shared/src/sys/win
 		../../sound/src
 		../../world/src
 )
@@ -117,6 +110,7 @@ if (WIN32)
 		${PROJECT_NAME}
 		PRIVATE
 			../../kernel/src/sys/win
+			../../shared/src/sys/win
 	)
 else ()
 	target_include_directories (
@@ -141,7 +135,6 @@ target_sources (
 		../../../sdk/inc/iltclient.h
 		../../../sdk/inc/iltcommon.h
 		../../../sdk/inc/iltcsbase.h
-		../../../sdk/inc/iltdirectmusic.h
 		../../../sdk/inc/iltdrawprim.h
 		../../../sdk/inc/iltinfo.h
 		../../../sdk/inc/iltmessage.h
@@ -191,33 +184,16 @@ target_sources (
 		../../client/src/console.h
 		../../client/src/predict.h
 		../../client/src/setupobject.h
-		../../kernel/io/src/sys/win/de_file.h
 		../../kernel/io/src/sysfile.h
 		../../kernel/mem/src/de_memory.h
 		../../kernel/net/src/localdriver.h
 		../../kernel/net/src/netmgr.h
-		../../kernel/net/src/sys/linux/linux_ltthread.h
-		../../kernel/net/src/sys/linux/linux_ltthreadevent.h
-		../../kernel/net/src/sys/win/udpdriver.h
-		../../kernel/net/src/sys/win/win32_ltthread.h
-		../../kernel/net/src/sys/win/win32_ltthreadevent.h
 		../../kernel/net/src/syssocket.h
 		../../kernel/net/src/sysudpdriver.h
 		../../kernel/net/src/sysudpthread.h
 		../../kernel/src/dsys.h
 		../../kernel/src/ithread.h
-		../../kernel/src/sys/win/appresource.h
-		../../kernel/src/sys/win/bindmgr.h
-		../../kernel/src/sys/win/counter.h
-		../../kernel/src/sys/win/dsys_interface.h
-		../../kernel/src/sys/win/dutil.h
-		../../kernel/src/sys/win/lthread.h
-		../../kernel/src/sys/win/ltthread.h
 		../../kernel/src/render.h
-		../../kernel/src/sys/win/streamsim.h
-		../../kernel/src/sys/win/stringmgr.h
-		../../kernel/src/sys/win/timemgr.h
-		../../kernel/src/sys/win/version_resource.h
 		../../kernel/src/syscounter.h
 		../../kernel/src/syslibraryloader.h
 		../../kernel/src/syslthread.h
@@ -290,7 +266,6 @@ target_sources (
 		../../shared/src/stacktrace.h
 		../../shared/src/staticfifo.h
 		../../shared/src/stdlterror.h
-		../../shared/src/sys/win/renderstruct.h
 		../../shared/src/sysddstructs.h
 		../../shared/src/version_info.h
 		../../sound/src/iltsound.h
@@ -337,7 +312,7 @@ target_sources (
 		../../model/src/model.cpp
 		../../model/src/model_load.cpp
 		../../model/src/modelallocations.cpp
-		../../model/src/d3d_model_load.cpp
+		../../model/src/model_render_object.cpp
 		../../model/src/transformmaker.cpp
 		../../server/src/classmgr.cpp
 		../../server/src/game_serialize.cpp
@@ -421,6 +396,22 @@ if (WIN32)
 	target_sources (
 		${PROJECT_NAME}
 		PRIVATE
+			../../kernel/io/src/sys/win/de_file.h
+			../../kernel/net/src/sys/win/udpdriver.h
+			../../kernel/net/src/sys/win/win32_ltthread.h
+			../../kernel/net/src/sys/win/win32_ltthreadevent.h
+			../../kernel/src/sys/win/appresource.h
+			../../kernel/src/sys/win/bindmgr.h
+			../../kernel/src/sys/win/counter.h
+			../../kernel/src/sys/win/dsys_interface.h
+			../../kernel/src/sys/win/dutil.h
+			../../kernel/src/sys/win/lthread.h
+			../../kernel/src/sys/win/ltthread.h
+			../../kernel/src/sys/win/streamsim.h
+			../../kernel/src/sys/win/stringmgr.h
+			../../kernel/src/sys/win/timemgr.h
+			../../kernel/src/sys/win/version_resource.h
+			../../shared/src/sys/win/renderstruct.h
 			../../kernel/io/src/sys/win/de_file.cpp
 			../../kernel/mem/src/sys/win/de_memory.cpp
 			../../kernel/src/sys/win/bindmgr.cpp
@@ -439,6 +430,8 @@ else ()
 	target_sources (
 		${PROJECT_NAME}
 		PRIVATE
+			../../kernel/net/src/sys/linux/linux_ltthread.h
+			../../kernel/net/src/sys/linux/linux_ltthreadevent.h
 			../../kernel/io/src/sys/linux/linuxfile.cpp
 			../../kernel/mem/src/sys/linux/de_memory.cpp
 			../../kernel/src/sys/linux/counter.cpp

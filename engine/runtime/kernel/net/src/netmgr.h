@@ -132,7 +132,7 @@ enum EDisconnectReason { DISCONNECTREASON_VOLUNTARY_CLIENTSIDE =0,
 class BaseService;
 class CNetMgr;
 
-// Base class for a network driver (such as DirectPlay).
+// Base class for a network driver.
 class CBaseDriver
 {
 	friend class CNetMgr;
@@ -408,4 +408,3 @@ uint16 GetWordCRC(const CPacket_Read &cPacket);
 
 
 #endif  //__NETMGR_H__
-

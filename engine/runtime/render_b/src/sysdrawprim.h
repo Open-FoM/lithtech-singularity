@@ -9,7 +9,7 @@
 	#if defined(LTJS_USE_DILIGENT_RENDER)
 	#include "sys/diligent/diligentdrawprim.h"
 	#else
-		#error "D3D renderer removed; enable LTJS_USE_DILIGENT_RENDER."
+		#error "Legacy renderer removed; enable LTJS_USE_DILIGENT_RENDER."
 	#endif
 
 	#ifdef __XBOXREND

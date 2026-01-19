@@ -94,7 +94,7 @@ int AudioUtils::lt_pan_to_ds_pan(
 
 	//
 	// There is no need to scale output DirectSound level to 33 dB,
-	// like it done in original code (ConvertLinPanToLogPan; s_dx8.cpp).
+	// like it done in original code (ConvertLinPanToLogPan).
 	//
 	// Minimum gain (1.0 / 64) gives aproximately 36 dB.
 	//

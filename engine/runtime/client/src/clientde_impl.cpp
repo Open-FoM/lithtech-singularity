@@ -48,11 +48,6 @@
 #endif // LTJS_SDL_BACKEND
 #include "soundmgr.h"
 
-#if LTJS_USE_D3DX9
-#include "ltvertexshadermgr.h"
-#include "ltpixelshadermgr.h"
-#include "lteffectshadermgr.h"
-#endif // LTJS_USE_D3DX9
 #include "ltinfo_impl.h"
 
 #ifdef LTJS_SDL_BACKEND
@@ -370,21 +365,6 @@ class CLTClient : public ILTClient {
 	virtual void SetModelLooping(HLOCALOBJ hObj, bool bLoop);
 	virtual HMODELANIM GetAnimIndex(HOBJECT hObj, const char *pAnimName);
 
-#if LTJS_USE_D3DX9
-	// vertex shaders
-	virtual bool				AddVertexShader(const char *pFileName, int VertexShaderID,
-												const uint32 *pVertexElements, uint32 VertexElementsSize,
-												bool bCompileShader);
-	virtual void				RemoveVertexShader(int VertexShaderID);
-	virtual void				RemoveAllVertexShaders();
-	virtual LTVertexShader*		GetVertexShader(int VertexShaderID);
-
-	// pixel shaders
-	virtual bool				AddPixelShader(const char *pFileName, int PixelShaderID, bool bCompileShader);
-	virtual void				RemovePixelShader(int PixelShaderID);
-	virtual void				RemoveAllPixelShaders();
-	virtual LTPixelShader*		GetPixelShader(int PixelShaderID);
-#endif // LTJS_USE_D3DX9
 
 	virtual void CPrint(const char *pMsg, ...);
 
@@ -1088,81 +1068,6 @@ HMODELANIM CLTClient::GetAnimIndex(HOBJECT hObj, const char *pAnimName)
 {
 	return ic_GetAnimIndex(hObj, pAnimName);
 }
-
-#if LTJS_USE_D3DX9
-bool CLTClient::AddVertexShader(const char *pFileName, int VertexShaderID,
-								const uint32 *pVertexElements, uint32 VertexElementsSize, bool bCompileShader)
-{
-	bool bSuccess = false;
-
-	// Open the vertex shader.
-	ILTStream *pStream = NULL;
-	if (OpenFile(pFileName, &pStream) == LT_OK)
-	{
-		bSuccess = LTVertexShaderMgr::GetSingleton().AddVertexShader(pStream, pFileName, VertexShaderID,
-																	 (D3DVERTEXELEMENT9*)pVertexElements,
-																	 VertexElementsSize, bCompileShader);
-	}
-
-	// Close the file.
-	if (pStream != NULL)
-	{
-		pStream->Release();
-	}
-
-	return bSuccess;
-}
-
-void CLTClient::RemoveVertexShader(int VertexShaderID)
-{
-	LTVertexShaderMgr::GetSingleton().RemoveVertexShader(VertexShaderID);
-}
-
-void CLTClient::RemoveAllVertexShaders()
-{
-	LTVertexShaderMgr::GetSingleton().RemoveAllVertexShaders();
-}
-
-LTVertexShader* CLTClient::GetVertexShader(int VertexShaderID)
-{
-	return LTVertexShaderMgr::GetSingleton().GetVertexShader(VertexShaderID);
-}
-
-bool CLTClient::AddPixelShader(const char *pFileName, int PixelShaderID, bool bCompileShader)
-{
-	bool bSuccess = false;
-
-	// Open the pixel shader.
-	ILTStream *pStream = NULL;
-	if (OpenFile(pFileName, &pStream) == LT_OK)
-	{
-		bSuccess = LTPixelShaderMgr::GetSingleton().AddPixelShader(pStream, pFileName, PixelShaderID, bCompileShader);
-	}
-
-	// Close the file.
-	if (pStream != NULL)
-	{
-		pStream->Release();
-	}
-
-	return bSuccess;
-}
-
-void CLTClient::RemovePixelShader(int PixelShaderID)
-{
-	LTPixelShaderMgr::GetSingleton().RemovePixelShader(PixelShaderID);
-}
-
-void CLTClient::RemoveAllPixelShaders()
-{
-	LTPixelShaderMgr::GetSingleton().RemoveAllPixelShaders();
-}
-
-LTPixelShader* CLTClient::GetPixelShader(int PixelShaderID)
-{
-	return LTPixelShaderMgr::GetSingleton().GetPixelShader(PixelShaderID);
-}
-#endif // LTJS_USE_D3DX9
 
 void CLTClient::CPrint(const char *pMsg, ...)
 {

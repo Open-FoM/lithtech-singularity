@@ -1163,9 +1163,9 @@ DDMatrix*	ModelInstance::GetRenderingTransforms()
 	// only do this if we're the client
 	if( GetCSType() == ClientType )
 	{
-		// Apply the inverse global transform of the bind pos to create 
-		// a difference transform between bind pose and animated pose. 
-		// This is what d3d needs.
+		// Apply the inverse global transform of the bind pose to create
+		// a difference transform between bind pose and animated pose.
+		// This is what the renderer needs.
 		for (uint32 i=0; i < GetModelDB()->NumNodes(); ++i) 
 		{
 			// if we need to update rendering transform do it.
