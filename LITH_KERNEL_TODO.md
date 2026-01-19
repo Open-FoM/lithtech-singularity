@@ -3,7 +3,6 @@
 Track Linux/POSIX kernel gaps introduced in recent platform shims/stubs.
 
 ## Linux/POSIX kernel stubs to implement
-- dsys resource module load/unload: implement real resource module handling. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
 - dsys error/message handling: implement `dsi_SetupMessage` non-SDL path and `dsi_DoErrorMessage`. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
 - dsys renderer integration: implement `dsi_GetRenderModes`, `dsi_GetRenderMode`, `dsi_SetRenderMode`, `dsi_ShutdownRender`. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
 - dsys input queue: implement key down/up tracking and clear methods. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`

@@ -35,6 +35,7 @@ void dsi_OnReturnError(int err)
 
 static LTBOOL dsi_LoadResourceModule()
 {
+// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
 return LTTRUE;      // DAN - temporary
 }
 
@@ -90,6 +91,7 @@ void dsi_Term()
 
 void* dsi_GetResourceModule()
 {
+// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
 return NULL;      // DAN - temporary
 }
 
