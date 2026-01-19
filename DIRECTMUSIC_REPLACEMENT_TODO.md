@@ -10,8 +10,7 @@ Track what is needed to replace the legacy DirectMusic path with the ltjs implem
 - Marker scheduling: decide whether to implement marker parsing (currently mapped to segment end).
 
 ## Data and file handling
-- Document search paths: segments/motifs are resolved relative to `InitLevel(working_directory)`; wave references inside segments resolve relative to the segment file's directory.
-- Document supported wave formats in segments: PCM (WAV), MS IMA ADPCM, MP3-in-WAV via `AudioDecoder`; OGG is not supported.
+- Done: Documented search paths and supported wave formats in `Guide/DirectMusic.md`.
 
 ## Capability reporting and docs
 - Document which DirectMusic features are supported vs. emulated vs. unsupported.

@@ -12,6 +12,15 @@ set (CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 #
 option (LTJS_SDL_BACKEND "Use SDL backend." ON)
 option (LTJS_USE_PCH "Use precompiled headers." ON)
+option (LTJS_USE_CCACHE "Use ccache if available." ON)
+
+if (LTJS_USE_CCACHE)
+	find_program (CCACHE_PROGRAM ccache)
+	if (CCACHE_PROGRAM)
+		set (CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+		set (CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+	endif ()
+endif ()
 
 #
 # SDL3

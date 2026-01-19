@@ -17,6 +17,8 @@
 #include "console.h"
 #include "iltinfo.h"
 #include "version_info.h"
+#include "render.h"
+#include <cstring>
 
 #ifdef LTJS_SDL_BACKEND
 #include "SDL3/SDL.h"
@@ -300,26 +302,115 @@ static void dsi_GetDLLModes(char *pDLLName, RMode **pMyList)
 
 RMode* dsi_GetRenderModes()
 {
-return NULL;      // DAN - temporary
+	RMode mode = g_RMode;
+
+	if (mode.m_Width == 0 || mode.m_Height == 0)
+	{
+		mode.m_Width = static_cast<uint32>(g_ScreenWidth);
+		mode.m_Height = static_cast<uint32>(g_ScreenHeight);
+	}
+
+	if (mode.m_BitDepth == 0)
+	{
+		mode.m_BitDepth = 32;
+	}
+
+	if (mode.m_InternalName[0] == '\0')
+	{
+		LTStrCpy(mode.m_InternalName, "sdl", sizeof(mode.m_InternalName));
+	}
+
+	if (mode.m_Description[0] == '\0')
+	{
+		LTStrCpy(mode.m_Description, "SDL Renderer", sizeof(mode.m_Description));
+	}
+
+	mode.m_bHWTnL = true;
+	mode.m_pNext = nullptr;
+
+	auto* out_mode = new RMode;
+	*out_mode = mode;
+	return out_mode;
 }
 
 void dsi_RelinquishRenderModes(RMode *pMode)
 {
+	delete pMode;
 }
 
 LTRESULT dsi_GetRenderMode(RMode *pMode)
 {
-return LTTRUE;      // DAN - temporary
+	if (!pMode)
+	{
+		return LT_ERROR;
+	}
+
+	std::memcpy(pMode, &g_RMode, sizeof(RMode));
+	return LT_OK;
 }
 
 LTRESULT dsi_SetRenderMode(RMode *pMode)
 {
-return LTTRUE;      // DAN - temporary
+	RMode currentMode;
+	char message[256];
+
+	if (!pMode)
+	{
+		return LT_ERROR;
+	}
+
+	if (r_TermRender(1, false) != LT_OK)
+	{
+#ifdef LTJS_SDL_BACKEND
+		auto formatter = ltjs::ShellStringFormatter{};
+		dsi_SetupMessage(message, sizeof(message) - 1, LT_UNABLETORESTOREVIDEO, formatter);
+#else
+		dsi_SetupMessage(message, sizeof(message) - 1, LT_UNABLETORESTOREVIDEO, LTNULL);
+#endif // LTJS_SDL_BACKEND
+		dsi_OnClientShutdown(message);
+		RETURN_ERROR(0, SetRenderMode, LT_UNABLETORESTOREVIDEO);
+	}
+
+	std::memcpy(&currentMode, &g_RMode, sizeof(RMode));
+
+	if (r_InitRender(pMode) != LT_OK)
+	{
+		if (r_InitRender(&currentMode) != LT_OK)
+		{
+			RETURN_ERROR(0, SetRenderMode, LT_UNABLETORESTOREVIDEO);
+		}
+
+		RETURN_ERROR(1, SetRenderMode, LT_KEPTSAMEMODE);
+	}
+
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_bRendererShutdown = LTFALSE;
+#endif // DE_CLIENT_COMPILE
+	return LT_OK;
 }
 
 LTRESULT dsi_ShutdownRender(uint32 flags)
 {
-return LTTRUE;      // DAN - temporary
+	r_TermRender(1, true);
+
+#ifdef DE_CLIENT_COMPILE
+#ifdef LTJS_SDL_BACKEND
+	if (flags & RSHUTDOWN_MINIMIZEWINDOW)
+	{
+		SDL_MinimizeWindow(g_ClientGlob.m_hMainWnd.sdl_window);
+	}
+
+	if (flags & RSHUTDOWN_HIDEWINDOW)
+	{
+		SDL_HideWindow(g_ClientGlob.m_hMainWnd.sdl_window);
+	}
+#endif // LTJS_SDL_BACKEND
+#endif // DE_CLIENT_COMPILE
+
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_bRendererShutdown = LTTRUE;
+#endif // DE_CLIENT_COMPILE
+	return LT_OK;
 }
 
 LTRESULT _GetOrCopyClientFile(char *pTempPath, char *pFilename, char *pOutName, int outNameLen)
