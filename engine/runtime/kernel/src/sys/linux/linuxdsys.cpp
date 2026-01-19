@@ -43,7 +43,7 @@ struct LTSysResultString {
 	unsigned long string_id;
 };
 
-LTSysResultString g_StringMap[] = {
+static LTSysResultString s_StringMap[] = {
 	DO_CODE(SERVERERROR),
 	DO_CODE(ERRORLOADINGRENDERDLL),
 	DO_CODE(MISSINGWORLDMODEL),
@@ -73,7 +73,7 @@ LTSysResultString g_StringMap[] = {
 	DO_CODE(INVALIDNETVERSION)
 };
 
-#define STRINGMAP_SIZE (sizeof(g_StringMap) / sizeof(g_StringMap[0]))
+#define STRINGMAP_SIZE (sizeof(s_StringMap) / sizeof(s_StringMap[0]))
 #endif // LTJS_SDL_BACKEND
 
 
@@ -140,10 +140,10 @@ LTRESULT dsi_SetupMessage(
 
 	for (auto i = 0; i < STRINGMAP_SIZE; ++i)
 	{
-		if (g_StringMap[i].dResult == resultCode)
+		if (s_StringMap[i].dResult == resultCode)
 		{
 			bFound = true;
-			stringID = g_StringMap[i].string_id;
+			stringID = s_StringMap[i].string_id;
 			break;
 		}
 	}
@@ -302,6 +302,7 @@ static void dsi_GetDLLModes(char *pDLLName, RMode **pMyList)
 
 RMode* dsi_GetRenderModes()
 {
+#ifdef DE_CLIENT_COMPILE
 	RMode mode = g_RMode;
 
 	if (mode.m_Width == 0 || mode.m_Height == 0)
@@ -331,15 +332,23 @@ RMode* dsi_GetRenderModes()
 	auto* out_mode = new RMode;
 	*out_mode = mode;
 	return out_mode;
+#else
+	return nullptr;
+#endif // DE_CLIENT_COMPILE
 }
 
 void dsi_RelinquishRenderModes(RMode *pMode)
 {
+#ifdef DE_CLIENT_COMPILE
 	delete pMode;
+#else
+	static_cast<void>(pMode);
+#endif // DE_CLIENT_COMPILE
 }
 
 LTRESULT dsi_GetRenderMode(RMode *pMode)
 {
+#ifdef DE_CLIENT_COMPILE
 	if (!pMode)
 	{
 		return LT_ERROR;
@@ -347,10 +356,15 @@ LTRESULT dsi_GetRenderMode(RMode *pMode)
 
 	std::memcpy(pMode, &g_RMode, sizeof(RMode));
 	return LT_OK;
+#else
+	static_cast<void>(pMode);
+	return LT_ERROR;
+#endif // DE_CLIENT_COMPILE
 }
 
 LTRESULT dsi_SetRenderMode(RMode *pMode)
 {
+#ifdef DE_CLIENT_COMPILE
 	RMode currentMode;
 	char message[256];
 
@@ -387,10 +401,15 @@ LTRESULT dsi_SetRenderMode(RMode *pMode)
 	g_ClientGlob.m_bRendererShutdown = LTFALSE;
 #endif // DE_CLIENT_COMPILE
 	return LT_OK;
+#else
+	static_cast<void>(pMode);
+	return LT_ERROR;
+#endif // DE_CLIENT_COMPILE
 }
 
 LTRESULT dsi_ShutdownRender(uint32 flags)
 {
+#ifdef DE_CLIENT_COMPILE
 	r_TermRender(1, true);
 
 #ifdef DE_CLIENT_COMPILE
@@ -411,6 +430,10 @@ LTRESULT dsi_ShutdownRender(uint32 flags)
 	g_ClientGlob.m_bRendererShutdown = LTTRUE;
 #endif // DE_CLIENT_COMPILE
 	return LT_OK;
+#else
+	static_cast<void>(flags);
+	return LT_OK;
+#endif // DE_CLIENT_COMPILE
 }
 
 LTRESULT _GetOrCopyClientFile(char *pTempPath, char *pFilename, char *pOutName, int outNameLen)
@@ -597,10 +620,17 @@ return NULL;     // DAN - temporary
 
 LTRESULT dsi_DoErrorMessage(char *pMessage)
 {
+#ifdef DE_CLIENT_COMPILE
 	if (pMessage)
 	{
 		con_PrintString(CONRGB(255,255,255), 0, pMessage);
 	}
+#else
+	if (pMessage)
+	{
+		dsi_PrintToConsole("%s", pMessage);
+	}
+#endif // DE_CLIENT_COMPILE
 
 #ifdef DE_CLIENT_COMPILE
 #ifdef LTJS_SDL_BACKEND
