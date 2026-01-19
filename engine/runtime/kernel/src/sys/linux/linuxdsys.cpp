@@ -118,12 +118,12 @@ LTRESULT dsi_SetupMessage(
 	LTRESULT dResult,
 	ltjs::ShellStringFormatter& formatter)
 {
-	pMsg[0] = 0;
-
 	if (!pMsg || maxMsgLen <= 0)
 	{
 		return LT_ERROR;
 	}
+
+	pMsg[0] = 0;
 
 	if (!g_hResourceModule)
 	{
