@@ -3,16 +3,15 @@
 Track what is needed to replace the legacy DirectMusic path with the ltjs implementation and expose it to game code.
 
 ## Core integration
-- Confirm initialization order and lifetime: `Init()`, `Term()`, `InitLevel()`, `TermLevel()` are called from the client as expected.
+- Audit result: no engine-side call sites were found for `ILTDirectMusicMgr` init/term/level calls; game/client shell must invoke these explicitly.
 
 ## API parity gaps (ltjs_dmusic_manager)
 - Decide/implement handling for transitions and intensity changes if they need finer timing than the current placeholder behavior.
-- Decide/implement beat/measure/grid/marker scheduling for secondary/motif enact types (currently aligned to segment boundaries).
-- Decide how to handle motifs that are tied to styles (current implementation treats motif names as segment file paths).
+- Marker scheduling: decide whether to implement marker parsing (currently mapped to segment end).
 
 ## Data and file handling
-- Validate the expected search paths for segments/motifs (ensure the data dir is honored consistently with SMusicMgr).
-- Confirm segment loading supports the formats the tools emit today (e.g., RIFF/WAV/OGG) and document supported formats.
+- Document search paths: segments/motifs are resolved relative to `InitLevel(working_directory)`; wave references inside segments resolve relative to the segment file's directory.
+- Document supported wave formats in segments: PCM (WAV), MS IMA ADPCM, MP3-in-WAV via `AudioDecoder`; OGG is not supported.
 
 ## Capability reporting and docs
 - Document which DirectMusic features are supported vs. emulated vs. unsupported.

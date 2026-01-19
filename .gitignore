@@ -1,5 +1,7 @@
 .idea/
 .vs/
+.ralph/
+.claude/
 build/
 !engine/runtime/build/
 !engine/runtime/build/**
