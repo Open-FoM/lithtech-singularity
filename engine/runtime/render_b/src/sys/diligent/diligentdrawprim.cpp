@@ -243,6 +243,25 @@ void FillBlendState(Diligent::RenderTargetBlendDesc& blend_desc, ELTBlendMode mo
 	blend_desc.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 }
 
+bool DrawPrimOutputIsSRGB()
+{
+	auto* swap_chain = r_GetSwapChain();
+	if (!swap_chain)
+	{
+		return false;
+	}
+
+	switch (swap_chain->GetDesc().ColorBufferFormat)
+	{
+		case Diligent::TEX_FORMAT_RGBA8_UNORM_SRGB:
+		case Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB:
+		case Diligent::TEX_FORMAT_BGRX8_UNORM_SRGB:
+			return true;
+		default:
+			return false;
+	}
+}
+
 }
 
 CDiligentDrawPrim::DrawPrimVertex CDiligentDrawPrim::MakeVertex(float x, float y, float z, const LT_VERTRGBA& rgba, float u, float v)
@@ -710,7 +729,7 @@ bool CDiligentDrawPrim::UpdateTransformMatrix()
 	}
 
 	ViewParams draw_params;
-	if (!d3d_InitFrustum(
+	if (!lt_InitViewFrustum(
 			&draw_params,
 			camera->m_xFov,
 			camera->m_yFov,
@@ -816,7 +835,8 @@ LTRESULT CDiligentDrawPrim::SubmitDraw(const std::vector<DrawPrimVertex>& vertic
 		static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f,
 		1.0f
 	};
-	constants.fog_params = {fog_near, fog_far, fog_enabled ? 1.0f : 0.0f, 0.0f};
+	const float output_is_srgb = DrawPrimOutputIsSRGB() ? 1.0f : 0.0f;
+	constants.fog_params = {fog_near, fog_far, fog_enabled ? 1.0f : 0.0f, output_is_srgb};
 
 	constants.color_op = static_cast<int32>(m_ColorOp);
 	constants.alpha_test_mode = static_cast<int32>(m_eTestMode);

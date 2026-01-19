@@ -45,9 +45,75 @@ float2 ResolveTexCoord(int stage, float4 coord)
     return uv;
 }
 
+float3 ToLinear(float3 c)
+{
+    return pow(max(c, 0.0f), 2.2f);
+}
+
+float3 ToGamma(float3 c)
+{
+    return pow(saturate(c), 1.0f / 2.2f);
+}
+
+float3 ACESFilm(float3 x)
+{
+    const float a = 2.51f;
+    const float b = 0.03f;
+    const float c = 2.43f;
+    const float d = 0.59f;
+    const float e = 0.14f;
+    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+float3 ToneMap(float3 color_linear)
+{
+    const float exposure = 1.1f;
+    return ACESFilm(color_linear * exposure);
+}
+
+float3 ApplyToneMap(float3 color_linear)
+{
+    if (g_FogParams.y > 0.5f)
+    {
+        return ToneMap(color_linear);
+    }
+    return color_linear;
+}
+
+float3 EncodeOutput(float3 color_linear)
+{
+    float3 mapped = ApplyToneMap(color_linear);
+    return (g_FogParams.z > 0.5f) ? mapped : ToGamma(mapped);
+}
+
+
+float Dither4x4(float2 pos)
+{
+    int2 p = int2(pos);
+    int x = p.x & 3;
+    int y = p.y & 3;
+    int idx = (y << 2) | x;
+    static const float bayer[16] =
+    {
+        0.0f, 8.0f, 2.0f, 10.0f,
+        12.0f, 4.0f, 14.0f, 6.0f,
+        3.0f, 11.0f, 1.0f, 9.0f,
+        15.0f, 7.0f, 13.0f, 5.0f
+    };
+    return (bayer[idx] + 0.5f) / 16.0f - 0.5f;
+}
+
 float4 PSMain(PSInput input) : SV_TARGET
 {
     float2 uv = ResolveTexCoord(0, input.texcoord0);
     float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
-    return tex * input.color;
+
+    float3 color_linear = ToLinear(tex.rgb) * ToLinear(input.color.rgb);
+    float alpha = tex.a * input.color.a;
+
+    float3 color = EncodeOutput(color_linear);
+    float dither = Dither4x4(input.position.xy) / 255.0f;
+    color = saturate(color + dither);
+
+    return float4(color, alpha);
 }

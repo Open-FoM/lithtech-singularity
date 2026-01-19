@@ -108,6 +108,7 @@ static bool g_diligent_shadow_mode = false;
 
 static ConVar<int> g_CV_ScreenGlow_DrawCanvases("ScreenGlow_DrawCanvases", 1);
 static ConVar<int> g_CV_ScreenGlowBlurMultiTap("ScreenGlowBlurMultiTap", 1);
+static ConVar<int> g_CV_ToneMapEnable("ToneMapEnable", 1);
 
 struct DiligentSurface
 {
@@ -142,6 +143,8 @@ struct DiligentOptimized2DResources
 	std::unordered_map<int32, DiligentOptimized2DPipeline> clamped_pipelines;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> vertex_buffer;
 	uint32 vertex_buffer_size = 0;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> constant_buffer;
+	float output_is_srgb = -1.0f;
 };
 
 struct DiligentOptimized2DVertex
@@ -149,6 +152,11 @@ struct DiligentOptimized2DVertex
 	float position[2];
 	float color[4];
 	float uv[2];
+};
+
+struct DiligentOptimized2DConstants
+{
+	float output_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 struct DiligentRBSpriteData
@@ -1223,6 +1231,34 @@ HWND g_native_window_handle = nullptr;
 SDL_Window* g_sdl_window = nullptr;
 #endif
 
+bool diligent_is_srgb_format(Diligent::TEXTURE_FORMAT format)
+{
+	switch (format)
+	{
+		case Diligent::TEX_FORMAT_RGBA8_UNORM_SRGB:
+		case Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB:
+		case Diligent::TEX_FORMAT_BGRX8_UNORM_SRGB:
+			return true;
+		default:
+			return false;
+	}
+}
+
+float diligent_get_swapchain_output_is_srgb()
+{
+	if (!g_swap_chain)
+	{
+		return 0.0f;
+	}
+
+	return diligent_is_srgb_format(g_swap_chain->GetDesc().ColorBufferFormat) ? 1.0f : 0.0f;
+}
+
+float diligent_get_tonemap_enabled()
+{
+	return g_CV_ToneMapEnable.m_Val != 0 ? 1.0f : 0.0f;
+}
+
 Diligent::RefCntAutoPtr<Diligent::IBuffer> diligent_create_buffer(
 	uint32 size,
 	Diligent::BIND_FLAGS bind_flags,
@@ -2293,6 +2329,56 @@ bool diligent_ensure_optimized_2d_shaders()
 	return g_optimized_2d_resources.pixel_shader != nullptr;
 }
 
+bool diligent_ensure_optimized_2d_constants()
+{
+	if (g_optimized_2d_resources.constant_buffer)
+	{
+		return true;
+	}
+
+	if (!g_render_device)
+	{
+		return false;
+	}
+
+	Diligent::BufferDesc desc;
+	desc.Name = "ltjs_optimized_2d_constants";
+	desc.Size = sizeof(DiligentOptimized2DConstants);
+	desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+	desc.Usage = Diligent::USAGE_DYNAMIC;
+	desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+
+	g_render_device->CreateBuffer(desc, nullptr, &g_optimized_2d_resources.constant_buffer);
+	return g_optimized_2d_resources.constant_buffer != nullptr;
+}
+
+bool diligent_update_optimized_2d_constants(float output_is_srgb)
+{
+	if (!diligent_ensure_optimized_2d_constants() || !g_immediate_context)
+	{
+		return false;
+	}
+
+	if (std::fabs(g_optimized_2d_resources.output_is_srgb - output_is_srgb) < 0.001f)
+	{
+		return true;
+	}
+
+	DiligentOptimized2DConstants constants{};
+	constants.output_params[0] = output_is_srgb;
+
+	void* mapped_constants = nullptr;
+	g_immediate_context->MapBuffer(g_optimized_2d_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_immediate_context->UnmapBuffer(g_optimized_2d_resources.constant_buffer, Diligent::MAP_WRITE);
+	g_optimized_2d_resources.output_is_srgb = output_is_srgb;
+	return true;
+}
+
 bool diligent_ensure_optimized_2d_vertex_buffer(uint32 size)
 {
 	if (g_optimized_2d_resources.vertex_buffer && g_optimized_2d_resources.vertex_buffer_size >= size)
@@ -2401,6 +2487,17 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	if (!pipeline.pipeline_state)
 	{
 		return nullptr;
+	}
+
+	if (!diligent_ensure_optimized_2d_constants())
+	{
+		return nullptr;
+	}
+
+	auto* ps_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Optimized2DConstants");
+	if (ps_constants)
+	{
+		ps_constants->Set(g_optimized_2d_resources.constant_buffer);
 	}
 
 	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
@@ -2778,6 +2875,11 @@ bool diligent_draw_optimized_2d_vertices(
 		return false;
 	}
 
+	if (!diligent_update_optimized_2d_constants(diligent_get_swapchain_output_is_srgb()))
+	{
+		return false;
+	}
+
 	void* mapped_vertices = nullptr;
 	g_immediate_context->MapBuffer(g_optimized_2d_resources.vertex_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_vertices);
 	std::memcpy(mapped_vertices, vertices, data_size);
@@ -2840,6 +2942,11 @@ bool diligent_draw_optimized_2d_vertices_to_target(
 
 	auto* pipeline = diligent_get_optimized_2d_pipeline(blend, clamp_sampler);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
+	{
+		return false;
+	}
+
+	if (!diligent_update_optimized_2d_constants(0.0f))
 	{
 		return false;
 	}
@@ -4240,6 +4347,9 @@ void diligent_fill_world_constants(
 	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
 	constants.fog_color[3] = fog_near;
 	constants.fog_params[0] = fog_far;
+	constants.fog_params[1] = diligent_get_tonemap_enabled();
+	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
+	constants.fog_params[3] = 0.0f;
 	diligent_init_texture_effect_constants(constants);
 }
 
@@ -4712,6 +4822,9 @@ bool diligent_draw_world_blocks()
 	constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
 	constants.fog_color[3] = g_CV_FogNearZ.m_Val;
 	constants.fog_params[0] = g_CV_FogFarZ.m_Val;
+	constants.fog_params[1] = diligent_get_tonemap_enabled();
+	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
+	constants.fog_params[3] = 0.0f;
 	if (g_diligent_num_world_dynamic_lights > 0)
 	{
 		const DynamicLight* light = g_diligent_world_dynamic_lights[0];
@@ -4791,6 +4904,9 @@ bool diligent_draw_world_model_list_with_view(
 		constants.fog_color[2] = static_cast<float>(g_CV_FogColorB.m_Val) / 255.0f;
 		constants.fog_color[3] = fog_near_z;
 		constants.fog_params[0] = fog_far_z;
+		constants.fog_params[1] = diligent_get_tonemap_enabled();
+		constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
+		constants.fog_params[3] = 0.0f;
 		if (g_diligent_num_world_dynamic_lights > 0)
 		{
 			const DynamicLight* light = g_diligent_world_dynamic_lights[0];
@@ -5042,7 +5158,7 @@ bool diligent_draw_sky(SceneDesc* desc)
 	}
 
 	ViewBoxDef view_box;
-	d3d_InitViewBox2(&view_box, 0.01f, g_CV_SkyFarZ.m_Val, g_ViewParams, min_x, min_y, max_x, max_y);
+lt_InitViewBoxFromParams(&view_box, 0.01f, g_CV_SkyFarZ.m_Val, g_ViewParams, min_x, min_y, max_x, max_y);
 
 	LTMatrix mat = g_ViewParams.m_mInvView;
 	mat.SetTranslation(g_ViewParams.m_SkyViewPos);
@@ -7026,7 +7142,7 @@ LTVector diligent_calc_volume_effect_point_quartic_sample(
 	return light.color * (dist_percent * dist_percent);
 }
 
-LTVector diligent_calc_volume_effect_point_d3d_sample(
+LTVector diligent_calc_volume_effect_point_legacy_sample(
 	const DiligentVolumeEffectStaticLight& light,
 	const LTVector& pos)
 {
@@ -7103,7 +7219,7 @@ LTVector diligent_calc_volume_effect_static_light_sample(
 		return diligent_calc_volume_effect_point_quartic_sample(light, pos);
 	}
 
-	return diligent_calc_volume_effect_point_d3d_sample(light, pos);
+	return diligent_calc_volume_effect_point_legacy_sample(light, pos);
 }
 
 float diligent_calc_volume_effect_static_light_score(
@@ -11329,8 +11445,11 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	constants.fog_color[2] = fog_color_b;
 	constants.fog_color[3] = fog_near;
 	constants.fog_params[0] = fog_far;
-	constants.fog_params[1] = 0.0f;
-	constants.fog_params[2] = 0.0f;
+	constants.fog_params[1] = diligent_get_tonemap_enabled();
+	const float output_is_srgb = (!g_diligent_glow_mode && !g_diligent_shadow_mode)
+		? diligent_get_swapchain_output_is_srgb()
+		: 0.0f;
+	constants.fog_params[2] = output_is_srgb;
 	constants.fog_params[3] = 0.0f;
 
 	void* mapped_constants = nullptr;
@@ -12829,7 +12948,7 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 	}
 
 	ViewParams glow_params;
-	if (!d3d_InitFrustum(
+if (!lt_InitViewFrustum(
 			&glow_params,
 			desc->m_xFov,
 			desc->m_yFov,
@@ -12883,6 +13002,9 @@ bool diligent_render_screen_glow(SceneDesc* desc)
 	glow_constants.fog_color[2] = 0.0f;
 	glow_constants.fog_color[3] = g_CV_ScreenGlowFogNearZ.m_Val;
 	glow_constants.fog_params[0] = g_CV_ScreenGlowFogFarZ.m_Val;
+	glow_constants.fog_params[1] = diligent_get_tonemap_enabled();
+	glow_constants.fog_params[2] = 0.0f;
+	glow_constants.fog_params[3] = 0.0f;
 
 	glow_target->InstallOnDevice();
 	diligent_set_viewport(static_cast<float>(g_diligent_glow_state.texture_width), static_cast<float>(g_diligent_glow_state.texture_height));
@@ -13086,7 +13208,7 @@ int diligent_RenderScene(SceneDesc* desc)
 	const float right = static_cast<float>(desc->m_Rect.right);
 	const float bottom = static_cast<float>(desc->m_Rect.bottom);
 
-	if (!d3d_InitFrustum(
+if (!lt_InitViewFrustum(
 			&g_ViewParams,
 			desc->m_xFov,
 			desc->m_yFov,
@@ -13777,6 +13899,8 @@ void diligent_Term(bool)
 	g_optimized_2d_resources.pixel_shader.Release();
 	g_optimized_2d_resources.vertex_buffer.Release();
 	g_optimized_2d_resources.vertex_buffer_size = 0;
+	g_optimized_2d_resources.constant_buffer.Release();
+	g_optimized_2d_resources.output_is_srgb = -1.0f;
 	g_diligent_glow_blur_resources.vertex_shader.Release();
 	g_diligent_glow_blur_resources.pixel_shader.Release();
 	g_diligent_glow_blur_resources.constant_buffer.Release();
