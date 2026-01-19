@@ -19,13 +19,60 @@
 #include "version_info.h"
 
 #ifdef LTJS_SDL_BACKEND
+#include "SDL3/SDL.h"
 #include "ltjs_shell_string_formatter.h"
+#include "ltjs_shared_data_mgr.h"
+#include "ltjs_shell_resource_mgr.h"
+#include "ltmsg_resource_ids.h"
 #endif // LTJS_SDL_BACKEND
 
 //IClientShell game client shell object.
 #include "iclientshell.h"
 static IClientShell *i_client_shell;
 define_holder(IClientShell, i_client_shell);
+
+#ifdef LTJS_SDL_BACKEND
+ltjs::ShellResourceMgr* g_hResourceModule = nullptr;
+
+#define DO_CODE(x)  LT_##x, IDS_##x
+
+struct LTSysResultString {
+	unsigned long dResult;
+	unsigned long string_id;
+};
+
+LTSysResultString g_StringMap[] = {
+	DO_CODE(SERVERERROR),
+	DO_CODE(ERRORLOADINGRENDERDLL),
+	DO_CODE(MISSINGWORLDMODEL),
+	DO_CODE(CANTLOADGAMERESOURCES),
+	DO_CODE(CANTINITIALIZEINPUT),
+	DO_CODE(MISSINGSHELLDLL),
+	DO_CODE(INVALIDSHELLDLL),
+	DO_CODE(INVALIDSHELLDLLVERSION),
+	DO_CODE(CANTCREATECLIENTSHELL),
+	DO_CODE(UNABLETOINITSOUND),
+	DO_CODE(MISSINGWORLDFILE),
+	DO_CODE(INVALIDWORLDFILE),
+	DO_CODE(INVALIDSERVERPACKET),
+	DO_CODE(MISSINGSPRITEFILE),
+	DO_CODE(INVALIDSPRITEFILE),
+	DO_CODE(MISSINGMODELFILE),
+	DO_CODE(INVALIDMODELFILE),
+	DO_CODE(UNABLETORESTOREVIDEO),
+	DO_CODE(MISSINGCLASS),
+	DO_CODE(CANTCREATESERVERSHELL),
+	DO_CODE(INVALIDOBJECTDLLVERSION),
+	DO_CODE(ERRORINITTINGNETDRIVER),
+	DO_CODE(USERCANCELED),
+	DO_CODE(CANTRESTOREOBJECT),
+	DO_CODE(NOGAMERESOURCES),
+	DO_CODE(ERRORCOPYINGFILE),
+	DO_CODE(INVALIDNETVERSION)
+};
+
+#define STRINGMAP_SIZE (sizeof(g_StringMap) / sizeof(g_StringMap[0]))
+#endif // LTJS_SDL_BACKEND
 
 
 
@@ -35,19 +82,34 @@ void dsi_OnReturnError(int err)
 
 static LTBOOL dsi_LoadResourceModule()
 {
-// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
-return LTTRUE;      // DAN - temporary
+#ifdef LTJS_SDL_BACKEND
+	g_hResourceModule = ltjs::get_shared_data_mgr().get_ltmsg_mgr();
+	return g_hResourceModule != nullptr;
+#else
+	// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
+	return LTTRUE;      // DAN - temporary
+#endif // LTJS_SDL_BACKEND
 }
 
 static void dsi_UnloadResourceModule()
 {
+#ifdef LTJS_SDL_BACKEND
+	g_hResourceModule = nullptr;
+#endif // LTJS_SDL_BACKEND
 }
 
 
 #ifndef LTJS_SDL_BACKEND
 LTRESULT dsi_SetupMessage(char *pMsg, int maxMsgLen, LTRESULT dResult, va_list marker)
 {
-return LT_OK;      // DAN - temporary
+	static_cast<void>(marker);
+	if (!pMsg || maxMsgLen <= 0)
+	{
+		return LT_ERROR;
+	}
+
+	LTSNPrintF(pMsg, maxMsgLen, "LTRESULT 0x%08X", dResult);
+	return LT_ERROR;
 }
 #else
 LTRESULT dsi_SetupMessage(
@@ -56,14 +118,46 @@ LTRESULT dsi_SetupMessage(
 	LTRESULT dResult,
 	ltjs::ShellStringFormatter& formatter)
 {
-	static_cast<void>(formatter);
+	pMsg[0] = 0;
 
 	if (!pMsg || maxMsgLen <= 0)
 	{
 		return LT_ERROR;
 	}
 
-	snprintf(pMsg, maxMsgLen, "LTRESULT 0x%08X", dResult);
+	if (!g_hResourceModule)
+	{
+		LTSNPrintF(pMsg, maxMsgLen, "<missing resource DLL>");
+		return LT_ERROR;
+	}
+
+	// Try to find the error code.
+	auto bFound = false;
+	auto resultCode = ERROR_CODE(dResult);
+	auto stringID = static_cast<unsigned long>(0);
+
+	for (auto i = 0; i < STRINGMAP_SIZE; ++i)
+	{
+		if (g_StringMap[i].dResult == resultCode)
+		{
+			bFound = true;
+			stringID = g_StringMap[i].string_id;
+			break;
+		}
+	}
+
+	if (bFound)
+	{
+		char tempBuffer[500];
+		const auto string_size = g_hResourceModule->load_string(stringID, tempBuffer, sizeof(tempBuffer) - 1);
+		if (string_size > 0)
+		{
+			formatter.format(tempBuffer, string_size, pMsg, maxMsgLen);
+			return LT_OK;
+		}
+	}
+
+	LTSNPrintF(pMsg, maxMsgLen, "<invalid resource DLL>");
 	return LT_ERROR;
 }
 #endif // LTJS_SDL_BACKEND
@@ -76,7 +170,14 @@ int dsi_Init()
 	df_Init();	// File manager.
 //	obj_Init();	// Object manager.
 //	packet_Init();
-return 0;      // DAN - temporary
+
+	if (dsi_LoadResourceModule())
+	{
+		return 0;
+	}
+
+	dsi_Term();
+	return 1;
 }
 
 void dsi_Term()
@@ -86,13 +187,18 @@ void dsi_Term()
 	df_Term();
 	str_Term();
 	dm_Term();
+	dsi_UnloadResourceModule();
 	return;
 }
 
 void* dsi_GetResourceModule()
 {
-// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
-return NULL;      // DAN - temporary
+#ifdef LTJS_SDL_BACKEND
+	return g_hResourceModule;
+#else
+	// Resource modules are Windows-only; SDL builds use ltjs_shell_resource_mgr for strings/cursors.
+	return NULL;      // DAN - temporary
+#endif // LTJS_SDL_BACKEND
 }
 
 
@@ -358,11 +464,46 @@ return NULL;     // DAN - temporary
 
 LTRESULT dsi_DoErrorMessage(char *pMessage)
 {
-return LT_OK;      // DAN - temporary
+	if (pMessage)
+	{
+		con_PrintString(CONRGB(255,255,255), 0, pMessage);
+	}
+
+#ifdef DE_CLIENT_COMPILE
+#ifdef LTJS_SDL_BACKEND
+	if (pMessage && g_ClientGlob.m_hMainWnd.sdl_window)
+	{
+		SDL_ShowSimpleMessageBox(
+			SDL_MESSAGEBOX_ERROR,
+			g_ClientGlob.m_WndCaption ? g_ClientGlob.m_WndCaption : "LithTech",
+			pMessage,
+			g_ClientGlob.m_hMainWnd.sdl_window
+		);
+	}
+#endif // LTJS_SDL_BACKEND
+#endif // DE_CLIENT_COMPILE
+
+	return LT_OK;
 }
 
 void dsi_MessageBox(const char *pMessage, const char *pTitle)
 {
+#ifdef DE_CLIENT_COMPILE
+#ifdef LTJS_SDL_BACKEND
+	SDL_ShowSimpleMessageBox(
+		SDL_MESSAGEBOX_INFORMATION,
+		pTitle ? pTitle : "LithTech",
+		pMessage ? pMessage : "",
+		g_ClientGlob.m_hMainWnd.sdl_window
+	);
+#else
+	static_cast<void>(pMessage);
+	static_cast<void>(pTitle);
+#endif // LTJS_SDL_BACKEND
+#else
+	static_cast<void>(pMessage);
+	static_cast<void>(pTitle);
+#endif // DE_CLIENT_COMPILE
 }
 
 #ifdef LTJS_SDL_BACKEND
