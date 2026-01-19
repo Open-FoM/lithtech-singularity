@@ -4,7 +4,7 @@ Track Linux/POSIX kernel gaps introduced in recent platform shims/stubs.
 
 ## Linux/POSIX kernel stubs to implement
 - Done: dsys renderer integration (`dsi_GetRenderModes`, `dsi_GetRenderMode`, `dsi_SetRenderMode`, `dsi_ShutdownRender`). `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
-- dsys input queue: implement key down/up tracking and clear methods. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
+- Done: dsys input queue key down/up tracking and clear methods. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
 - dsys client defaults: implement `dsi_GetDefaultWorld`, `dsi_GetInstanceHandle`, `dsi_GetMainWindow`. `engine/runtime/kernel/src/sys/linux/linuxdsys.cpp`
 - Input manager shim: replace Windows-header include with Linux implementation. `engine/runtime/kernel/src/sys/linux/input.h`
 - Video manager shim: replace Windows-header include with Linux implementation. `engine/runtime/kernel/src/sys/linux/videomgr.h`

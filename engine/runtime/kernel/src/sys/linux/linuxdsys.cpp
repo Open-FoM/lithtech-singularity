@@ -444,44 +444,86 @@ void dsi_ClientSleep(uint32 ms)
 
 LTBOOL dsi_IsInputEnabled()
 {
-return LTTRUE;      // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_bInputEnabled;
+#else
+	return LTFALSE;
+#endif
 }
 
 uint16 dsi_NumKeyDowns()
 {
-return 0;      // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_nKeyDowns;
+#else
+	return 0;
+#endif
 }
 
 uint16 dsi_NumKeyUps()
 {
-return 0;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_nKeyUps;
+#else
+	return 0;
+#endif
 }
 
 uint32 dsi_GetKeyDown(uint32 i)
 {
-return 0;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	ASSERT(i < MAX_KEYBUFFER);
+	return g_ClientGlob.m_KeyDowns[i];
+#else
+	static_cast<void>(i);
+	return 0;
+#endif
 }
 
 uint32 dsi_GetKeyDownRep(uint32 i)
 {
-return 0;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	ASSERT(i < MAX_KEYBUFFER);
+	return g_ClientGlob.m_KeyDownReps[i];
+#else
+	static_cast<void>(i);
+	return 0;
+#endif
 }
 
 uint32 dsi_GetKeyUp(uint32 i)
 {
-return 0;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	ASSERT(i < MAX_KEYBUFFER);
+	return g_ClientGlob.m_KeyUps[i];
+#else
+	static_cast<void>(i);
+	return 0;
+#endif
 }
 
 void dsi_ClearKeyDowns()
 {
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_nKeyDowns = 0;
+#endif
 }
 
 void dsi_ClearKeyUps()
 {
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_nKeyUps = 0;
+#endif
 }
 
 void dsi_ClearKeyMessages()
 {
+#ifdef DE_CLIENT_COMPILE
+#ifdef LTJS_SDL_BACKEND
+	SDL_FlushEvent(SDL_EVENT_KEY_DOWN);
+	SDL_FlushEvent(SDL_EVENT_KEY_UP);
+#endif // LTJS_SDL_BACKEND
+#endif // DE_CLIENT_COMPILE
 }
 
 LTBOOL dsi_IsConsoleUp()
