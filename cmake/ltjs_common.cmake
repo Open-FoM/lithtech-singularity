@@ -34,7 +34,8 @@ function (ltjs_add_defaults)
 	target_include_directories (
 		${ARGV0}
 		PRIVATE
-			${CMAKE_SOURCE_DIR}/libs/ltjs/include
+			$<$<BOOL:${LTJS_ROOT}>:${LTJS_ROOT}/libs/ltjs/include>
+			$<$<NOT:$<BOOL:${LTJS_ROOT}>>:${CMAKE_SOURCE_DIR}/libs/ltjs/include>
 	)
 
 	if (MSVC)

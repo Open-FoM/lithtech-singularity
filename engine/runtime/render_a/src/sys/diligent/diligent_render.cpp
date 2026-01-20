@@ -89,6 +89,8 @@ RenderStruct* g_render_struct = nullptr;
 SceneDesc* g_diligent_scene_desc = nullptr;
 uint32 g_diligent_object_frame_code = 0;
 ViewParams g_ViewParams;
+Diligent::ITextureView* g_output_render_target_override = nullptr;
+Diligent::ITextureView* g_output_depth_target_override = nullptr;
 
 namespace
 {
@@ -1230,6 +1232,26 @@ HWND g_native_window_handle = nullptr;
 #ifdef LTJS_SDL_BACKEND
 SDL_Window* g_sdl_window = nullptr;
 #endif
+
+Diligent::ITextureView* diligent_get_active_render_target()
+{
+	if (g_output_render_target_override)
+	{
+		return g_output_render_target_override;
+	}
+
+	return g_swap_chain ? g_swap_chain->GetCurrentBackBufferRTV() : nullptr;
+}
+
+Diligent::ITextureView* diligent_get_active_depth_target()
+{
+	if (g_output_depth_target_override)
+	{
+		return g_output_depth_target_override;
+	}
+
+	return g_swap_chain ? g_swap_chain->GetDepthBufferDSV() : nullptr;
+}
 
 bool diligent_is_srgb_format(Diligent::TEXTURE_FORMAT format)
 {
@@ -2891,8 +2913,8 @@ bool diligent_draw_optimized_2d_vertices(
 		texture_var->Set(texture_view);
 	}
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	g_immediate_context->SetPipelineState(pipeline->pipeline_state);
 
@@ -4036,8 +4058,8 @@ bool diligent_draw_world_immediate(
 	std::memcpy(mapped_indices, indices, index_bytes);
 	g_immediate_context->UnmapBuffer(g_world_resources.index_buffer, Diligent::MAP_WRITE);
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	Diligent::IBuffer* buffers[] = {g_world_resources.vertex_buffer};
@@ -4162,8 +4184,8 @@ bool diligent_draw_world_immediate_mode(
 	std::memcpy(mapped_indices, indices, index_bytes);
 	g_immediate_context->UnmapBuffer(g_world_resources.index_buffer, Diligent::MAP_WRITE);
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	Diligent::IBuffer* buffers[] = {g_world_resources.vertex_buffer};
@@ -4252,8 +4274,8 @@ bool diligent_draw_line_vertices(
 	std::memcpy(mapped_vertices, vertices, vertex_bytes);
 	g_immediate_context->UnmapBuffer(g_world_resources.vertex_buffer, Diligent::MAP_WRITE);
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	Diligent::IBuffer* buffers[] = {g_world_resources.vertex_buffer};
@@ -4459,8 +4481,8 @@ bool diligent_draw_render_blocks_with_constants(
 		return false;
 	}
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	for (auto* block : blocks)
@@ -5192,7 +5214,7 @@ lt_InitViewBoxFromParams(&view_box, 0.01f, g_CV_SkyFarZ.m_Val, g_ViewParams, min
 
 	if (drew && g_immediate_context)
 	{
-		auto* depth_target = g_swap_chain ? g_swap_chain->GetDepthBufferDSV() : nullptr;
+		auto* depth_target = diligent_get_active_depth_target();
 		if (depth_target)
 		{
 			g_immediate_context->ClearDepthStencil(
@@ -6765,8 +6787,8 @@ bool diligent_begin_shadow_projection_pass(
 		return false;
 	}
 
-	auto* rtv = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* dsv = g_swap_chain->GetDepthBufferDSV();
+	auto* rtv = diligent_get_active_render_target();
+	auto* dsv = diligent_get_active_depth_target();
 	if (!rtv)
 	{
 		return false;
@@ -10103,8 +10125,8 @@ void diligent_Clear(LTRect*, uint32, LTRGBColor& clear_color)
 		static_cast<float>(clear_color.rgb.b) / 255.0f,
 		static_cast<float>(clear_color.rgb.a) / 255.0f};
 
-	auto* render_target = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* depth_target = g_swap_chain->GetDepthBufferDSV();
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
 
 	if (!render_target)
 	{
@@ -13063,8 +13085,8 @@ if (!lt_InitViewFrustum(
 	const float width = static_cast<float>(desc->m_Rect.right - desc->m_Rect.left);
 	const float height = static_cast<float>(desc->m_Rect.bottom - desc->m_Rect.top);
 
-	auto* backbuffer_rtv = g_swap_chain->GetCurrentBackBufferRTV();
-	auto* backbuffer_dsv = g_swap_chain->GetDepthBufferDSV();
+	auto* backbuffer_rtv = diligent_get_active_render_target();
+	auto* backbuffer_dsv = diligent_get_active_depth_target();
 	if (backbuffer_rtv)
 	{
 		const float u0 = 1.0f / static_cast<float>(g_diligent_glow_state.texture_width);
@@ -13971,6 +13993,12 @@ void rdll_FreeModeList(RMode* modes)
 		current = next;
 	}
 }
+}
+
+void diligent_SetOutputTargets(Diligent::ITextureView* render_target, Diligent::ITextureView* depth_target)
+{
+	g_output_render_target_override = render_target;
+	g_output_depth_target_override = depth_target;
 }
 
 Diligent::ITextureView* diligent_get_drawprim_texture_view(SharedTexture* shared_texture, bool texture_changed)
