@@ -84,6 +84,9 @@ struct ViewportPanelState
 	bool render_model_debug_skeleton = false;
 	bool render_model_debug_obbs = false;
 	bool render_model_debug_vertex_normals = false;
+	bool render_world_debug_nodes = false;
+	bool render_world_debug_leaves = false;
+	bool render_world_debug_portals = false;
 	bool render_screen_glow_enable = false;
 	bool render_screen_glow_show_texture = false;
 	bool render_screen_glow_show_filter = false;

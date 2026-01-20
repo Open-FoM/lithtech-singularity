@@ -11,6 +11,7 @@
 #include "ui_viewport.h"
 #include "viewport_render.h"
 #include "viewport_gizmo.h"
+#include "viewport_picking.h"
 #include "ui_shared.h"
 #include "undo_stack.h"
 #include "engine_render.h"
@@ -58,19 +59,6 @@ struct EditorPaths
 };
 
 void SaveRecentProjects(const std::vector<std::string>& recent_projects);
-
-Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b);
-Diligent::float3 Add(const Diligent::float3& a, const Diligent::float3& b);
-Diligent::float3 Sub(const Diligent::float3& a, const Diligent::float3& b);
-Diligent::float3 Scale(const Diligent::float3& v, float s);
-float Dot(const Diligent::float3& a, const Diligent::float3& b);
-Diligent::float3 Normalize(const Diligent::float3& v);
-void ComputeCameraBasis(
-	const ViewportPanelState& state,
-	Diligent::float3& out_pos,
-	Diligent::float3& out_forward,
-	Diligent::float3& out_right,
-	Diligent::float3& out_up);
 
 EditorPaths ParseEditorPaths(int argc, char** argv)
 {
@@ -322,347 +310,6 @@ struct RenderCategoryState
 	bool any_visible = false;
 };
 
-bool TryParseVec3(const std::string& value, float out[3])
-{
-	return std::sscanf(value.c_str(), "%f %f %f", &out[0], &out[1], &out[2]) == 3;
-}
-
-bool TryGetRawPropertyVec3(const NodeProperties& props, const char* key, float out[3])
-{
-	for (const auto& entry : props.raw_properties)
-	{
-		if (entry.first == key)
-		{
-			return TryParseVec3(entry.second, out);
-		}
-	}
-	return false;
-}
-
-bool TryGetNodePickPosition(const NodeProperties& props, float out[3])
-{
-	if (TryGetRawPropertyVec3(props, "centroid", out))
-	{
-		return true;
-	}
-	float minv[3];
-	float maxv[3];
-	if (TryGetRawPropertyVec3(props, "bounds_min", minv) && TryGetRawPropertyVec3(props, "bounds_max", maxv))
-	{
-		out[0] = (minv[0] + maxv[0]) * 0.5f;
-		out[1] = (minv[1] + maxv[1]) * 0.5f;
-		out[2] = (minv[2] + maxv[2]) * 0.5f;
-		return true;
-	}
-	if (TryGetRawPropertyVec3(props, "pos", out) ||
-		TryGetRawPropertyVec3(props, "Pos", out) ||
-		TryGetRawPropertyVec3(props, "position", out) ||
-		TryGetRawPropertyVec3(props, "Position", out))
-	{
-		return true;
-	}
-
-	out[0] = props.position[0];
-	out[1] = props.position[1];
-	out[2] = props.position[2];
-	return true;
-}
-
-struct PickRay
-{
-	Diligent::float3 origin;
-	Diligent::float3 dir;
-};
-
-PickRay BuildPickRay(
-	const ViewportPanelState& panel,
-	const ImVec2& viewport_size,
-	const ImVec2& mouse_local)
-{
-	Diligent::float3 cam_pos;
-	Diligent::float3 cam_forward;
-	Diligent::float3 cam_right;
-	Diligent::float3 cam_up;
-	ComputeCameraBasis(panel, cam_pos, cam_forward, cam_right, cam_up);
-
-	const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
-	const float fov = Diligent::PI_F / 4.0f;
-	const float tan_half_fov = std::tan(fov * 0.5f);
-	const float ndc_x = (mouse_local.x / std::max(1.0f, viewport_size.x)) * 2.0f - 1.0f;
-	const float ndc_y = 1.0f - (mouse_local.y / std::max(1.0f, viewport_size.y)) * 2.0f;
-
-	const Diligent::float3 ray_dir = Normalize(Add(
-		Add(cam_forward, Scale(cam_right, ndc_x * tan_half_fov * aspect)),
-		Scale(cam_up, ndc_y * tan_half_fov)));
-
-	return PickRay{cam_pos, ray_dir};
-}
-
-bool RayIntersectsAABB(
-	const PickRay& ray,
-	const float bounds_min[3],
-	const float bounds_max[3],
-	float& out_t)
-{
-	const float eps = 1e-6f;
-	float t_min = 0.0f;
-	float t_max = 1.0e30f;
-
-	const float origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
-	const float dir[3] = {ray.dir.x, ray.dir.y, ray.dir.z};
-
-	for (int axis = 0; axis < 3; ++axis)
-	{
-		if (std::fabs(dir[axis]) < eps)
-		{
-			if (origin[axis] < bounds_min[axis] || origin[axis] > bounds_max[axis])
-			{
-				return false;
-			}
-			continue;
-		}
-
-		const float inv_dir = 1.0f / dir[axis];
-		float t1 = (bounds_min[axis] - origin[axis]) * inv_dir;
-		float t2 = (bounds_max[axis] - origin[axis]) * inv_dir;
-		if (t1 > t2)
-		{
-			std::swap(t1, t2);
-		}
-		t_min = std::max(t_min, t1);
-		t_max = std::min(t_max, t2);
-		if (t_max < t_min)
-		{
-			return false;
-		}
-	}
-
-	out_t = t_min >= 0.0f ? t_min : t_max;
-	return out_t >= 0.0f;
-}
-
-bool RayIntersectsTriangle(
-	const PickRay& ray,
-	const Diligent::float3& v0,
-	const Diligent::float3& v1,
-	const Diligent::float3& v2,
-	float& out_t)
-{
-	const float eps = 1e-6f;
-	const Diligent::float3 e1 = Sub(v1, v0);
-	const Diligent::float3 e2 = Sub(v2, v0);
-	const Diligent::float3 p = Cross(ray.dir, e2);
-	const float det = Dot(e1, p);
-	if (std::fabs(det) < eps)
-	{
-		return false;
-	}
-	const float inv_det = 1.0f / det;
-	const Diligent::float3 tvec = Sub(ray.origin, v0);
-	const float u = Dot(tvec, p) * inv_det;
-	if (u < 0.0f || u > 1.0f)
-	{
-		return false;
-	}
-	const Diligent::float3 q = Cross(tvec, e1);
-	const float v = Dot(ray.dir, q) * inv_det;
-	if (v < 0.0f || (u + v) > 1.0f)
-	{
-		return false;
-	}
-	const float t = Dot(e2, q) * inv_det;
-	if (t < 0.0f)
-	{
-		return false;
-	}
-	out_t = t;
-	return true;
-}
-
-bool IsModelResource(const std::string& resource)
-{
-	if (resource.empty())
-	{
-		return false;
-	}
-	const size_t dot = resource.find_last_of('.');
-	if (dot == std::string::npos)
-	{
-		return false;
-	}
-	std::string ext = LowerCopy(resource.substr(dot + 1));
-	return ext == "ltb" || ext == "ltc" || ext == "abc" || ext == "fbx" || ext == "gltf" || ext == "glb";
-}
-
-bool TryGetModelBounds(const NodeProperties& props, float out_min[3], float out_max[3])
-{
-	const bool type_hint =
-		props.type == "Model" ||
-		props.type == "WorldModel" ||
-		props.type == "WorldModelInstance" ||
-		props.type == "WorldModelStatic" ||
-		props.class_name.find("Model") != std::string::npos;
-	if (!IsModelResource(props.resource) && !type_hint)
-	{
-		return false;
-	}
-
-	const float half_x = std::fabs(props.size[0]) * 0.5f * std::max(0.001f, props.scale[0]);
-	const float half_y = std::fabs(props.size[1]) * 0.5f * std::max(0.001f, props.scale[1]);
-	const float half_z = std::fabs(props.size[2]) * 0.5f * std::max(0.001f, props.scale[2]);
-	if (half_x <= 0.0f && half_y <= 0.0f && half_z <= 0.0f)
-	{
-		return false;
-	}
-
-	out_min[0] = props.position[0] - half_x;
-	out_min[1] = props.position[1] - half_y;
-	out_min[2] = props.position[2] - half_z;
-	out_max[0] = props.position[0] + half_x;
-	out_max[1] = props.position[1] + half_y;
-	out_max[2] = props.position[2] + half_z;
-	return true;
-}
-
-bool TryGetNodeBounds(const NodeProperties& props, float out_min[3], float out_max[3])
-{
-	if (TryGetRawPropertyVec3(props, "bounds_min", out_min) &&
-		TryGetRawPropertyVec3(props, "bounds_max", out_max))
-	{
-		return true;
-	}
-
-	if (TryGetModelBounds(props, out_min, out_max))
-	{
-		return true;
-	}
-
-	if (props.range > 0.0f)
-	{
-		const float r = props.range;
-		out_min[0] = props.position[0] - r;
-		out_min[1] = props.position[1] - r;
-		out_min[2] = props.position[2] - r;
-		out_max[0] = props.position[0] + r;
-		out_max[1] = props.position[1] + r;
-		out_max[2] = props.position[2] + r;
-		return true;
-	}
-
-	const float half_x = std::fabs(props.size[0]) * 0.5f * std::max(0.001f, props.scale[0]);
-	const float half_y = std::fabs(props.size[1]) * 0.5f * std::max(0.001f, props.scale[1]);
-	const float half_z = std::fabs(props.size[2]) * 0.5f * std::max(0.001f, props.scale[2]);
-	if (half_x <= 0.0f && half_y <= 0.0f && half_z <= 0.0f)
-	{
-		return false;
-	}
-	out_min[0] = props.position[0] - half_x;
-	out_min[1] = props.position[1] - half_y;
-	out_min[2] = props.position[2] - half_z;
-	out_max[0] = props.position[0] + half_x;
-	out_max[1] = props.position[1] + half_y;
-	out_max[2] = props.position[2] + half_z;
-	return true;
-}
-
-bool RaycastBrush(const NodeProperties& props, const PickRay& ray, float& out_t)
-{
-	if (props.brush_vertices.empty() || props.brush_indices.empty())
-	{
-		return false;
-	}
-
-	float bounds_min[3];
-	float bounds_max[3];
-	if (TryGetRawPropertyVec3(props, "bounds_min", bounds_min) &&
-		TryGetRawPropertyVec3(props, "bounds_max", bounds_max))
-	{
-		float box_t = 0.0f;
-		if (!RayIntersectsAABB(ray, bounds_min, bounds_max, box_t))
-		{
-			return false;
-		}
-	}
-
-	const size_t vertex_count = props.brush_vertices.size() / 3;
-	float best_t = 1.0e30f;
-	bool hit = false;
-	for (size_t i = 0; i + 2 < props.brush_indices.size(); i += 3)
-	{
-		const uint32_t i0 = props.brush_indices[i];
-		const uint32_t i1 = props.brush_indices[i + 1];
-		const uint32_t i2 = props.brush_indices[i + 2];
-		if (i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count)
-		{
-			continue;
-		}
-		const size_t base0 = static_cast<size_t>(i0) * 3;
-		const size_t base1 = static_cast<size_t>(i1) * 3;
-		const size_t base2 = static_cast<size_t>(i2) * 3;
-		const Diligent::float3 v0(
-			props.brush_vertices[base0 + 0],
-			props.brush_vertices[base0 + 1],
-			props.brush_vertices[base0 + 2]);
-		const Diligent::float3 v1(
-			props.brush_vertices[base1 + 0],
-			props.brush_vertices[base1 + 1],
-			props.brush_vertices[base1 + 2]);
-		const Diligent::float3 v2(
-			props.brush_vertices[base2 + 0],
-			props.brush_vertices[base2 + 1],
-			props.brush_vertices[base2 + 2]);
-		float t = 0.0f;
-		if (RayIntersectsTriangle(ray, v0, v1, v2, t))
-		{
-			if (t < best_t)
-			{
-				best_t = t;
-				hit = true;
-			}
-		}
-	}
-
-	if (hit)
-	{
-		out_t = best_t;
-	}
-	return hit;
-}
-
-bool RaycastNode(const NodeProperties& props, const PickRay& ray, float& out_t)
-{
-	if (RaycastBrush(props, ray, out_t))
-	{
-		return true;
-	}
-
-	float bounds_min[3];
-	float bounds_max[3];
-	if (TryGetNodeBounds(props, bounds_min, bounds_max))
-	{
-		return RayIntersectsAABB(ray, bounds_min, bounds_max, out_t);
-	}
-
-	float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
-	TryGetNodePickPosition(props, pick_pos);
-	const Diligent::float3 point(pick_pos[0], pick_pos[1], pick_pos[2]);
-	const Diligent::float3 to_point = Sub(point, ray.origin);
-	const float t = Dot(to_point, ray.dir);
-	if (t < 0.0f)
-	{
-		return false;
-	}
-	const Diligent::float3 closest = Add(ray.origin, Scale(ray.dir, t));
-	const Diligent::float3 diff = Sub(point, closest);
-	const float dist_sq = Dot(diff, diff);
-	const float threshold = 24.0f;
-	if (dist_sq <= threshold * threshold)
-	{
-		out_t = t;
-		return true;
-	}
-	return false;
-}
 
 enum class RenderCategory
 {
@@ -678,6 +325,249 @@ enum class RenderCategory
 	Sky,
 	Count
 };
+
+struct NodeCategoryFlags
+{
+	bool world = false;
+	bool world_model = false;
+	bool model = false;
+	bool sprite = false;
+	bool polygrid = false;
+	bool particles = false;
+	bool volume = false;
+	bool line_system = false;
+	bool canvas = false;
+	bool sky = false;
+};
+
+NodeCategoryFlags ClassifyNodeCategories(const NodeProperties& props)
+{
+	NodeCategoryFlags flags{};
+	const std::string type = LowerCopy(props.type);
+	const std::string cls = LowerCopy(props.class_name);
+	flags.world = (type == "world") || (cls == "world");
+	flags.world_model = (type == "worldmodel") || (type == "world_model") ||
+		(cls == "worldmodel") || (cls == "world_model");
+	flags.model = !flags.world_model && (type == "model" || cls == "model");
+	flags.sprite = (type == "sprite" || cls == "sprite");
+	flags.polygrid = (type == "polygrid" || cls == "polygrid" || type == "terrain" || cls == "terrain");
+	flags.particles = (type == "particlesystem" || cls == "particlesystem" ||
+		type == "particles" || cls == "particles" ||
+		type == "particle" || cls == "particle");
+	flags.volume = (type == "volumeeffect" || cls == "volumeeffect" ||
+		type == "volume" || cls == "volume");
+	flags.line_system = (type == "linesystem" || cls == "linesystem" ||
+		type == "line" || cls == "line");
+	flags.canvas = (type == "canvas" || cls == "canvas");
+	flags.sky = (type == "sky" || cls == "sky" ||
+		type == "skyobject" || cls == "skyobject");
+	return flags;
+}
+
+bool NodePickableByRender(const ViewportPanelState& viewport_state, const NodeProperties& props)
+{
+	const NodeCategoryFlags flags = ClassifyNodeCategories(props);
+	if (flags.sky)
+	{
+		return false;
+	}
+	if (flags.world && !viewport_state.render_draw_world)
+	{
+		return false;
+	}
+	if (flags.world_model && !viewport_state.render_draw_world_models)
+	{
+		return false;
+	}
+	if (flags.model && !viewport_state.render_draw_models)
+	{
+		return false;
+	}
+	if (flags.sprite && !viewport_state.render_draw_sprites)
+	{
+		return false;
+	}
+	if (flags.polygrid && !viewport_state.render_draw_polygrids)
+	{
+		return false;
+	}
+	if (flags.particles && !viewport_state.render_draw_particles)
+	{
+		return false;
+	}
+	if (flags.volume && !viewport_state.render_draw_volume_effects)
+	{
+		return false;
+	}
+	if (flags.line_system && !viewport_state.render_draw_line_systems)
+	{
+		return false;
+	}
+	if (flags.canvas && !viewport_state.render_draw_canvases)
+	{
+		return false;
+	}
+	if (flags.sky && !viewport_state.render_draw_sky)
+	{
+		return false;
+	}
+	return true;
+}
+
+void DrawAABBOverlay(
+	const float bounds_min[3],
+	const float bounds_max[3],
+	const Diligent::float4x4& view_proj,
+	const ImVec2& viewport_pos,
+	const ImVec2& viewport_size,
+	ImDrawList* draw_list,
+	ImU32 color,
+	float thickness)
+{
+	const float x0 = bounds_min[0];
+	const float y0 = bounds_min[1];
+	const float z0 = bounds_min[2];
+	const float x1 = bounds_max[0];
+	const float y1 = bounds_max[1];
+	const float z1 = bounds_max[2];
+
+	const float corners[8][3] = {
+		{x0, y0, z0},
+		{x1, y0, z0},
+		{x1, y1, z0},
+		{x0, y1, z0},
+		{x0, y0, z1},
+		{x1, y0, z1},
+		{x1, y1, z1},
+		{x0, y1, z1}
+	};
+
+	static const int edges[12][2] = {
+		{0, 1}, {1, 2}, {2, 3}, {3, 0},
+		{4, 5}, {5, 6}, {6, 7}, {7, 4},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7}
+	};
+
+	ImVec2 screen[8];
+	bool visible[8] = {};
+	for (int i = 0; i < 8; ++i)
+	{
+		visible[i] = ProjectWorldToScreen(view_proj, corners[i], viewport_size, screen[i]);
+		if (visible[i])
+		{
+			screen[i].x += viewport_pos.x;
+			screen[i].y += viewport_pos.y;
+		}
+	}
+
+	for (const auto& edge : edges)
+	{
+		const int a = edge[0];
+		const int b = edge[1];
+		if (visible[a] && visible[b])
+		{
+			draw_list->AddLine(screen[a], screen[b], color, thickness);
+		}
+	}
+}
+
+void DrawBrushOverlay(
+	const NodeProperties& props,
+	const Diligent::float4x4& view_proj,
+	const ImVec2& viewport_pos,
+	const ImVec2& viewport_size,
+	ImDrawList* draw_list,
+	ImU32 color,
+	float thickness)
+{
+	const size_t vertex_count = props.brush_vertices.size() / 3;
+	if (vertex_count == 0 || props.brush_indices.empty())
+	{
+		return;
+	}
+
+	for (size_t i = 0; i + 2 < props.brush_indices.size(); i += 3)
+	{
+		const uint32_t i0 = props.brush_indices[i];
+		const uint32_t i1 = props.brush_indices[i + 1];
+		const uint32_t i2 = props.brush_indices[i + 2];
+		if (i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count)
+		{
+			continue;
+		}
+		const float v0[3] = {
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 2]};
+		const float v1[3] = {
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 2]};
+		const float v2[3] = {
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 2]};
+
+		ImVec2 s0;
+		ImVec2 s1;
+		ImVec2 s2;
+		const bool p0 = ProjectWorldToScreen(view_proj, v0, viewport_size, s0);
+		const bool p1 = ProjectWorldToScreen(view_proj, v1, viewport_size, s1);
+		const bool p2 = ProjectWorldToScreen(view_proj, v2, viewport_size, s2);
+		if (!(p0 || p1 || p2))
+		{
+			continue;
+		}
+		if (p0 && p1)
+		{
+			draw_list->AddLine(
+				ImVec2(viewport_pos.x + s0.x, viewport_pos.y + s0.y),
+				ImVec2(viewport_pos.x + s1.x, viewport_pos.y + s1.y),
+				color,
+				thickness);
+		}
+		if (p1 && p2)
+		{
+			draw_list->AddLine(
+				ImVec2(viewport_pos.x + s1.x, viewport_pos.y + s1.y),
+				ImVec2(viewport_pos.x + s2.x, viewport_pos.y + s2.y),
+				color,
+				thickness);
+		}
+		if (p2 && p0)
+		{
+			draw_list->AddLine(
+				ImVec2(viewport_pos.x + s2.x, viewport_pos.y + s2.y),
+				ImVec2(viewport_pos.x + s0.x, viewport_pos.y + s0.y),
+				color,
+				thickness);
+		}
+	}
+}
+
+void DrawNodeOverlay(
+	const NodeProperties& props,
+	const Diligent::float4x4& view_proj,
+	const ImVec2& viewport_pos,
+	const ImVec2& viewport_size,
+	ImDrawList* draw_list,
+	ImU32 color,
+	float thickness)
+{
+	if (!props.brush_vertices.empty() && !props.brush_indices.empty())
+	{
+		DrawBrushOverlay(props, view_proj, viewport_pos, viewport_size, draw_list, color, thickness);
+		return;
+	}
+
+	float bounds_min[3];
+	float bounds_max[3];
+	if (TryGetNodeBounds(props, bounds_min, bounds_max))
+	{
+		DrawAABBOverlay(bounds_min, bounds_max, view_proj, viewport_pos, viewport_size, draw_list, color, thickness);
+		return;
+	}
+}
 
 void ApplySceneVisibilityToRenderer(
 	const ScenePanelState& scene_state,
@@ -854,6 +744,9 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_ModelDebug_DrawSkeleton = viewport_state.render_model_debug_skeleton ? 1 : 0;
 	g_CV_ModelDebug_DrawOBBS = viewport_state.render_model_debug_obbs ? 1 : 0;
 	g_CV_ModelDebug_DrawVertexNormals = viewport_state.render_model_debug_vertex_normals ? 1 : 0;
+	g_CV_DrawWorldTree = viewport_state.render_world_debug_nodes ? 1 : 0;
+	g_CV_DrawWorldLeaves = viewport_state.render_world_debug_leaves ? 1 : 0;
+	g_CV_DrawWorldPortals = viewport_state.render_world_debug_portals ? 1 : 0;
 	g_CV_ScreenGlowEnable = viewport_state.render_screen_glow_enable ? 1 : 0;
 	g_CV_ScreenGlowShowTexture = viewport_state.render_screen_glow_show_texture ? 1 : 0;
 	g_CV_ScreenGlowShowFilter = viewport_state.render_screen_glow_show_filter ? 1 : 0;
@@ -996,75 +889,6 @@ void PushRecentProject(std::vector<std::string>& recent_projects, const std::str
 	SaveRecentProjects(recent_projects);
 }
 
-Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b)
-{
-	return Diligent::float3(
-		a.y * b.z - a.z * b.y,
-		a.z * b.x - a.x * b.z,
-		a.x * b.y - a.y * b.x);
-}
-
-Diligent::float3 Add(const Diligent::float3& a, const Diligent::float3& b)
-{
-	return Diligent::float3(a.x + b.x, a.y + b.y, a.z + b.z);
-}
-
-Diligent::float3 Sub(const Diligent::float3& a, const Diligent::float3& b)
-{
-	return Diligent::float3(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
-Diligent::float3 Scale(const Diligent::float3& v, float s)
-{
-	return Diligent::float3(v.x * s, v.y * s, v.z * s);
-}
-
-float Dot(const Diligent::float3& a, const Diligent::float3& b)
-{
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-Diligent::float3 Normalize(const Diligent::float3& v)
-{
-	const float len_sq = v.x * v.x + v.y * v.y + v.z * v.z;
-	if (len_sq <= 0.0f)
-	{
-		return Diligent::float3(0.0f, 0.0f, 0.0f);
-	}
-	const float inv_len = 1.0f / std::sqrt(len_sq);
-	return Diligent::float3(v.x * inv_len, v.y * inv_len, v.z * inv_len);
-}
-
-void ComputeCameraBasis(
-	const ViewportPanelState& state,
-	Diligent::float3& out_pos,
-	Diligent::float3& out_forward,
-	Diligent::float3& out_right,
-	Diligent::float3& out_up)
-{
-	const float cp = std::cos(state.orbit_pitch);
-	const float sp = std::sin(state.orbit_pitch);
-	const float cy = std::cos(state.orbit_yaw);
-	const float sy = std::sin(state.orbit_yaw);
-
-	out_forward = Normalize(Diligent::float3(sy * cp, sp, cy * cp));
-	const Diligent::float3 world_up(0.0f, 1.0f, 0.0f);
-	out_right = Normalize(Cross(world_up, out_forward));
-	out_up = Cross(out_forward, out_right);
-
-	if (state.fly_mode)
-	{
-		out_pos = Diligent::float3(state.fly_pos[0], state.fly_pos[1], state.fly_pos[2]);
-	}
-	else
-	{
-		const Diligent::float3 target(state.target[0], state.target[1], state.target[2]);
-		out_pos = Diligent::float3(
-			target.x - out_forward.x * state.orbit_distance,
-			target.y - out_forward.y * state.orbit_distance,
-			target.z - out_forward.z * state.orbit_distance);
-	}
-}
 bool EnsureVulkanLoaderAvailable()
 {
 	void* handle = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
@@ -1840,6 +1664,11 @@ int main(int argc, char** argv)
 						ImGui::Checkbox("Draw Skeleton", &viewport_panel.render_model_debug_skeleton);
 						ImGui::Checkbox("Draw OBBs", &viewport_panel.render_model_debug_obbs);
 						ImGui::Checkbox("Draw Vertex Normals", &viewport_panel.render_model_debug_vertex_normals);
+						ImGui::Separator();
+						ImGui::TextUnformatted("World");
+						ImGui::Checkbox("World Nodes", &viewport_panel.render_world_debug_nodes);
+						ImGui::Checkbox("World Leaves", &viewport_panel.render_world_debug_leaves);
+						ImGui::Checkbox("World Portals", &viewport_panel.render_world_debug_portals);
 						ImGui::EndTabItem();
 					}
 
@@ -1921,7 +1750,6 @@ int main(int argc, char** argv)
 			UpdateViewportControls(viewport_panel, viewport_pos, avail, hovered);
 			bool gizmo_consumed_click = false;
 			int hovered_scene_id = -1;
-			ImVec2 hovered_scene_screen(0.0f, 0.0f);
 			Diligent::float3 hovered_hit_pos(0.0f, 0.0f, 0.0f);
 			bool hovered_hit_valid = false;
 			if (drew_image && hovered && active_target == SelectionTarget::Scene)
@@ -1984,6 +1812,10 @@ int main(int argc, char** argv)
 					{
 						continue;
 					}
+					if (!NodePickableByRender(viewport_panel, scene_props[i]))
+					{
+						continue;
+					}
 					float hit_t = 0.0f;
 					if (!RaycastNode(scene_props[i], pick_ray, hit_t))
 					{
@@ -1999,19 +1831,11 @@ int main(int argc, char** argv)
 				if (best_id >= 0)
 				{
 					hovered_scene_id = best_id;
-					const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
-					const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
-					hovered_hit_pos = Add(pick_ray.origin, Scale(pick_ray.dir, best_t));
+					hovered_hit_pos = Diligent::float3(
+						pick_ray.origin.x + pick_ray.dir.x * best_t,
+						pick_ray.origin.y + pick_ray.dir.y * best_t,
+						pick_ray.origin.z + pick_ray.dir.z * best_t);
 					hovered_hit_valid = true;
-
-					ImVec2 screen_pos;
-					float pick_pos[3] = {scene_props[best_id].position[0], scene_props[best_id].position[1], scene_props[best_id].position[2]};
-					TryGetNodePickPosition(scene_props[best_id], pick_pos);
-					if (ProjectWorldToScreen(view_proj, &hovered_hit_pos.x, avail, screen_pos) ||
-						ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
-					{
-						hovered_scene_screen = screen_pos;
-					}
 				}
 			}
 			if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -2042,41 +1866,37 @@ int main(int argc, char** argv)
 					if (!node.deleted && !node.is_folder &&
 						SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
 					{
-						float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
-						if (TryGetNodePickPosition(props, pick_pos))
-						{
-							ImVec2 screen_pos;
-							if (ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
-							{
-								ImDrawList* draw_list = ImGui::GetWindowDrawList();
-								const ImVec2 screen(
-									viewport_pos.x + screen_pos.x,
-									viewport_pos.y + screen_pos.y);
-								const ImU32 color = IM_COL32(255, 200, 0, 230);
-								draw_list->AddCircle(screen, 10.0f, color, 24, 2.0f);
-								draw_list->AddLine(
-									ImVec2(screen.x - 8.0f, screen.y),
-									ImVec2(screen.x + 8.0f, screen.y),
-									color,
-									2.0f);
-								draw_list->AddLine(
-									ImVec2(screen.x, screen.y - 8.0f),
-									ImVec2(screen.x, screen.y + 8.0f),
-									color,
-									2.0f);
-							}
-						}
+						DrawNodeOverlay(
+							props,
+							view_proj,
+							viewport_pos,
+							avail,
+							ImGui::GetWindowDrawList(),
+							IM_COL32(255, 200, 0, 210),
+							2.0f);
+					}
+				}
+
+				if (hovered_scene_id >= 0 && hovered_scene_id != selected_id)
+				{
+					const TreeNode& node = scene_nodes[hovered_scene_id];
+					const NodeProperties& props = scene_props[hovered_scene_id];
+					if (!node.deleted && !node.is_folder &&
+						SceneNodePassesFilters(scene_panel, hovered_scene_id, scene_nodes, scene_props))
+					{
+						DrawNodeOverlay(
+							props,
+							view_proj,
+							viewport_pos,
+							avail,
+							ImGui::GetWindowDrawList(),
+							IM_COL32(255, 255, 255, 140),
+							1.0f);
 					}
 				}
 
 				if (hovered_scene_id >= 0)
 				{
-					ImDrawList* draw_list = ImGui::GetWindowDrawList();
-					const ImVec2 screen_pos(
-						viewport_pos.x + hovered_scene_screen.x,
-						viewport_pos.y + hovered_scene_screen.y);
-					draw_list->AddCircle(screen_pos, 6.0f, IM_COL32(255, 255, 255, 200), 16, 1.5f);
-
 					const TreeNode& node = scene_nodes[hovered_scene_id];
 					const NodeProperties& props = scene_props[hovered_scene_id];
 					float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};

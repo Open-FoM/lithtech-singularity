@@ -27,7 +27,7 @@ std::string ToLower(std::string value)
 bool IsWorldExtension(const fs::path& path)
 {
 	const std::string ext = ToLower(path.extension().string());
-	return ext == ".ltc" || ext == ".lta" || ext == ".tbw";
+	return ext == ".ltc" || ext == ".lta" || ext == ".tbw" || ext == ".dat";
 }
 
 std::string FormatBytes(uintmax_t bytes)

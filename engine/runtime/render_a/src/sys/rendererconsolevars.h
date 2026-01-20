@@ -87,6 +87,8 @@ RCONVAR(g_CV_DOT3Saturate, "DOT3Saturate", int, 0);
 //------------------------------
 // World Debugging
 RCONVAR(g_CV_DrawWorldTree, "DrawWorldTree", int, 0);
+RCONVAR(g_CV_DrawWorldLeaves, "DrawWorldLeaves", int, 0);
+RCONVAR(g_CV_DrawWorldPortals, "DrawWorldPortals", int, 0);
 RCONVAR(g_CV_DrawRenderBlocks, "DrawRenderBlocks", int, 0);
 RCONVAR(g_CV_DebugRBTri, "DebugRBTri", int, 0);
 RCONVAR(g_CV_DebugRBCur, "DebugRBCur", int, 0);

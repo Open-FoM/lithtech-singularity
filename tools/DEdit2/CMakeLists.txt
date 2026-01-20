@@ -137,6 +137,7 @@ target_sources (
 		ui_worlds.cpp
 		ui_scene.cpp
 		ui_viewport.cpp
+		viewport_picking.cpp
 		viewport_gizmo.cpp
 		viewport_render.cpp
 		undo_stack.cpp

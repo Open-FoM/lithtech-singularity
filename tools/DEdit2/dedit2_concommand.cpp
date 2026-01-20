@@ -58,6 +58,24 @@ std::string ToLower(const std::string& value)
 	return out;
 }
 
+bool StringEqualsIgnoreCase(const char* left, const char* right)
+{
+	if (!left || !right)
+	{
+		return false;
+	}
+	while (*left != '\0' && *right != '\0')
+	{
+		const unsigned char lch = static_cast<unsigned char>(*left++);
+		const unsigned char rch = static_cast<unsigned char>(*right++);
+		if (std::tolower(lch) != std::tolower(rch))
+		{
+			return false;
+		}
+	}
+	return *left == *right;
+}
+
 const char* BppToString(BPPIdent bpp)
 {
 	switch (bpp)
@@ -461,6 +479,53 @@ void CmdWorldTexelUV(int argc, const char* argv[])
 
 	diligent_SetWorldTexelUV(enabled);
 	DEdit2_Log("worldtexeluv = %d", enabled);
+}
+
+void CmdWorldTexOverride(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldtexoverride <texture_name|off>");
+		return;
+	}
+
+	if (StringEqualsIgnoreCase(argv[0], "off"))
+	{
+		diligent_SetWorldTextureOverride(nullptr);
+		DEdit2_Log("worldtexoverride cleared.");
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache unavailable.");
+		return;
+	}
+
+	SharedTexture* texture = cache->GetSharedTexture(argv[0]);
+	if (!texture)
+	{
+		DEdit2_Log("Texture not found: %s", argv[0]);
+		return;
+	}
+
+	diligent_SetWorldTextureOverride(texture);
+	DEdit2_Log("worldtexoverride = %s", argv[0]);
+}
+
+void CmdWorldTexDump(int argc, const char* argv[])
+{
+	int limit = 10;
+	if (argc >= 1)
+	{
+		if (!ParseInt(argv[0], limit) || limit < 0)
+		{
+			DEdit2_Log("Usage: worldtexdump [limit]");
+			return;
+		}
+	}
+	diligent_DumpWorldTextureBindings(static_cast<uint32_t>(limit));
 }
 
 void CmdWorldBaseVertex(int argc, const char* argv[])
@@ -940,6 +1005,8 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("worldpsdebug", CmdWorldPsDebug);
 	AddCommand("worldtexdebug", CmdWorldTexDebug);
 	AddCommand("worldtexeluv", CmdWorldTexelUV);
+	AddCommand("worldtexoverride", CmdWorldTexOverride);
+	AddCommand("worldtexdump", CmdWorldTexDump);
 	AddCommand("worldbasevertex", CmdWorldBaseVertex);
 	AddCommand("worldshaderreset", CmdWorldShaderReset);
 	AddCommand("shaders", CmdShaders);

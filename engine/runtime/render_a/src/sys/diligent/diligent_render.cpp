@@ -55,6 +55,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cstddef>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -124,6 +125,7 @@ static int g_diligent_world_ps_debug = 0;
 static int g_diligent_world_tex_debug_mode = 0;
 static int g_diligent_world_texel_uv = 0;
 static int g_diligent_world_use_base_vertex = 1;
+static SharedTexture* g_diligent_world_texture_override = nullptr;
 
 struct DiligentSurface
 {
@@ -3697,13 +3699,14 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	pipeline_info.GraphicsPipeline.DSVFormat = swap_desc.DepthBufferFormat;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
+	constexpr auto kWorldVertexStride = static_cast<uint32>(sizeof(DiligentWorldVertex));
 	Diligent::LayoutElement layout_elements[] =
 	{
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false}
+		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentWorldVertex, position)), kWorldVertexStride},
+		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentWorldVertex, color)), kWorldVertexStride},
+		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentWorldVertex, uv0)), kWorldVertexStride},
+		Diligent::LayoutElement{3, 0, 2, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentWorldVertex, uv1)), kWorldVertexStride},
+		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentWorldVertex, normal)), kWorldVertexStride}
 	};
 
 	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
@@ -4958,6 +4961,10 @@ bool diligent_draw_render_blocks_with_constants(
 			if (section.textures[1])
 			{
 				dual_texture_view = diligent_get_texture_view(section.textures[1], false);
+			}
+			if (g_diligent_world_texture_override)
+			{
+				texture_view = diligent_get_texture_view(g_diligent_world_texture_override, false);
 			}
 
 			Diligent::ITextureView* lightmap_view = diligent_get_lightmap_view(section);
@@ -8793,6 +8800,18 @@ bool diligent_model_debug_enabled()
 		g_CV_ModelDebug_DrawVertexNormals.m_Val != 0;
 }
 
+bool diligent_world_debug_enabled()
+{
+	return g_CV_DrawWorldTree.m_Val != 0 ||
+		g_CV_DrawWorldLeaves.m_Val != 0 ||
+		g_CV_DrawWorldPortals.m_Val != 0;
+}
+
+bool diligent_debug_lines_enabled()
+{
+	return diligent_model_debug_enabled() || diligent_world_debug_enabled();
+}
+
 LTRGBColor diligent_make_debug_color(uint8 r, uint8 g, uint8 b, uint8 a = 255)
 {
 	LTRGBColor color{};
@@ -8859,6 +8878,110 @@ void diligent_debug_add_aabb(const LTVector& center, const LTVector& dims, const
 	diligent_debug_add_line(p1, p5, color);
 	diligent_debug_add_line(p2, p6, color);
 	diligent_debug_add_line(p3, p7, color);
+}
+
+void diligent_debug_add_world_node_bounds(const WorldTreeNode* node, const LTRGBColor& color)
+{
+	if (!node)
+	{
+		return;
+	}
+
+	const LTVector& min = node->GetBBoxMin();
+	const LTVector& max = node->GetBBoxMax();
+	if (!g_ViewParams.ViewAABBIntersect(min, max))
+	{
+		return;
+	}
+
+	const LTVector center(
+		(min.x + max.x) * 0.5f,
+		(min.y + max.y) * 0.5f,
+		(min.z + max.z) * 0.5f);
+	const LTVector dims(
+		(max.x - min.x) * 0.5f,
+		(max.y - min.y) * 0.5f,
+		(max.z - min.z) * 0.5f);
+	diligent_debug_add_aabb(center, dims, color);
+}
+
+void diligent_debug_add_world_tree_node(const WorldTreeNode* node)
+{
+	if (!node)
+	{
+		return;
+	}
+
+	const bool has_children = node->HasChildren();
+	if (!has_children && g_CV_DrawWorldLeaves.m_Val != 0)
+	{
+		diligent_debug_add_world_node_bounds(node, diligent_make_debug_color(255, 220, 64, 220));
+	}
+	else if (has_children && g_CV_DrawWorldTree.m_Val != 0)
+	{
+		diligent_debug_add_world_node_bounds(node, diligent_make_debug_color(80, 220, 120, 200));
+	}
+
+	if (has_children)
+	{
+		for (uint32 child_index = 0; child_index < 4; ++child_index)
+		{
+			diligent_debug_add_world_tree_node(node->GetChild(child_index));
+		}
+	}
+}
+
+void diligent_debug_add_world_portals()
+{
+	if (g_visible_render_blocks.empty())
+	{
+		return;
+	}
+
+	const LTRGBColor color = diligent_make_debug_color(96, 200, 255, 220);
+	for (const auto* block : g_visible_render_blocks)
+	{
+		if (!block)
+		{
+			continue;
+		}
+		for (const auto& poly : block->sky_portals)
+		{
+			const size_t count = poly.vertices.size();
+			if (count < 2)
+			{
+				continue;
+			}
+			for (size_t i = 0; i < count; ++i)
+			{
+				const LTVector& from = poly.vertices[i];
+				const LTVector& to = poly.vertices[(i + 1) % count];
+				diligent_debug_add_line(from, to, color);
+			}
+		}
+	}
+}
+
+void diligent_debug_add_world_lines()
+{
+	if (!diligent_world_debug_enabled())
+	{
+		return;
+	}
+
+	if ((g_CV_DrawWorldTree.m_Val != 0 || g_CV_DrawWorldLeaves.m_Val != 0) && world_bsp_client)
+	{
+		WorldTree* tree = world_bsp_client->ClientTree();
+		if (tree)
+		{
+			diligent_debug_add_world_tree_node(tree->GetRootNode());
+		}
+	}
+
+	if (g_CV_DrawWorldPortals.m_Val != 0)
+	{
+		diligent_debug_add_world_portals();
+	}
 }
 
 LTVector diligent_transform_point(const LTMatrix& matrix, const LTVector& point)
@@ -13251,10 +13374,6 @@ bool diligent_draw_models(SceneDesc* desc)
 	{
 		return true;
 	}
-	if (diligent_model_debug_enabled())
-	{
-		diligent_debug_clear_lines();
-	}
 
 	g_diligent_shadow_queue.clear();
 	g_diligent_shadow_projection_queue.clear();
@@ -14651,6 +14770,13 @@ if (!lt_InitViewFrustum(
 		}
 	}
 
+	const bool debug_lines_enabled = diligent_debug_lines_enabled();
+	if (debug_lines_enabled)
+	{
+		diligent_debug_clear_lines();
+		diligent_debug_add_world_lines();
+	}
+
 	g_diligent_num_world_dynamic_lights = 0;
 	if (desc->m_DrawMode == DRAWMODE_OBJECTLIST)
 	{
@@ -14787,7 +14913,7 @@ if (!lt_InitViewFrustum(
 		return RENDER_ERROR;
 	}
 
-	if (diligent_model_debug_enabled())
+	if (debug_lines_enabled)
 	{
 		if (!diligent_draw_debug_lines())
 		{
@@ -15556,6 +15682,70 @@ void diligent_SetForceTexturedWorld(int enabled)
 int diligent_GetForceTexturedWorld()
 {
 	return g_diligent_force_textured_world;
+}
+
+void diligent_SetWorldTextureOverride(SharedTexture* texture)
+{
+	g_diligent_world_texture_override = texture;
+}
+
+SharedTexture* diligent_GetWorldTextureOverride()
+{
+	return g_diligent_world_texture_override;
+}
+
+void diligent_DumpWorldTextureBindings(uint32_t limit)
+{
+	if (!g_render_world)
+	{
+		dsi_ConsolePrint("World textures unavailable.");
+		return;
+	}
+
+	uint32_t dumped = 0;
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		for (const auto& section_ptr : block_ptr->sections)
+		{
+			if (!section_ptr || !section_ptr->textures[0])
+			{
+				continue;
+			}
+
+			DiligentTextureDebugInfo info;
+			if (!diligent_GetTextureDebugInfo(section_ptr->textures[0], info))
+			{
+				continue;
+			}
+
+			const char* name = nullptr;
+			if (g_render_struct && g_render_struct->GetTextureName)
+			{
+				name = g_render_struct->GetTextureName(section_ptr->textures[0]);
+			}
+			dsi_ConsolePrint("World tex[%u]: %s size=%ux%u gpu=%d",
+				dumped,
+				name ? name : "(unknown)",
+				info.width,
+				info.height,
+				info.has_render_texture ? 1 : 0);
+
+			++dumped;
+			if (limit != 0 && dumped >= limit)
+			{
+				return;
+			}
+		}
+	}
+
+	if (dumped == 0)
+	{
+		dsi_ConsolePrint("World textures: none bound.");
+	}
 }
 
 void diligent_SetWorldUvDebug(int enabled)
