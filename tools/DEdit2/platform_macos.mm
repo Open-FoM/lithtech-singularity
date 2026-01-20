@@ -1,6 +1,7 @@
 #include "platform_macos.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_metal.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -15,43 +16,31 @@ void* CreateMetalView(SDL_Window* window)
 		return nullptr;
 	}
 
-	const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-	if (props == 0)
+	SDL_MetalView metal_view = SDL_Metal_CreateView(window);
+	if (metal_view == nullptr)
 	{
 		return nullptr;
 	}
 
-	void* window_ptr = SDL_GetPointerProperty(props, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
-	if (window_ptr == nullptr)
+	void* layer_ptr = SDL_Metal_GetLayer(metal_view);
+	if (layer_ptr != nullptr)
 	{
-		return nullptr;
+		CAMetalLayer* layer = (__bridge CAMetalLayer*)layer_ptr;
+		if (layer.device == nil)
+		{
+			layer.device = MTLCreateSystemDefaultDevice();
+		}
 	}
 
-	NSWindow* ns_window = (__bridge NSWindow*)window_ptr;
-	NSView* view = [ns_window contentView];
-	if (view == nil)
-	{
-		return nullptr;
-	}
-
-	view.wantsLayer = YES;
-	if (![view.layer isKindOfClass:[CAMetalLayer class]])
-	{
-		view.layer = [CAMetalLayer layer];
-	}
-
-	CAMetalLayer* layer = (CAMetalLayer*)view.layer;
-	if (layer.device == nil)
-	{
-		layer.device = MTLCreateSystemDefaultDevice();
-	}
-
-	return (__bridge void*)view;
+	return metal_view;
 }
 
 void DestroyMetalView(void* view)
 {
-	(void)view;
+	if (view != nullptr)
+	{
+		SDL_Metal_DestroyView(static_cast<SDL_MetalView>(view));
+	}
 }
 
 void* GetMetalLayer(void* view)
@@ -61,8 +50,7 @@ void* GetMetalLayer(void* view)
 		return nullptr;
 	}
 
-	NSView* ns_view = (__bridge NSView*)view;
-	return (__bridge void*)ns_view.layer;
+	return SDL_Metal_GetLayer(static_cast<SDL_MetalView>(view));
 }
 
 bool OpenFolderDialog(const std::string& initial_dir, std::string& out_path)

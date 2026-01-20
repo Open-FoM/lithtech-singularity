@@ -648,6 +648,7 @@ int main(int argc, char** argv)
 		SDL_Quit();
 		return 1;
 	}
+
 	diligent.grid_ready = InitViewportGridRenderer(
 		diligent.engine.device,
 		Diligent::TEX_FORMAT_RGBA8_UNORM,

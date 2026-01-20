@@ -104,6 +104,12 @@ add_executable (${PROJECT_NAME})
 
 ltjs_add_defaults (${PROJECT_NAME})
 
+target_compile_definitions (
+	${PROJECT_NAME}
+	PRIVATE
+		LTJS_USE_DILIGENT_RENDER
+)
+
 set_target_properties (
 	${PROJECT_NAME}
 	PROPERTIES

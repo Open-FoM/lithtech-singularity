@@ -2,11 +2,21 @@
 
 #include "bdefs.h"
 #include "ltproperty.h"
+#include "lt_stream.h"
+
+#include "de_world.h"
+#include "iltstream.h"
+#include "loadstatus.h"
+#include "world_shared_bsp.h"
+#include "world_tree.h"
 
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -178,6 +188,261 @@ bool ReadPropVector(BinaryReader& reader, uint16_t prop_len, float out[3])
 	}
 	return !reader.error;
 }
+
+struct SurfaceAccum
+{
+	uint32_t poly_count = 0;
+	LTVector bounds_min;
+	LTVector bounds_max;
+	LTVector centroid_sum;
+	bool has_bounds = false;
+};
+
+void UpdateBounds(const LTVector& point, LTVector& min_v, LTVector& max_v, bool& has_bounds)
+{
+	if (!has_bounds)
+	{
+		min_v = point;
+		max_v = point;
+		has_bounds = true;
+		return;
+	}
+
+	min_v.x = std::min(min_v.x, point.x);
+	min_v.y = std::min(min_v.y, point.y);
+	min_v.z = std::min(min_v.z, point.z);
+	max_v.x = std::max(max_v.x, point.x);
+	max_v.y = std::max(max_v.y, point.y);
+	max_v.z = std::max(max_v.z, point.z);
+}
+
+bool LoadWorldGeometry(const std::string& world_path, BspWorldView& out_view, std::string& out_error)
+{
+	out_error.clear();
+
+	struct StreamDeleter
+	{
+		void operator()(ILTStream* stream) const
+		{
+			if (stream)
+			{
+				stream->Release();
+			}
+		}
+	};
+
+	std::unique_ptr<ILTStream, StreamDeleter> stream(OpenFileStream(world_path));
+	if (!stream)
+	{
+		out_error = "Failed to open world file.";
+		return false;
+	}
+	ILTStream* pStream = stream.get();
+
+	uint32 version = 0;
+	uint32 object_data_pos = 0;
+	uint32 blind_object_data_pos = 0;
+	uint32 lightgrid_pos = 0;
+	uint32 collision_data_pos = 0;
+	uint32 particle_blocker_data_pos = 0;
+	uint32 render_data_pos = 0;
+	if (!IWorldSharedBSP::ReadWorldHeader(stream.get(),
+		version,
+		object_data_pos,
+		blind_object_data_pos,
+		lightgrid_pos,
+		collision_data_pos,
+		particle_blocker_data_pos,
+		render_data_pos))
+	{
+		out_error = "Unsupported world version.";
+		return false;
+	}
+	(void)object_data_pos;
+	(void)blind_object_data_pos;
+	(void)lightgrid_pos;
+	(void)collision_data_pos;
+	(void)particle_blocker_data_pos;
+	(void)render_data_pos;
+
+	out_view.version = version;
+
+	uint32 info_len = 0;
+	stream->Read(&info_len, sizeof(info_len));
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		out_error = "World file header is invalid.";
+		return false;
+	}
+
+	if (info_len > 0)
+	{
+		std::string info;
+		info.resize(info_len);
+		stream->Read(info.data(), info_len);
+		if (stream->ErrorStatus() != LT_OK)
+		{
+			out_error = "World file header is invalid.";
+			return false;
+		}
+	}
+
+	LTVector world_min{};
+	LTVector world_max{};
+	LTVector world_offset{};
+	*stream >> world_min >> world_max >> world_offset;
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		out_error = "World file header is invalid.";
+		return false;
+	}
+	(void)world_offset;
+
+	out_view.world_bounds.min[0] = world_min.x;
+	out_view.world_bounds.min[1] = world_min.y;
+	out_view.world_bounds.min[2] = world_min.z;
+	out_view.world_bounds.max[0] = world_max.x;
+	out_view.world_bounds.max[1] = world_max.y;
+	out_view.world_bounds.max[2] = world_max.z;
+
+	WorldTree world_tree;
+	if (!world_tree.LoadLayout(stream.get()))
+	{
+		out_error = "World file world tree is invalid.";
+		return false;
+	}
+
+	uint32 num_world_models = 0;
+	STREAM_READ(num_world_models);
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		out_error = "World file data is invalid.";
+		return false;
+	}
+
+	out_view.worldmodels.clear();
+	out_view.worldmodels.reserve(num_world_models);
+
+	for (uint32 model_index = 0; model_index < num_world_models; ++model_index)
+	{
+		uint32 dummy = 0;
+		STREAM_READ(dummy);
+
+		auto bsp = std::make_unique<WorldBsp>();
+		const ELoadWorldStatus load_status = bsp->Load(stream.get(), true);
+		if (load_status != LoadWorld_Ok)
+		{
+			out_error = "Failed to load world model geometry.";
+			return false;
+		}
+
+		BspWorldModelView model_view{};
+		model_view.id = model_index;
+		model_view.name = bsp->m_WorldName;
+		if (model_view.name.empty())
+		{
+			model_view.name = "WorldModel " + std::to_string(model_index);
+		}
+
+		model_view.bounds.min[0] = bsp->m_MinBox.x;
+		model_view.bounds.min[1] = bsp->m_MinBox.y;
+		model_view.bounds.min[2] = bsp->m_MinBox.z;
+		model_view.bounds.max[0] = bsp->m_MaxBox.x;
+		model_view.bounds.max[1] = bsp->m_MaxBox.y;
+		model_view.bounds.max[2] = bsp->m_MaxBox.z;
+
+		std::vector<SurfaceAccum> surface_accum;
+		surface_accum.resize(bsp->m_nSurfaces);
+
+		for (uint32 poly_index = 0; poly_index < bsp->m_nPolies; ++poly_index)
+		{
+			WorldPoly* poly = bsp->m_Polies[poly_index];
+			if (!poly)
+			{
+				continue;
+			}
+
+			Surface* surface = poly->GetSurface();
+			if (!surface)
+			{
+				continue;
+			}
+
+			const ptrdiff_t surface_index = surface - bsp->m_Surfaces;
+			if (surface_index < 0 || surface_index >= static_cast<ptrdiff_t>(surface_accum.size()))
+			{
+				continue;
+			}
+
+			SurfaceAccum& accum = surface_accum[static_cast<size_t>(surface_index)];
+			accum.poly_count++;
+			accum.centroid_sum += poly->GetCenter();
+
+			if (poly->GetNumVertices() > 0)
+			{
+				LTVector poly_min = poly->GetVertex(0);
+				LTVector poly_max = poly_min;
+				for (uint32 v = 1; v < poly->GetNumVertices(); ++v)
+				{
+					const LTVector& vert = poly->GetVertex(v);
+					poly_min.x = std::min(poly_min.x, vert.x);
+					poly_min.y = std::min(poly_min.y, vert.y);
+					poly_min.z = std::min(poly_min.z, vert.z);
+					poly_max.x = std::max(poly_max.x, vert.x);
+					poly_max.y = std::max(poly_max.y, vert.y);
+					poly_max.z = std::max(poly_max.z, vert.z);
+				}
+				UpdateBounds(poly_min, accum.bounds_min, accum.bounds_max, accum.has_bounds);
+				UpdateBounds(poly_max, accum.bounds_min, accum.bounds_max, accum.has_bounds);
+			}
+		}
+
+		model_view.surfaces.reserve(bsp->m_nSurfaces);
+		for (uint32 surface_index = 0; surface_index < bsp->m_nSurfaces; ++surface_index)
+		{
+			const Surface& surface = bsp->m_Surfaces[surface_index];
+			const SurfaceAccum& accum = surface_accum[surface_index];
+
+			BspSurfaceView surface_view{};
+			surface_view.id = surface_index;
+			surface_view.material_id = surface.m_iTexture;
+			surface_view.surface_flags = surface.m_Flags;
+			surface_view.poly_count = accum.poly_count;
+			if (bsp->m_TextureNames)
+			{
+				surface_view.material = bsp->m_TextureNames[surface.m_iTexture];
+			}
+			if (accum.poly_count > 0)
+			{
+				const float inv = 1.0f / static_cast<float>(accum.poly_count);
+				surface_view.centroid[0] = accum.centroid_sum.x * inv;
+				surface_view.centroid[1] = accum.centroid_sum.y * inv;
+				surface_view.centroid[2] = accum.centroid_sum.z * inv;
+			}
+			if (accum.has_bounds)
+			{
+				surface_view.bounds.min[0] = accum.bounds_min.x;
+				surface_view.bounds.min[1] = accum.bounds_min.y;
+				surface_view.bounds.min[2] = accum.bounds_min.z;
+				surface_view.bounds.max[0] = accum.bounds_max.x;
+				surface_view.bounds.max[1] = accum.bounds_max.y;
+				surface_view.bounds.max[2] = accum.bounds_max.z;
+			}
+
+			model_view.surfaces.push_back(std::move(surface_view));
+		}
+
+		out_view.worldmodels.push_back(std::move(model_view));
+	}
+
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		out_error = "World file data is invalid.";
+		return false;
+	}
+
+	return true;
+}
 } // namespace
 
 bool GetBspWorldView(const std::string& world_path, BspWorldView& out_view, std::string& out_error)
@@ -194,6 +459,11 @@ bool GetBspWorldView(const std::string& world_path, BspWorldView& out_view, std:
 
 	std::vector<uint8_t> buffer;
 	if (!LoadBinaryFile(world_path, buffer, out_error))
+	{
+		return false;
+	}
+
+	if (!LoadWorldGeometry(world_path, out_view, out_error))
 	{
 		return false;
 	}
