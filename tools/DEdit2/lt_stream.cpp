@@ -1,134 +1,206 @@
 #include "lt_stream.h"
 
+#include "client_filemgr.h"
+#include "dedit2_concommand.h"
+
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <vector>
 
 namespace
 {
-class FileStream final : public CGenLTStream
+namespace fs = std::filesystem;
+
+IClientFileMgr* g_client_file_mgr = nullptr;
+define_holder(IClientFileMgr, g_client_file_mgr);
+
+bool g_file_mgr_ready = false;
+std::vector<std::string> g_file_mgr_trees;
+std::vector<fs::path> g_file_mgr_tree_paths;
+
+std::string NormalizePath(std::string path)
 {
-public:
-	explicit FileStream(FILE* file)
-		: file_(file)
+	std::replace(path.begin(), path.end(), '\\', '/');
+	return path;
+}
+
+std::string NormalizeLower(std::string path)
+{
+	path = NormalizePath(std::move(path));
+	std::transform(path.begin(), path.end(), path.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return path;
+}
+
+std::string MakeRelativeToTrees(const std::string& path)
+{
+	if (path.empty())
 	{
+		return path;
 	}
 
-	~FileStream() override
+	fs::path input(path);
+	if (!input.is_absolute())
 	{
-		if (file_)
+		return NormalizePath(path);
+	}
+
+	std::error_code ec;
+	fs::path normalized = fs::weakly_canonical(input, ec);
+	if (ec)
+	{
+		normalized = input.lexically_normal();
+	}
+	const std::string normalized_str = NormalizeLower(normalized.string());
+
+	for (const auto& tree : g_file_mgr_tree_paths)
+	{
+		if (tree.empty())
 		{
-			std::fclose(file_);
-			file_ = nullptr;
+			continue;
+		}
+
+		fs::path tree_norm = fs::weakly_canonical(tree, ec);
+		if (ec)
+		{
+			tree_norm = tree.lexically_normal();
+		}
+
+		const std::string tree_str = NormalizeLower(tree_norm.string());
+		if (!tree_str.empty() && normalized_str.rfind(tree_str, 0) == 0)
+		{
+			fs::path rel = fs::relative(normalized, tree_norm, ec);
+			if (!ec)
+			{
+				return NormalizePath(rel.string());
+			}
 		}
 	}
 
-	void Release() override
-	{
-		delete this;
-	}
-
-	LTRESULT Read(void* data, uint32 size) override
-	{
-		if (!file_)
-		{
-			return LT_ERROR;
-		}
-
-		if (size == 0)
-		{
-			return LT_OK;
-		}
-
-		const size_t bytes_read = std::fread(data, 1, size, file_);
-		if (bytes_read == size)
-		{
-			return LT_OK;
-		}
-
-		std::memset(data, 0, size);
-		error_ = true;
-		return LT_ERROR;
-	}
-
-	LTRESULT Write(const void* /*data*/, uint32 /*size*/) override
-	{
-		error_ = true;
-		return LT_ERROR;
-	}
-
-	LTRESULT ErrorStatus() override
-	{
-		return error_ ? LT_ERROR : LT_OK;
-	}
-
-	LTRESULT SeekTo(uint32 offset) override
-	{
-		if (!file_)
-		{
-			return LT_ERROR;
-		}
-
-		return (std::fseek(file_, static_cast<long>(offset), SEEK_SET) == 0) ? LT_OK : LT_ERROR;
-	}
-
-	LTRESULT GetPos(uint32* offset) override
-	{
-		if (!file_ || !offset)
-		{
-			return LT_ERROR;
-		}
-
-		const long pos = std::ftell(file_);
-		if (pos < 0)
-		{
-			*offset = 0;
-			return LT_ERROR;
-		}
-
-		*offset = static_cast<uint32>(pos);
-		return LT_OK;
-	}
-
-	LTRESULT GetLen(uint32* len) override
-	{
-		if (!file_ || !len)
-		{
-			return LT_ERROR;
-		}
-
-		const long cur = std::ftell(file_);
-		if (cur < 0)
-		{
-			*len = 0;
-			return LT_ERROR;
-		}
-
-		std::fseek(file_, 0, SEEK_END);
-		const long end = std::ftell(file_);
-		std::fseek(file_, cur, SEEK_SET);
-		if (end < 0)
-		{
-			*len = 0;
-			return LT_ERROR;
-		}
-
-		*len = static_cast<uint32>(end);
-		return LT_OK;
-	}
-
-private:
-	FILE* file_ = nullptr;
-	bool error_ = false;
-};
+	return NormalizePath(path);
+}
 } // namespace
 
 ILTStream* OpenFileStream(const std::string& path)
 {
-	FILE* file = std::fopen(path.c_str(), "rb");
-	if (!file)
+	if (!g_client_file_mgr)
 	{
+		DEdit2_Log("File manager unavailable; cannot open '%s'.", path.c_str());
 		return nullptr;
 	}
 
-	return new FileStream(file);
+	if (!g_file_mgr_ready)
+	{
+		g_client_file_mgr->Init();
+		g_file_mgr_ready = true;
+	}
+
+	const std::string relative = MakeRelativeToTrees(path);
+	FileRef ref;
+	ref.m_FileType = FILE_ANYFILE;
+	ref.m_pFilename = relative.c_str();
+	return g_client_file_mgr->OpenFile(&ref);
+}
+
+bool InitClientFileMgr()
+{
+	if (!g_client_file_mgr)
+	{
+		DEdit2_Log("File manager unavailable; cannot initialize.");
+		return false;
+	}
+
+	if (!g_file_mgr_ready)
+	{
+		g_client_file_mgr->Init();
+		g_file_mgr_ready = true;
+	}
+
+	return true;
+}
+
+void TermClientFileMgr()
+{
+	if (g_client_file_mgr && g_file_mgr_ready)
+	{
+		g_client_file_mgr->Term();
+	}
+	g_file_mgr_ready = false;
+	g_file_mgr_trees.clear();
+	g_file_mgr_tree_paths.clear();
+}
+
+void SetClientFileMgrTrees(const std::vector<std::string>& trees)
+{
+	if (!InitClientFileMgr())
+	{
+		return;
+	}
+
+	g_client_file_mgr->Term();
+	g_client_file_mgr->Init();
+	g_file_mgr_ready = true;
+
+	g_file_mgr_trees = trees;
+	g_file_mgr_tree_paths.clear();
+	g_file_mgr_tree_paths.reserve(trees.size());
+	for (const auto& tree : trees)
+	{
+		g_file_mgr_tree_paths.emplace_back(tree);
+	}
+
+	if (!trees.empty())
+	{
+		std::vector<const char*> names;
+		names.reserve(trees.size());
+		for (const auto& tree : trees)
+		{
+			names.push_back(tree.c_str());
+		}
+
+		int loaded = 0;
+		g_client_file_mgr->AddResourceTrees(names.data(), static_cast<int>(names.size()), nullptr, &loaded);
+		DEdit2_Log("File manager trees loaded: %d/%zu", loaded, trees.size());
+	}
+}
+
+const std::vector<std::string>& GetClientFileMgrTrees()
+{
+	return g_file_mgr_trees;
+}
+
+bool ReadFileToBuffer(const std::string& path, std::vector<uint8_t>& out_data, std::string& error)
+{
+	out_data.clear();
+	error.clear();
+
+	ILTStream* stream = OpenFileStream(path);
+	if (!stream)
+	{
+		error = "Failed to open file.";
+		return false;
+	}
+
+	uint32 length = 0;
+	if (stream->GetLen(&length) != LT_OK || length == 0)
+	{
+		error = "File is empty or length unknown.";
+		stream->Release();
+		return false;
+	}
+
+	out_data.resize(length);
+	if (stream->Read(out_data.data(), length) != LT_OK)
+	{
+		error = "Failed to read file.";
+		out_data.clear();
+		stream->Release();
+		return false;
+	}
+
+	stream->Release();
+	return true;
 }

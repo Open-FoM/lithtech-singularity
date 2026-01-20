@@ -1,13 +1,12 @@
 #include "texture_cache.h"
 
-#include "dtx_loader.h"
+#include "dtxmgr.h"
+#include "lt_stream.h"
+#include "dedit2_concommand.h"
 
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
+#include <cstring>
 namespace
 {
 std::string NormalizeKey(std::string name)
@@ -17,10 +16,39 @@ std::string NormalizeKey(std::string name)
 	return name;
 }
 
-bool HasExtension(const fs::path& path)
+std::string NormalizePathSeparators(std::string name)
 {
-	const auto ext = path.extension().string();
-	return !ext.empty();
+	std::replace(name.begin(), name.end(), '\\', '/');
+	return name;
+}
+
+bool HasExtension(const std::string& value)
+{
+	const size_t slash = value.find_last_of("/\\");
+	const size_t dot = value.find_last_of('.');
+	return dot != std::string::npos && (slash == std::string::npos || dot > slash);
+}
+
+TextureData* CreateSolidColorTexture(uint32 rgba)
+{
+	TextureData* texture = dtx_Alloc(BPP_32, 1, 1, 1, nullptr, nullptr, 0);
+	if (!texture || !texture->m_pDataBuffer)
+	{
+		if (texture)
+		{
+			dtx_Destroy(texture);
+		}
+		return nullptr;
+	}
+
+	std::memcpy(texture->m_pDataBuffer, &rgba, sizeof(uint32));
+	texture->m_Mips[0].m_Width = 1;
+	texture->m_Mips[0].m_Height = 1;
+	texture->m_Mips[0].m_Pitch = sizeof(uint32);
+	texture->m_Mips[0].m_dataSize = sizeof(uint32);
+	texture->m_Mips[0].m_DataHeader = texture->m_pDataBuffer;
+	texture->m_Mips[0].m_Data = texture->m_pDataBuffer;
+	return texture;
 }
 } // namespace
 
@@ -88,6 +116,95 @@ const char* TextureCache::GetTextureName(const SharedTexture* texture) const
 	return found->second->name.c_str();
 }
 
+bool TextureCache::GetTexturePath(const char* name, std::string& out_path) const
+{
+	if (!name || name[0] == '\0')
+	{
+		return false;
+	}
+
+	const std::string key = NormalizeKey(name);
+	auto found = by_name_.find(key);
+	if (found == by_name_.end() || !found->second)
+	{
+		return false;
+	}
+
+	out_path = found->second->path;
+	return true;
+}
+
+bool TextureCache::GetTextureDebugInfo(const char* name, TextureDebugInfo& out_info)
+{
+	if (!name || name[0] == '\0')
+	{
+		return false;
+	}
+
+	SharedTexture* texture = GetSharedTexture(name);
+	if (!texture)
+	{
+		return false;
+	}
+
+	const std::string key = NormalizeKey(name);
+	auto found = by_name_.find(key);
+	if (found == by_name_.end() || !found->second || !found->second->data)
+	{
+		return false;
+	}
+
+	const auto& entry = *found->second;
+	const auto& header = entry.data->m_Header;
+	out_info.name = entry.name;
+	out_info.path = entry.path;
+	out_info.width = header.m_BaseWidth;
+	out_info.height = header.m_BaseHeight;
+	out_info.mipmaps = header.m_nMipmaps;
+	out_info.sections = header.m_nSections;
+	out_info.flags = header.m_IFlags;
+	out_info.user_flags = header.m_UserFlags;
+	out_info.buffer_size = entry.data->m_bufSize;
+	out_info.bpp = header.m_Extra[2] == 0 ? BPP_32 : static_cast<BPPIdent>(header.m_Extra[2]);
+	out_info.has_data = entry.data->m_pDataBuffer != nullptr;
+	return true;
+}
+
+void TextureCache::GetLoadedTextureNames(std::vector<std::string>& out_names) const
+{
+	out_names.clear();
+	out_names.reserve(by_name_.size());
+	for (const auto& pair : by_name_)
+	{
+		if (pair.second)
+		{
+			out_names.push_back(pair.second->name);
+		}
+	}
+	std::sort(out_names.begin(), out_names.end());
+}
+
+void TextureCache::GetLoadedTextureInfo(std::vector<LoadedTextureInfo>& out_info) const
+{
+	out_info.clear();
+	out_info.reserve(by_name_.size());
+	for (const auto& pair : by_name_)
+	{
+		if (pair.second)
+		{
+			LoadedTextureInfo info;
+			info.name = pair.second->name;
+			info.path = pair.second->path;
+			out_info.push_back(std::move(info));
+		}
+	}
+	std::sort(out_info.begin(), out_info.end(),
+		[](const LoadedTextureInfo& a, const LoadedTextureInfo& b)
+		{
+			return a.name < b.name;
+		});
+}
+
 void TextureCache::FreeTexture(SharedTexture* texture)
 {
 	if (!texture)
@@ -121,40 +238,12 @@ std::string TextureCache::ResolveTexturePath(const std::string& name) const
 
 std::string TextureCache::ResolveResourcePath(const std::string& name, const char* extension) const
 {
-	fs::path input(name);
-	if (input.is_absolute() && fs::exists(input))
+	std::string normalized = NormalizePathSeparators(name);
+	if (!HasExtension(normalized) && extension && extension[0] != '\0')
 	{
-		return input.string();
+		normalized += extension;
 	}
-
-	const bool has_ext = HasExtension(input);
-	std::vector<fs::path> candidates;
-	candidates.reserve(roots_.size() * 6);
-
-	for (const auto& root : roots_)
-	{
-		fs::path base(root);
-		candidates.push_back(base / input);
-		candidates.push_back(base / "Textures" / input);
-		candidates.push_back(base / "Sprites" / input);
-		candidates.push_back(base / "Rez" / input);
-		candidates.push_back(base / "Rez" / "Textures" / input);
-		candidates.push_back(base / "Rez" / "Sprites" / input);
-	}
-
-	for (auto& candidate : candidates)
-	{
-		if (!has_ext && extension && extension[0] != '\0')
-		{
-			candidate.replace_extension(extension);
-		}
-		if (fs::exists(candidate))
-		{
-			return candidate.string();
-		}
-	}
-
-	return std::string();
+	return normalized;
 }
 
 TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, const std::string& path)
@@ -163,7 +252,43 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 	std::unique_ptr<TextureData> data;
 	if (!path.empty())
 	{
-		data.reset(LoadDtxTexture(path, &error));
+		ILTStream* stream = OpenFileStream(path);
+		if (!stream)
+		{
+			error = "Failed to open texture file.";
+		}
+		else
+		{
+			uint32 base_width = 0;
+			uint32 base_height = 0;
+			TextureData* out = nullptr;
+			const LTRESULT result = dtx_Create(stream, &out, base_width, base_height);
+			stream->Release();
+			if (result == LT_OK && out)
+			{
+				data.reset(out);
+			}
+			else
+			{
+				error = "dtx_Create failed.";
+				if (out)
+				{
+					dtx_Destroy(out);
+				}
+			}
+		}
+
+		if (!data)
+		{
+			DEdit2_Log("Texture load failed: %s (%s) -> %s",
+				name.c_str(),
+				path.c_str(),
+				error.empty() ? "unknown error" : error.c_str());
+		}
+	}
+	else
+	{
+		DEdit2_Log("Texture not found via file manager: %s (using fallback)", name.c_str());
 	}
 
 	if (!data)
@@ -185,6 +310,10 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 	entry->texture->m_pRenderData = nullptr;
 	entry->texture->m_pFile = nullptr;
 	entry->texture->SetRefCount(1);
+	entry->texture->SetTextureInfo(
+		entry->data->m_Header.m_BaseWidth,
+		entry->data->m_Header.m_BaseHeight,
+		entry->data->m_PFormat);
 	entry->data->m_pSharedTexture = entry->texture.get();
 
 	TextureEntry* entry_ptr = entry.get();

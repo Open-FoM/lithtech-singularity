@@ -11,6 +11,7 @@
 #else
 #include "sys/linux/linuxfile.h"
 #endif
+#include "ltbasedefs.h"
 
 class CBaseConn;
 typedef void* HLTFileTree; //class HLTFileTree;
@@ -132,6 +133,5 @@ public:
 
 
 #endif  // __CLIENT_FILEMGR_H__
-
 
 

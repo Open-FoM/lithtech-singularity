@@ -68,6 +68,12 @@ CTextureScriptMgr& CTextureScriptMgr::GetSingleton()
 //with the function ReleaseInstance, and cannot be deleted
 CTextureScriptInstance* CTextureScriptMgr::GetInstance(const char* pszGroupName)
 {
+	if (!g_pIClientFileMgr)
+	{
+		dsi_ConsolePrint("Texture script manager: file manager not available for '%s'.", pszGroupName ? pszGroupName : "");
+		return NULL;
+	}
+
 	//see if we already have one
 	CTextureScriptInstance* pInst = FindInstance(pszGroupName);
 

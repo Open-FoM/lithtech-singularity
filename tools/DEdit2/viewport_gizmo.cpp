@@ -218,6 +218,10 @@ bool BuildGizmoDrawState(
 	const ImVec2& viewport_size,
 	GizmoDrawState& out_state)
 {
+	if (!props.visible)
+	{
+		return false;
+	}
 	out_state = GizmoDrawState{};
 	out_state.viewport_size = viewport_size;
 	out_state.view_proj = view_proj;

@@ -12,10 +12,35 @@
 class TextureCache
 {
 public:
+	struct LoadedTextureInfo
+	{
+		std::string name;
+		std::string path;
+	};
+
+	struct TextureDebugInfo
+	{
+		std::string name;
+		std::string path;
+		uint32 width = 0;
+		uint32 height = 0;
+		uint32 mipmaps = 0;
+		uint32 sections = 0;
+		uint32 flags = 0;
+		uint32 user_flags = 0;
+		uint32 buffer_size = 0;
+		BPPIdent bpp = BPP_32;
+		bool has_data = false;
+	};
+
 	void SetSearchRoots(const std::vector<std::string>& roots);
 	SharedTexture* GetSharedTexture(const char* name);
 	TextureData* GetTexture(SharedTexture* texture);
 	const char* GetTextureName(const SharedTexture* texture) const;
+	bool GetTexturePath(const char* name, std::string& out_path) const;
+	bool GetTextureDebugInfo(const char* name, TextureDebugInfo& out_info);
+	void GetLoadedTextureNames(std::vector<std::string>& out_names) const;
+	void GetLoadedTextureInfo(std::vector<LoadedTextureInfo>& out_info) const;
 	void FreeTexture(SharedTexture* texture);
 	void Clear();
 	std::string ResolveResourcePath(const std::string& name, const char* extension) const;

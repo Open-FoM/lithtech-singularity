@@ -1,5 +1,8 @@
 #include "dedit2_concommand.h"
 
+#include "engine_render.h"
+#include "diligent_render.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdarg>
@@ -8,6 +11,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+static DEdit2TexViewState g_TexView;
 
 namespace
 {
@@ -34,6 +39,9 @@ struct ConsoleCommand
 	CommandFn fn = nullptr;
 };
 
+bool ParseInt(const char* text, int& out);
+bool ParseFloat(const char* text, float& out);
+
 std::unordered_map<std::string, ConsoleVar> g_Vars;
 std::unordered_map<std::string, ConsoleCommand> g_Commands;
 std::vector<std::string> g_CommandOrder;
@@ -48,6 +56,33 @@ std::string ToLower(const std::string& value)
 		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 	}
 	return out;
+}
+
+const char* BppToString(BPPIdent bpp)
+{
+	switch (bpp)
+	{
+		case BPP_8P:
+			return "BPP_8P";
+		case BPP_8:
+			return "BPP_8";
+		case BPP_16:
+			return "BPP_16";
+		case BPP_24:
+			return "BPP_24";
+		case BPP_32:
+			return "BPP_32";
+		case BPP_32P:
+			return "BPP_32P";
+		case BPP_S3TC_DXT1:
+			return "BPP_S3TC_DXT1";
+		case BPP_S3TC_DXT3:
+			return "BPP_S3TC_DXT3";
+		case BPP_S3TC_DXT5:
+			return "BPP_S3TC_DXT5";
+		default:
+			return "BPP_UNKNOWN";
+	}
 }
 
 std::vector<std::string> Tokenize(const char* command)
@@ -128,6 +163,408 @@ void AddVar(const char* name, ConsoleVar::Type type, void* target)
 	var.type = type;
 	var.target = target;
 	g_Vars[key] = var;
+}
+
+void CmdTexProbe(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: texprobe <texture_name>");
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache not initialized.");
+		return;
+	}
+
+	const char* name = argv[0];
+	TextureCache::TextureDebugInfo info;
+	if (!cache->GetTextureDebugInfo(name, info))
+	{
+		DEdit2_Log("Texture '%s' not loaded.", name);
+		return;
+	}
+
+	DEdit2_Log("Texture probe:");
+	DEdit2_Log(" Name: %s", info.name.c_str());
+	DEdit2_Log(" Path: %s", info.path.empty() ? "<none>" : info.path.c_str());
+	DEdit2_Log(" Size: %ux%u Mips: %u BPP: %s Buffer: %u HasData: %s Flags: 0x%08X User: 0x%08X Sections: %u",
+		info.width,
+		info.height,
+		info.mipmaps,
+		BppToString(info.bpp),
+		info.buffer_size,
+		info.has_data ? "yes" : "no",
+		info.flags,
+		info.user_flags,
+		info.sections);
+
+	SharedTexture* texture = cache->GetSharedTexture(name);
+	DiligentTextureDebugInfo gpu_info;
+	if (texture && diligent_GetTextureDebugInfo(texture, gpu_info))
+	{
+		DEdit2_Log(" GPU: %s Converted: %s Size: %ux%u Format: %u",
+			gpu_info.has_render_texture ? "yes" : "no",
+			gpu_info.used_conversion ? "yes" : "no",
+			gpu_info.width,
+			gpu_info.height,
+			gpu_info.format);
+		if (gpu_info.has_cpu_pixel)
+		{
+			const uint32 pixel = gpu_info.first_pixel;
+			const uint8 a = static_cast<uint8>((pixel >> 24) & 0xFF);
+			const uint8 r = static_cast<uint8>((pixel >> 16) & 0xFF);
+			const uint8 g = static_cast<uint8>((pixel >> 8) & 0xFF);
+			const uint8 b = static_cast<uint8>(pixel & 0xFF);
+			DEdit2_Log(" CPU pixel[0]: 0x%08X (A=%u R=%u G=%u B=%u)", pixel, a, r, g, b);
+		}
+	}
+	else
+	{
+		DEdit2_Log(" GPU: unavailable");
+	}
+
+	if (info.bpp == BPP_32)
+	{
+		SharedTexture* shared = cache->GetSharedTexture(name);
+		TextureData* data = shared ? cache->GetTexture(shared) : nullptr;
+		if (data && data->m_Mips[0].m_Data)
+		{
+			DEdit2_Log(" Mip0: size=%ux%u pitch=%d dataSize=%d",
+				data->m_Mips[0].m_Width,
+				data->m_Mips[0].m_Height,
+				data->m_Mips[0].m_Pitch,
+				data->m_Mips[0].m_dataSize);
+			DEdit2_Log(" Masks: A=0x%08X R=0x%08X G=0x%08X B=0x%08X",
+				data->m_PFormat.m_Masks[0],
+				data->m_PFormat.m_Masks[1],
+				data->m_PFormat.m_Masks[2],
+				data->m_PFormat.m_Masks[3]);
+			const uint32 argb = *reinterpret_cast<const uint32*>(data->m_Mips[0].m_Data);
+			const uint8 a = static_cast<uint8>((argb >> 24) & 0xFF);
+			const uint8 r = static_cast<uint8>((argb >> 16) & 0xFF);
+			const uint8 g = static_cast<uint8>((argb >> 8) & 0xFF);
+			const uint8 b = static_cast<uint8>(argb & 0xFF);
+			DEdit2_Log(" CPU pixel[0] (ARGB): 0x%08X (A=%u R=%u G=%u B=%u)", argb, a, r, g, b);
+
+			const uint32 bgra = (a << 24) | (b << 16) | (g << 8) | r;
+			const uint8 ba = static_cast<uint8>((bgra >> 24) & 0xFF);
+			const uint8 br = static_cast<uint8>((bgra >> 16) & 0xFF);
+			const uint8 bg = static_cast<uint8>((bgra >> 8) & 0xFF);
+			const uint8 bb = static_cast<uint8>(bgra & 0xFF);
+			DEdit2_Log(" CPU pixel[0] (BGRA): 0x%08X (A=%u R=%u G=%u B=%u)", bgra, ba, br, bg, bb);
+		}
+	}
+}
+
+void CmdWorldColorStats(int, const char*[])
+{
+	DiligentWorldColorStats stats;
+	if (!diligent_GetWorldColorStats(stats))
+	{
+		DEdit2_Log("World color stats unavailable.");
+		return;
+	}
+
+	DEdit2_Log("World vertex colors: count=%llu zero=%llu min=(%u,%u,%u,%u) max=(%u,%u,%u,%u)",
+		static_cast<unsigned long long>(stats.vertex_count),
+		static_cast<unsigned long long>(stats.zero_color_count),
+		stats.min_a, stats.min_r, stats.min_g, stats.min_b,
+		stats.max_a, stats.max_r, stats.max_g, stats.max_b);
+}
+
+void CmdWorldForceWhite(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcewhite <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcewhite <0|1>");
+		return;
+	}
+
+	diligent_SetForceWhiteVertexColor(enabled != 0 ? 1 : 0);
+	diligent_InvalidateWorldGeometry();
+	DEdit2_Log("worldforcewhite = %d", diligent_GetForceWhiteVertexColor());
+}
+
+void CmdWorldTextureStats(int, const char*[])
+{
+	DiligentWorldTextureStats stats;
+	if (!diligent_GetWorldTextureStats(stats))
+	{
+		DEdit2_Log("World texture stats unavailable.");
+		return;
+	}
+
+	DEdit2_Log("World textures: sections=%llu tex0=%llu view0=%llu tex1=%llu view1=%llu lm=%llu lmview=%llu",
+		static_cast<unsigned long long>(stats.section_count),
+		static_cast<unsigned long long>(stats.texture0_present),
+		static_cast<unsigned long long>(stats.texture0_view),
+		static_cast<unsigned long long>(stats.texture1_present),
+		static_cast<unsigned long long>(stats.texture1_view),
+		static_cast<unsigned long long>(stats.lightmap_present),
+		static_cast<unsigned long long>(stats.lightmap_view));
+}
+
+void CmdWorldUvStats(int, const char*[])
+{
+	DiligentWorldUvStats stats;
+	if (!diligent_GetWorldUvStats(stats) || !stats.has_range)
+	{
+		DEdit2_Log("World UV stats unavailable.");
+		return;
+	}
+
+	DEdit2_Log("World UVs: count=%llu nan0=%llu nan1=%llu",
+		static_cast<unsigned long long>(stats.vertex_count),
+		static_cast<unsigned long long>(stats.nan_uv0),
+		static_cast<unsigned long long>(stats.nan_uv1));
+	DEdit2_Log(" UV0: min=(%.3f, %.3f) max=(%.3f, %.3f)",
+		stats.min_u0, stats.min_v0, stats.max_u0, stats.max_v0);
+	DEdit2_Log(" UV1: min=(%.3f, %.3f) max=(%.3f, %.3f)",
+		stats.min_u1, stats.min_v1, stats.max_u1, stats.max_v1);
+}
+
+void CmdWorldUvDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worlduvdebug <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worlduvdebug <0|1>");
+		return;
+	}
+
+	diligent_SetWorldUvDebug(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worlduvdebug = %d", diligent_GetWorldUvDebug());
+}
+
+void CmdWorldTexturedDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldtextureddebug <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldtextureddebug <0|1>");
+		return;
+	}
+
+	diligent_SetWorldUvDebug(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldtextureddebug = %d", diligent_GetWorldUvDebug());
+}
+
+void CmdWorldPipelineStats(int, const char*[])
+{
+	DiligentWorldPipelineStats stats;
+	if (!diligent_GetWorldPipelineStats(stats))
+	{
+		DEdit2_Log("World pipeline stats unavailable.");
+		return;
+	}
+
+	DEdit2_Log("World pipelines: total=%llu skip=%llu solid=%llu tex=%llu lm=%llu lm_only=%llu dual=%llu lm_dual=%llu bump=%llu glow=%llu dyn=%llu vol=%llu shadow=%llu",
+		static_cast<unsigned long long>(stats.total_sections),
+		static_cast<unsigned long long>(stats.mode_skip),
+		static_cast<unsigned long long>(stats.mode_solid),
+		static_cast<unsigned long long>(stats.mode_textured),
+		static_cast<unsigned long long>(stats.mode_lightmap),
+		static_cast<unsigned long long>(stats.mode_lightmap_only),
+		static_cast<unsigned long long>(stats.mode_dual),
+		static_cast<unsigned long long>(stats.mode_lightmap_dual),
+		static_cast<unsigned long long>(stats.mode_bump),
+		static_cast<unsigned long long>(stats.mode_glow),
+		static_cast<unsigned long long>(stats.mode_dynamic_light),
+		static_cast<unsigned long long>(stats.mode_volume),
+		static_cast<unsigned long long>(stats.mode_shadow_project));
+}
+
+void CmdWorldPipelineReset(int, const char*[])
+{
+	diligent_ResetWorldPipelineStats();
+	DEdit2_Log("World pipeline stats reset.");
+}
+
+void CmdWorldPsDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldpsdebug <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldpsdebug <0|1>");
+		return;
+	}
+
+	diligent_SetWorldPsDebug(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldpsdebug = %d", diligent_GetWorldPsDebug());
+}
+
+void CmdWorldTexDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4>");
+		return;
+	}
+
+	int mode = 0;
+	if (!ParseInt(argv[0], mode))
+	{
+		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4>");
+		return;
+	}
+
+	diligent_SetWorldTexDebugMode(mode);
+	DEdit2_Log("worldtexdebug = %d", diligent_GetWorldTexDebugMode());
+}
+
+void CmdWorldTexelUV(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldTexelUV();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldtexeluv <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldTexelUV(enabled);
+	DEdit2_Log("worldtexeluv = %d", enabled);
+}
+
+void CmdWorldBaseVertex(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldUseBaseVertex();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldbasevertex <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldUseBaseVertex(enabled);
+	DEdit2_Log("worldbasevertex = %d", enabled);
+}
+
+void CmdWorldShaderReset(int, const char*[])
+{
+	diligent_ResetWorldShaders();
+	DEdit2_Log("World shaders reset.");
+}
+
+void CmdFogDebug(int, const char*[])
+{
+	DiligentFogDebugInfo info;
+	if (!diligent_GetFogDebugInfo(info))
+	{
+		DEdit2_Log("Fog info unavailable.");
+		return;
+	}
+
+	DEdit2_Log("Fog: enabled=%d near=%.2f far=%.2f color=(%d,%d,%d)",
+		info.enabled,
+		info.near_z,
+		info.far_z,
+		info.color_r,
+		info.color_g,
+		info.color_b);
+}
+
+void CmdFogEnable(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: fogenable <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: fogenable <0|1>");
+		return;
+	}
+
+	diligent_SetFogEnabled(enabled != 0 ? 1 : 0);
+	DEdit2_Log("fogenable = %d", enabled != 0 ? 1 : 0);
+}
+
+void CmdFogRange(int argc, const char* argv[])
+{
+	if (argc < 2)
+	{
+		DEdit2_Log("Usage: fogrange <near> <far>");
+		return;
+	}
+
+	float near_z = 0.0f;
+	float far_z = 0.0f;
+	if (!ParseFloat(argv[0], near_z) || !ParseFloat(argv[1], far_z))
+	{
+		DEdit2_Log("Usage: fogrange <near> <far>");
+		return;
+	}
+
+	diligent_SetFogRange(near_z, far_z);
+	DEdit2_Log("fogrange = %.2f %.2f", near_z, far_z);
+}
+
+void CmdWorldForceTextured(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcetexture <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcetexture <0|1>");
+		return;
+	}
+
+	diligent_SetForceTexturedWorld(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldforcetexture = %d", diligent_GetForceTexturedWorld());
 }
 
 bool ParseInt(const char* text, int& out)
@@ -252,6 +689,59 @@ void DumpNodes(const std::vector<TreeNode>& nodes, int node_id, int indent)
 	}
 }
 
+void CmdTexView(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: texview <texture_name|off>");
+		return;
+	}
+
+	const std::string name = argv[0];
+	if (ToLower(name) == "off")
+	{
+		g_TexView = {};
+		DEdit2_Log("texview cleared.");
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache not initialized.");
+		return;
+	}
+
+	SharedTexture* texture = cache->GetSharedTexture(name.c_str());
+	if (!texture)
+	{
+		DEdit2_Log("Texture '%s' not loaded.", name.c_str());
+		return;
+	}
+
+	Diligent::ITextureView* view = diligent_get_drawprim_texture_view(texture, false);
+	if (!view)
+	{
+		DEdit2_Log("Texture '%s' has no GPU view.", name.c_str());
+		return;
+	}
+
+	DiligentTextureDebugInfo info;
+	if (!diligent_GetTextureDebugInfo(texture, info))
+	{
+		DEdit2_Log("Texture '%s' debug info unavailable.", name.c_str());
+		return;
+	}
+
+	g_TexView.enabled = true;
+	g_TexView.name = name;
+	g_TexView.view = view;
+	g_TexView.width = info.width;
+	g_TexView.height = info.height;
+
+	DEdit2_Log("texview = %s (%ux%u)", g_TexView.name.c_str(), g_TexView.width, g_TexView.height);
+}
+
 void CmdListNodes(int argc, const char* argv[])
 {
 	(void)argc;
@@ -291,12 +781,136 @@ void CmdReplaceTex(int argc, const char* argv[])
 	DEdit2_Log("replacetex is not implemented in DEdit2 yet.");
 }
 
+void CmdShaders(int argc, const char* argv[])
+{
+	int enabled = diligent_GetShadersEnabled();
+	if (argc >= 1)
+	{
+		int value = 0;
+		if (!ParseInt(argv[0], value) || (value != 0 && value != 1))
+		{
+			DEdit2_Log("Usage: shaders [0/1]");
+			return;
+		}
+		enabled = value;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetShadersEnabled(enabled);
+	DEdit2_Log("Shaders %s.", enabled ? "enabled" : "disabled");
+}
+
+void CmdListTextures(int argc, const char* argv[])
+{
+	(void)argc;
+	(void)argv;
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache unavailable.");
+		return;
+	}
+
+	std::vector<std::string> names;
+	cache->GetLoadedTextureNames(names);
+	if (names.empty())
+	{
+		DEdit2_Log("No textures loaded.");
+		return;
+	}
+
+	DEdit2_Log("Loaded textures (%zu):", names.size());
+	for (const auto& name : names)
+	{
+		DEdit2_Log("  %s", name.c_str());
+	}
+}
+
+void CmdListTexturePaths(int argc, const char* argv[])
+{
+	(void)argc;
+	(void)argv;
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache unavailable.");
+		return;
+	}
+
+	std::vector<TextureCache::LoadedTextureInfo> info;
+	cache->GetLoadedTextureInfo(info);
+	if (info.empty())
+	{
+		DEdit2_Log("No textures loaded.");
+		return;
+	}
+
+	DEdit2_Log("Loaded texture paths (%zu):", info.size());
+	for (const auto& entry : info)
+	{
+		const char* path = entry.path.empty() ? "(missing)" : entry.path.c_str();
+		DEdit2_Log("  %s -> %s", entry.name.c_str(), path);
+	}
+}
+
+void CmdTexInfo(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: texinfo <texture_name>");
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache unavailable.");
+		return;
+	}
+
+	TextureCache::TextureDebugInfo info;
+	if (!cache->GetTextureDebugInfo(argv[0], info))
+	{
+		DEdit2_Log("Texture '%s' not found or failed to load.", argv[0]);
+		return;
+	}
+
+	SharedTexture* shared = cache->GetSharedTexture(argv[0]);
+	TextureData* data = shared ? cache->GetTexture(shared) : nullptr;
+
+	DEdit2_Log("Texture info:");
+	DEdit2_Log("  Name: %s", info.name.c_str());
+	DEdit2_Log("  Path: %s", info.path.empty() ? "(missing)" : info.path.c_str());
+	DEdit2_Log("  Size: %ux%u", info.width, info.height);
+	DEdit2_Log("  Mips: %u", info.mipmaps);
+	DEdit2_Log("  BPP: %s", BppToString(info.bpp));
+	DEdit2_Log("  Flags: 0x%08x UserFlags: 0x%08x Sections: %u", info.flags, info.user_flags, info.sections);
+	DEdit2_Log("  Buffer: %u bytes (data=%s)", info.buffer_size, info.has_data ? "yes" : "no");
+
+	if (data)
+	{
+		const auto& pf = data->m_PFormat;
+		DEdit2_Log("  PFormat: type=%u bpp=%u masks=%08x/%08x/%08x/%08x firstbits=%u/%u/%u/%u",
+			static_cast<unsigned>(pf.m_eType),
+			static_cast<unsigned>(pf.m_nBPP),
+			pf.m_Masks[0], pf.m_Masks[1], pf.m_Masks[2], pf.m_Masks[3],
+			pf.m_FirstBits[0], pf.m_FirstBits[1], pf.m_FirstBits[2], pf.m_FirstBits[3]);
+	}
+}
+
 } // namespace
+
+const DEdit2TexViewState& DEdit2_GetTexViewState()
+{
+	return g_TexView;
+}
 
 int g_DEdit2MipMapOffset = 0;
 int g_DEdit2Bilinear = 1;
 int g_DEdit2MaxTextureMemory = 128 * 1024 * 1024;
-
 void DEdit2_InitConsoleCommands()
 {
 	g_Commands.clear();
@@ -309,6 +923,30 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("listnodes", CmdListNodes);
 	AddCommand("freetextures", CmdFreeTextures);
 	AddCommand("replacetex", CmdReplaceTex);
+	AddCommand("shaders", CmdShaders);
+	AddCommand("listtextures", CmdListTextures);
+	AddCommand("listtexturepaths", CmdListTexturePaths);
+	AddCommand("texinfo", CmdTexInfo);
+	AddCommand("texprobe", CmdTexProbe);
+	AddCommand("texview", CmdTexView);
+	AddCommand("worldcolorstats", CmdWorldColorStats);
+	AddCommand("worldforcewhite", CmdWorldForceWhite);
+	AddCommand("worldtexstats", CmdWorldTextureStats);
+	AddCommand("worlduvstats", CmdWorldUvStats);
+	AddCommand("worlduvdebug", CmdWorldUvDebug);
+	AddCommand("worldtextureddebug", CmdWorldTexturedDebug);
+	AddCommand("worldpipestats", CmdWorldPipelineStats);
+	AddCommand("worldpipereset", CmdWorldPipelineReset);
+	AddCommand("worldpsdebug", CmdWorldPsDebug);
+	AddCommand("worldtexdebug", CmdWorldTexDebug);
+	AddCommand("worldtexeluv", CmdWorldTexelUV);
+	AddCommand("worldbasevertex", CmdWorldBaseVertex);
+	AddCommand("worldshaderreset", CmdWorldShaderReset);
+	AddCommand("shaders", CmdShaders);
+	AddCommand("fogdebug", CmdFogDebug);
+	AddCommand("fogenable", CmdFogEnable);
+	AddCommand("fogrange", CmdFogRange);
+	AddCommand("worldforcetexture", CmdWorldForceTextured);
 
 	AddVar("mipmapoffset", ConsoleVar::Type::Int, &g_DEdit2MipMapOffset);
 	AddVar("bilinear", ConsoleVar::Type::Int, &g_DEdit2Bilinear);

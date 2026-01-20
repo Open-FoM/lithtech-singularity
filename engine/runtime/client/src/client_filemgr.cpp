@@ -1,10 +1,12 @@
 #include "bdefs.h"
 
 #include "sysfile.h"
+#if !defined(LTJS_DEDIT2_FILEMGR)
 #include "ftclient.h"
 #include "console.h"
-#include "client_filemgr.h"
 #include "clientmgr.h"
+#endif
+#include "client_filemgr.h"
 #include "impl_common.h"
 
 
@@ -206,11 +208,18 @@ void CClientFileMgr::Term() {
 
 
 void CClientFileMgr::ProcessPacket(const CPacket_Read &cPacket) {
+#if defined(LTJS_DEDIT2_FILEMGR)
+	(void)cPacket;
+#else
     ftc_ProcessPacket(m_hFTClient, cPacket);
+#endif
 }
 
 
 void CClientFileMgr::OnConnect(CBaseConn *serverID) {
+#if defined(LTJS_DEDIT2_FILEMGR)
+	(void)serverID;
+#else
     uint32 i;
     FTCInitStruct initStruct;
 
@@ -233,10 +242,14 @@ void CClientFileMgr::OnConnect(CBaseConn *serverID) {
 
     m_hFTClient = ftc_Init(&initStruct);
     ftc_SetUserData1(m_hFTClient, NULL);
+#endif
 }
 
 
 void CClientFileMgr::OnDisconnect() {
+#if defined(LTJS_DEDIT2_FILEMGR)
+	return;
+#else
     uint32 i;
     LTLink *pCur, *pNext;
     ServerFile *pFile;
@@ -269,6 +282,7 @@ void CClientFileMgr::OnDisconnect() {
         ftc_Term(m_hFTClient);
         m_hFTClient = LTNULL;
     }
+#endif
 }
 
 
@@ -558,6 +572,13 @@ LTRESULT CClientFileMgr::CopyFile(const char *pSrc, const char *pDest)
 
 int CClientFileMgr::OnNewFile(FTClient *hClient, const char *pFilename, uint32 size, uint32 fileID) 
 {
+#if defined(LTJS_DEDIT2_FILEMGR)
+	(void)hClient;
+	(void)pFilename;
+	(void)size;
+	(void)fileID;
+	return 0;
+#else
     ServerFile *pFile;
     ClientFileTree *pTree;
     char formattedFilename[512];
@@ -595,15 +616,15 @@ int CClientFileMgr::OnNewFile(FTClient *hClient, const char *pFilename, uint32 s
     dl_Insert(&m_ServerFiles[fileID % NUM_CFM_SERVER_FILES], &pFile->m_Link);
 
     return NF_HAVEFILE;
+#endif
 }
 
 FTClient* CClientFileMgr::GetFTClient()
 {
-
+#if defined(LTJS_DEDIT2_FILEMGR)
+	return LTNULL;
+#else
 	return m_hFTClient;
-
+#endif
 }
-
-
-
 

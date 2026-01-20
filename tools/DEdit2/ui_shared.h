@@ -7,6 +7,12 @@
 
 #include <string>
 
+using TreeNodeFilter = bool (*)(
+	int node_id,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>* props,
+	void* user);
+
 struct ProjectContextAction
 {
 	bool load_world = false;
@@ -41,7 +47,9 @@ void DrawTreeNodes(
 	const std::string* project_root,
 	const std::vector<NodeProperties>* props,
 	ProjectContextAction* project_action,
-	UndoStack* undo_stack);
+	UndoStack* undo_stack,
+	TreeNodeFilter node_filter = nullptr,
+	void* node_filter_user = nullptr);
 
 void HandlePendingCreate(
 	TreeUiState& ui_state,

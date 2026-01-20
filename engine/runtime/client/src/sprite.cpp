@@ -12,6 +12,10 @@
 #include "sysfile.h"
 #include "de_objects.h"
 #include "client_filemgr.h"
+#if defined(LTJS_DEDIT2_FILEMGR)
+#include "renderstruct.h"
+extern RenderStruct g_Render;
+#endif
 
 
 
@@ -79,9 +83,13 @@ Sprite* spr_Create(ILTStream *pStream)
 			pStream->Read(s, strLen);
 			s[strLen] = 0;
 
+#if defined(LTJS_DEDIT2_FILEMGR)
+			pAnim->m_Frames[i].m_pTex = g_Render.GetSharedTexture ? g_Render.GetSharedTexture(s) : LTNULL;
+#else
 			ref.m_FileType = FILE_CLIENTFILE;
 			ref.m_pFilename = s;
 			pAnim->m_Frames[i].m_pTex = g_pClientMgr->AddSharedTexture(&ref);
+#endif
 		}
 	}
 
@@ -176,7 +184,6 @@ void spr_UpdateTracker(SpriteTracker *pTracker, uint32 msDelta)
 		}
 	}
 }
-
 
 
 

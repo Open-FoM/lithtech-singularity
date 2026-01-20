@@ -31,6 +31,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -40,6 +41,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <unordered_set>
@@ -56,6 +58,19 @@ struct EditorPaths
 };
 
 void SaveRecentProjects(const std::vector<std::string>& recent_projects);
+
+Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b);
+Diligent::float3 Add(const Diligent::float3& a, const Diligent::float3& b);
+Diligent::float3 Sub(const Diligent::float3& a, const Diligent::float3& b);
+Diligent::float3 Scale(const Diligent::float3& v, float s);
+float Dot(const Diligent::float3& a, const Diligent::float3& b);
+Diligent::float3 Normalize(const Diligent::float3& v);
+void ComputeCameraBasis(
+	const ViewportPanelState& state,
+	Diligent::float3& out_pos,
+	Diligent::float3& out_forward,
+	Diligent::float3& out_right,
+	Diligent::float3& out_up);
 
 EditorPaths ParseEditorPaths(int argc, char** argv)
 {
@@ -138,6 +153,99 @@ std::string FindCompiledWorldPath(const std::string& world_file, const std::stri
 	return std::string();
 }
 
+bool ParseFloat3(const std::string& text, float out[3])
+{
+	std::istringstream stream(text);
+	return static_cast<bool>(stream >> out[0] >> out[1] >> out[2]);
+}
+
+bool ExtractWorldBoundsFromProps(const NodeProperties& props, float out_min[3], float out_max[3])
+{
+	bool has_min = false;
+	bool has_max = false;
+	for (const auto& entry : props.raw_properties)
+	{
+		if (entry.first == "world_bounds_min")
+		{
+			has_min = ParseFloat3(entry.second, out_min);
+		}
+		else if (entry.first == "world_bounds_max")
+		{
+			has_max = ParseFloat3(entry.second, out_max);
+		}
+		if (has_min && has_max)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool TryGetWorldBounds(const std::vector<NodeProperties>& props, float out_min[3], float out_max[3])
+{
+	if (props.empty())
+	{
+		return false;
+	}
+	if (ExtractWorldBoundsFromProps(props.front(), out_min, out_max))
+	{
+		return true;
+	}
+	for (size_t i = 1; i < props.size(); ++i)
+	{
+		if (ExtractWorldBoundsFromProps(props[i], out_min, out_max))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string ResolveProjectRoot(const std::string& selected_path)
+{
+	if (selected_path.empty())
+	{
+		return {};
+	}
+
+	std::error_code ec;
+	fs::path chosen = fs::path(selected_path);
+	if (!fs::is_directory(chosen, ec))
+	{
+		return selected_path;
+	}
+
+	fs::path probe = chosen;
+	for (int i = 0; i < 8; ++i)
+	{
+		if (fs::exists(probe / "Rez", ec) || fs::exists(probe / "Worlds", ec))
+		{
+			return probe.string();
+		}
+		const fs::path parent = probe.parent_path();
+		if (parent.empty() || parent == probe)
+		{
+			break;
+		}
+		probe = parent;
+	}
+
+	return chosen.string();
+}
+
+int DefaultProjectSelection(const std::vector<TreeNode>& nodes)
+{
+	if (nodes.empty())
+	{
+		return -1;
+	}
+	if (nodes[0].children.empty())
+	{
+		return -1;
+	}
+	return nodes[0].children.front();
+}
+
 const NodeProperties* FindWorldProperties(const std::vector<NodeProperties>& props)
 {
 	for (const auto& prop : props)
@@ -163,6 +271,597 @@ void ApplyWorldSettingsToRenderer(const NodeProperties& world_props)
 	g_CV_FogColorB = static_cast<int>(std::clamp(world_props.color[2], 0.0f, 1.0f) * 255.0f);
 
 	g_CV_DrawSky = 0;
+}
+
+struct WorldRenderSettingsCache
+{
+	bool valid = false;
+	bool fog_enabled = false;
+	float fog_near = 0.0f;
+	float fog_far = 0.0f;
+	float far_z = 0.0f;
+	float fog_color[3] = {0.0f, 0.0f, 0.0f};
+};
+
+bool WorldSettingsDifferent(const NodeProperties& props, const WorldRenderSettingsCache& cache)
+{
+	return !cache.valid ||
+		cache.fog_enabled != props.fog_enabled ||
+		cache.fog_near != props.fog_near ||
+		cache.fog_far != props.fog_far ||
+		cache.far_z != props.far_z ||
+		cache.fog_color[0] != props.color[0] ||
+		cache.fog_color[1] != props.color[1] ||
+		cache.fog_color[2] != props.color[2];
+}
+
+void UpdateWorldSettingsCache(const NodeProperties& props, WorldRenderSettingsCache& cache)
+{
+	cache.valid = true;
+	cache.fog_enabled = props.fog_enabled;
+	cache.fog_near = props.fog_near;
+	cache.fog_far = props.fog_far;
+	cache.far_z = props.far_z;
+	cache.fog_color[0] = props.color[0];
+	cache.fog_color[1] = props.color[1];
+	cache.fog_color[2] = props.color[2];
+}
+
+std::string LowerCopy(std::string value)
+{
+	for (char& ch : value)
+	{
+		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+	}
+	return value;
+}
+
+struct RenderCategoryState
+{
+	bool has = false;
+	bool any_visible = false;
+};
+
+bool TryParseVec3(const std::string& value, float out[3])
+{
+	return std::sscanf(value.c_str(), "%f %f %f", &out[0], &out[1], &out[2]) == 3;
+}
+
+bool TryGetRawPropertyVec3(const NodeProperties& props, const char* key, float out[3])
+{
+	for (const auto& entry : props.raw_properties)
+	{
+		if (entry.first == key)
+		{
+			return TryParseVec3(entry.second, out);
+		}
+	}
+	return false;
+}
+
+bool TryGetNodePickPosition(const NodeProperties& props, float out[3])
+{
+	if (TryGetRawPropertyVec3(props, "centroid", out))
+	{
+		return true;
+	}
+	float minv[3];
+	float maxv[3];
+	if (TryGetRawPropertyVec3(props, "bounds_min", minv) && TryGetRawPropertyVec3(props, "bounds_max", maxv))
+	{
+		out[0] = (minv[0] + maxv[0]) * 0.5f;
+		out[1] = (minv[1] + maxv[1]) * 0.5f;
+		out[2] = (minv[2] + maxv[2]) * 0.5f;
+		return true;
+	}
+	if (TryGetRawPropertyVec3(props, "pos", out) ||
+		TryGetRawPropertyVec3(props, "Pos", out) ||
+		TryGetRawPropertyVec3(props, "position", out) ||
+		TryGetRawPropertyVec3(props, "Position", out))
+	{
+		return true;
+	}
+
+	out[0] = props.position[0];
+	out[1] = props.position[1];
+	out[2] = props.position[2];
+	return true;
+}
+
+struct PickRay
+{
+	Diligent::float3 origin;
+	Diligent::float3 dir;
+};
+
+PickRay BuildPickRay(
+	const ViewportPanelState& panel,
+	const ImVec2& viewport_size,
+	const ImVec2& mouse_local)
+{
+	Diligent::float3 cam_pos;
+	Diligent::float3 cam_forward;
+	Diligent::float3 cam_right;
+	Diligent::float3 cam_up;
+	ComputeCameraBasis(panel, cam_pos, cam_forward, cam_right, cam_up);
+
+	const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
+	const float fov = Diligent::PI_F / 4.0f;
+	const float tan_half_fov = std::tan(fov * 0.5f);
+	const float ndc_x = (mouse_local.x / std::max(1.0f, viewport_size.x)) * 2.0f - 1.0f;
+	const float ndc_y = 1.0f - (mouse_local.y / std::max(1.0f, viewport_size.y)) * 2.0f;
+
+	const Diligent::float3 ray_dir = Normalize(Add(
+		Add(cam_forward, Scale(cam_right, ndc_x * tan_half_fov * aspect)),
+		Scale(cam_up, ndc_y * tan_half_fov)));
+
+	return PickRay{cam_pos, ray_dir};
+}
+
+bool RayIntersectsAABB(
+	const PickRay& ray,
+	const float bounds_min[3],
+	const float bounds_max[3],
+	float& out_t)
+{
+	const float eps = 1e-6f;
+	float t_min = 0.0f;
+	float t_max = 1.0e30f;
+
+	const float origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+	const float dir[3] = {ray.dir.x, ray.dir.y, ray.dir.z};
+
+	for (int axis = 0; axis < 3; ++axis)
+	{
+		if (std::fabs(dir[axis]) < eps)
+		{
+			if (origin[axis] < bounds_min[axis] || origin[axis] > bounds_max[axis])
+			{
+				return false;
+			}
+			continue;
+		}
+
+		const float inv_dir = 1.0f / dir[axis];
+		float t1 = (bounds_min[axis] - origin[axis]) * inv_dir;
+		float t2 = (bounds_max[axis] - origin[axis]) * inv_dir;
+		if (t1 > t2)
+		{
+			std::swap(t1, t2);
+		}
+		t_min = std::max(t_min, t1);
+		t_max = std::min(t_max, t2);
+		if (t_max < t_min)
+		{
+			return false;
+		}
+	}
+
+	out_t = t_min >= 0.0f ? t_min : t_max;
+	return out_t >= 0.0f;
+}
+
+bool RayIntersectsTriangle(
+	const PickRay& ray,
+	const Diligent::float3& v0,
+	const Diligent::float3& v1,
+	const Diligent::float3& v2,
+	float& out_t)
+{
+	const float eps = 1e-6f;
+	const Diligent::float3 e1 = Sub(v1, v0);
+	const Diligent::float3 e2 = Sub(v2, v0);
+	const Diligent::float3 p = Cross(ray.dir, e2);
+	const float det = Dot(e1, p);
+	if (std::fabs(det) < eps)
+	{
+		return false;
+	}
+	const float inv_det = 1.0f / det;
+	const Diligent::float3 tvec = Sub(ray.origin, v0);
+	const float u = Dot(tvec, p) * inv_det;
+	if (u < 0.0f || u > 1.0f)
+	{
+		return false;
+	}
+	const Diligent::float3 q = Cross(tvec, e1);
+	const float v = Dot(ray.dir, q) * inv_det;
+	if (v < 0.0f || (u + v) > 1.0f)
+	{
+		return false;
+	}
+	const float t = Dot(e2, q) * inv_det;
+	if (t < 0.0f)
+	{
+		return false;
+	}
+	out_t = t;
+	return true;
+}
+
+bool IsModelResource(const std::string& resource)
+{
+	if (resource.empty())
+	{
+		return false;
+	}
+	const size_t dot = resource.find_last_of('.');
+	if (dot == std::string::npos)
+	{
+		return false;
+	}
+	std::string ext = LowerCopy(resource.substr(dot + 1));
+	return ext == "ltb" || ext == "ltc" || ext == "abc" || ext == "fbx" || ext == "gltf" || ext == "glb";
+}
+
+bool TryGetModelBounds(const NodeProperties& props, float out_min[3], float out_max[3])
+{
+	const bool type_hint =
+		props.type == "Model" ||
+		props.type == "WorldModel" ||
+		props.type == "WorldModelInstance" ||
+		props.type == "WorldModelStatic" ||
+		props.class_name.find("Model") != std::string::npos;
+	if (!IsModelResource(props.resource) && !type_hint)
+	{
+		return false;
+	}
+
+	const float half_x = std::fabs(props.size[0]) * 0.5f * std::max(0.001f, props.scale[0]);
+	const float half_y = std::fabs(props.size[1]) * 0.5f * std::max(0.001f, props.scale[1]);
+	const float half_z = std::fabs(props.size[2]) * 0.5f * std::max(0.001f, props.scale[2]);
+	if (half_x <= 0.0f && half_y <= 0.0f && half_z <= 0.0f)
+	{
+		return false;
+	}
+
+	out_min[0] = props.position[0] - half_x;
+	out_min[1] = props.position[1] - half_y;
+	out_min[2] = props.position[2] - half_z;
+	out_max[0] = props.position[0] + half_x;
+	out_max[1] = props.position[1] + half_y;
+	out_max[2] = props.position[2] + half_z;
+	return true;
+}
+
+bool TryGetNodeBounds(const NodeProperties& props, float out_min[3], float out_max[3])
+{
+	if (TryGetRawPropertyVec3(props, "bounds_min", out_min) &&
+		TryGetRawPropertyVec3(props, "bounds_max", out_max))
+	{
+		return true;
+	}
+
+	if (TryGetModelBounds(props, out_min, out_max))
+	{
+		return true;
+	}
+
+	if (props.range > 0.0f)
+	{
+		const float r = props.range;
+		out_min[0] = props.position[0] - r;
+		out_min[1] = props.position[1] - r;
+		out_min[2] = props.position[2] - r;
+		out_max[0] = props.position[0] + r;
+		out_max[1] = props.position[1] + r;
+		out_max[2] = props.position[2] + r;
+		return true;
+	}
+
+	const float half_x = std::fabs(props.size[0]) * 0.5f * std::max(0.001f, props.scale[0]);
+	const float half_y = std::fabs(props.size[1]) * 0.5f * std::max(0.001f, props.scale[1]);
+	const float half_z = std::fabs(props.size[2]) * 0.5f * std::max(0.001f, props.scale[2]);
+	if (half_x <= 0.0f && half_y <= 0.0f && half_z <= 0.0f)
+	{
+		return false;
+	}
+	out_min[0] = props.position[0] - half_x;
+	out_min[1] = props.position[1] - half_y;
+	out_min[2] = props.position[2] - half_z;
+	out_max[0] = props.position[0] + half_x;
+	out_max[1] = props.position[1] + half_y;
+	out_max[2] = props.position[2] + half_z;
+	return true;
+}
+
+bool RaycastBrush(const NodeProperties& props, const PickRay& ray, float& out_t)
+{
+	if (props.brush_vertices.empty() || props.brush_indices.empty())
+	{
+		return false;
+	}
+
+	float bounds_min[3];
+	float bounds_max[3];
+	if (TryGetRawPropertyVec3(props, "bounds_min", bounds_min) &&
+		TryGetRawPropertyVec3(props, "bounds_max", bounds_max))
+	{
+		float box_t = 0.0f;
+		if (!RayIntersectsAABB(ray, bounds_min, bounds_max, box_t))
+		{
+			return false;
+		}
+	}
+
+	const size_t vertex_count = props.brush_vertices.size() / 3;
+	float best_t = 1.0e30f;
+	bool hit = false;
+	for (size_t i = 0; i + 2 < props.brush_indices.size(); i += 3)
+	{
+		const uint32_t i0 = props.brush_indices[i];
+		const uint32_t i1 = props.brush_indices[i + 1];
+		const uint32_t i2 = props.brush_indices[i + 2];
+		if (i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count)
+		{
+			continue;
+		}
+		const size_t base0 = static_cast<size_t>(i0) * 3;
+		const size_t base1 = static_cast<size_t>(i1) * 3;
+		const size_t base2 = static_cast<size_t>(i2) * 3;
+		const Diligent::float3 v0(
+			props.brush_vertices[base0 + 0],
+			props.brush_vertices[base0 + 1],
+			props.brush_vertices[base0 + 2]);
+		const Diligent::float3 v1(
+			props.brush_vertices[base1 + 0],
+			props.brush_vertices[base1 + 1],
+			props.brush_vertices[base1 + 2]);
+		const Diligent::float3 v2(
+			props.brush_vertices[base2 + 0],
+			props.brush_vertices[base2 + 1],
+			props.brush_vertices[base2 + 2]);
+		float t = 0.0f;
+		if (RayIntersectsTriangle(ray, v0, v1, v2, t))
+		{
+			if (t < best_t)
+			{
+				best_t = t;
+				hit = true;
+			}
+		}
+	}
+
+	if (hit)
+	{
+		out_t = best_t;
+	}
+	return hit;
+}
+
+bool RaycastNode(const NodeProperties& props, const PickRay& ray, float& out_t)
+{
+	if (RaycastBrush(props, ray, out_t))
+	{
+		return true;
+	}
+
+	float bounds_min[3];
+	float bounds_max[3];
+	if (TryGetNodeBounds(props, bounds_min, bounds_max))
+	{
+		return RayIntersectsAABB(ray, bounds_min, bounds_max, out_t);
+	}
+
+	float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
+	TryGetNodePickPosition(props, pick_pos);
+	const Diligent::float3 point(pick_pos[0], pick_pos[1], pick_pos[2]);
+	const Diligent::float3 to_point = Sub(point, ray.origin);
+	const float t = Dot(to_point, ray.dir);
+	if (t < 0.0f)
+	{
+		return false;
+	}
+	const Diligent::float3 closest = Add(ray.origin, Scale(ray.dir, t));
+	const Diligent::float3 diff = Sub(point, closest);
+	const float dist_sq = Dot(diff, diff);
+	const float threshold = 24.0f;
+	if (dist_sq <= threshold * threshold)
+	{
+		out_t = t;
+		return true;
+	}
+	return false;
+}
+
+enum class RenderCategory
+{
+	World,
+	WorldModel,
+	Model,
+	Sprite,
+	PolyGrid,
+	Particles,
+	Volume,
+	LineSystem,
+	Canvas,
+	Sky,
+	Count
+};
+
+void ApplySceneVisibilityToRenderer(
+	const ScenePanelState& scene_state,
+	const ViewportPanelState& viewport_state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	std::array<RenderCategoryState, static_cast<size_t>(RenderCategory::Count)> categories{};
+	const size_t count = std::min(nodes.size(), props.size());
+
+	auto node_visible_for_render = [&](int node_id, const NodeProperties& node_props) -> bool
+	{
+		if (scene_state.isolate_selected && scene_state.selected_id >= 0 && node_id != scene_state.selected_id)
+		{
+			return false;
+		}
+		if (!node_props.type.empty())
+		{
+			auto it = scene_state.type_visibility.find(node_props.type);
+			if (it != scene_state.type_visibility.end() && !it->second)
+			{
+				return false;
+			}
+		}
+		if (!node_props.class_name.empty())
+		{
+			auto it = scene_state.class_visibility.find(node_props.class_name);
+			if (it != scene_state.class_visibility.end() && !it->second)
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted)
+		{
+			continue;
+		}
+
+		const NodeProperties& node_props = props[i];
+		const std::string type = LowerCopy(node_props.type);
+		const std::string cls = LowerCopy(node_props.class_name);
+		const bool is_world = (type == "world") || (cls == "world");
+		if (node.is_folder && !is_world)
+		{
+			continue;
+		}
+
+		const bool node_visible = node_visible_for_render(static_cast<int>(i), node_props);
+
+		auto mark = [&](RenderCategory cat)
+		{
+			RenderCategoryState& state = categories[static_cast<size_t>(cat)];
+			state.has = true;
+			state.any_visible = state.any_visible || node_visible;
+		};
+
+		const bool is_world_model = (type == "worldmodel") || (type == "world_model") ||
+			(cls == "worldmodel") || (cls == "world_model");
+		if (is_world)
+		{
+			mark(RenderCategory::World);
+		}
+		if (is_world_model)
+		{
+			mark(RenderCategory::WorldModel);
+		}
+
+		if (!is_world_model && (type == "model" || cls == "model"))
+		{
+			mark(RenderCategory::Model);
+		}
+		if (type == "sprite" || cls == "sprite")
+		{
+			mark(RenderCategory::Sprite);
+		}
+		if (type == "polygrid" || cls == "polygrid" || type == "terrain" || cls == "terrain")
+		{
+			mark(RenderCategory::PolyGrid);
+		}
+		if (type == "particlesystem" || cls == "particlesystem" ||
+			type == "particles" || cls == "particles" ||
+			type == "particle" || cls == "particle")
+		{
+			mark(RenderCategory::Particles);
+		}
+		if (type == "volumeeffect" || cls == "volumeeffect" ||
+			type == "volume" || cls == "volume")
+		{
+			mark(RenderCategory::Volume);
+		}
+		if (type == "linesystem" || cls == "linesystem" ||
+			type == "line" || cls == "line")
+		{
+			mark(RenderCategory::LineSystem);
+		}
+		if (type == "canvas" || cls == "canvas")
+		{
+			mark(RenderCategory::Canvas);
+		}
+		if (type == "sky" || cls == "sky" ||
+			type == "skyobject" || cls == "skyobject")
+		{
+			mark(RenderCategory::Sky);
+		}
+	}
+
+	auto apply = [&](RenderCategory cat, auto& cvar)
+	{
+		const RenderCategoryState& state = categories[static_cast<size_t>(cat)];
+		const bool enabled = [&]()
+		{
+			switch (cat)
+			{
+				case RenderCategory::World:
+					return viewport_state.render_draw_world;
+				case RenderCategory::WorldModel:
+					return viewport_state.render_draw_world_models;
+				case RenderCategory::Model:
+					return viewport_state.render_draw_models;
+				case RenderCategory::Sprite:
+					return viewport_state.render_draw_sprites;
+				case RenderCategory::PolyGrid:
+					return viewport_state.render_draw_polygrids;
+				case RenderCategory::Particles:
+					return viewport_state.render_draw_particles;
+				case RenderCategory::Volume:
+					return viewport_state.render_draw_volume_effects;
+				case RenderCategory::LineSystem:
+					return viewport_state.render_draw_line_systems;
+				case RenderCategory::Canvas:
+					return viewport_state.render_draw_canvases;
+				case RenderCategory::Sky:
+					return viewport_state.render_draw_sky;
+				default:
+					return true;
+			}
+		}();
+		const bool visible = !state.has || state.any_visible;
+		cvar = (enabled && visible) ? 1 : 0;
+	};
+
+	apply(RenderCategory::World, g_CV_DrawWorld);
+	apply(RenderCategory::WorldModel, g_CV_DrawWorldModels);
+	apply(RenderCategory::Model, g_CV_DrawModels);
+	apply(RenderCategory::Sprite, g_CV_DrawSprites);
+	apply(RenderCategory::PolyGrid, g_CV_DrawPolyGrids);
+	apply(RenderCategory::Particles, g_CV_DrawParticles);
+	apply(RenderCategory::Volume, g_CV_DrawVolumeEffects);
+	apply(RenderCategory::LineSystem, g_CV_DrawLineSystems);
+	apply(RenderCategory::Canvas, g_CV_DrawCanvases);
+	apply(RenderCategory::Sky, g_CV_DrawSky);
+
+	g_CV_Wireframe = viewport_state.render_wireframe_world ? 1 : 0;
+	g_CV_WireframeModels = viewport_state.render_wireframe_models ? 1 : 0;
+	g_CV_DrawFlat = viewport_state.render_draw_flat ? 1 : 0;
+	g_CV_LightMap = viewport_state.render_lightmap ? 1 : 0;
+	g_CV_LightmapsOnly = viewport_state.render_lightmaps_only ? 1 : 0;
+	g_CV_DrawSorted = viewport_state.render_draw_sorted ? 1 : 0;
+	g_CV_DrawSolidModels = viewport_state.render_draw_solid_models ? 1 : 0;
+	g_CV_DrawTranslucentModels = viewport_state.render_draw_translucent_models ? 1 : 0;
+	g_CV_TextureModels = viewport_state.render_texture_models ? 1 : 0;
+	g_CV_LightModels = viewport_state.render_light_models ? 1 : 0;
+	g_CV_ModelApplyAmbient = viewport_state.render_model_apply_ambient ? 1 : 0;
+	g_CV_ModelApplySun = viewport_state.render_model_apply_sun ? 1 : 0;
+	g_CV_ModelSaturation = viewport_state.render_model_saturation;
+	g_CV_ModelLODOffset = viewport_state.render_model_lod_offset;
+	g_CV_ModelDebug_DrawBoxes = viewport_state.render_model_debug_boxes ? 1 : 0;
+	g_CV_ModelDebug_DrawTouchingLights = viewport_state.render_model_debug_touching_lights ? 1 : 0;
+	g_CV_ModelDebug_DrawSkeleton = viewport_state.render_model_debug_skeleton ? 1 : 0;
+	g_CV_ModelDebug_DrawOBBS = viewport_state.render_model_debug_obbs ? 1 : 0;
+	g_CV_ModelDebug_DrawVertexNormals = viewport_state.render_model_debug_vertex_normals ? 1 : 0;
+	g_CV_ScreenGlowEnable = viewport_state.render_screen_glow_enable ? 1 : 0;
+	g_CV_ScreenGlowShowTexture = viewport_state.render_screen_glow_show_texture ? 1 : 0;
+	g_CV_ScreenGlowShowFilter = viewport_state.render_screen_glow_show_filter ? 1 : 0;
+	g_CV_ScreenGlowShowTextureScale = viewport_state.render_screen_glow_show_texture_scale;
+	g_CV_ScreenGlowShowFilterScale = viewport_state.render_screen_glow_show_filter_scale;
+	g_CV_ScreenGlowUVScale = viewport_state.render_screen_glow_uv_scale;
+	g_CV_ScreenGlowTextureSize = viewport_state.render_screen_glow_texture_size;
+	g_CV_ScreenGlowFilterSize = viewport_state.render_screen_glow_filter_size;
 }
 
 std::string TrimLine(const std::string& value)
@@ -303,6 +1002,26 @@ Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b)
 		a.y * b.z - a.z * b.y,
 		a.z * b.x - a.x * b.z,
 		a.x * b.y - a.y * b.x);
+}
+
+Diligent::float3 Add(const Diligent::float3& a, const Diligent::float3& b)
+{
+	return Diligent::float3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+Diligent::float3 Sub(const Diligent::float3& a, const Diligent::float3& b)
+{
+	return Diligent::float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+Diligent::float3 Scale(const Diligent::float3& v, float s)
+{
+	return Diligent::float3(v.x * s, v.y * s, v.z * s);
+}
+
+float Dot(const Diligent::float3& a, const Diligent::float3& b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 Diligent::float3 Normalize(const Diligent::float3& v)
@@ -527,7 +1246,11 @@ void RenderViewport(DiligentContext& ctx, const ViewportPanelState& viewport_sta
 		const float aspect = ctx.viewport.height > 0 ? static_cast<float>(ctx.viewport.width) /
 			static_cast<float>(ctx.viewport.height) : 1.0f;
 		const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_state, aspect);
-		UpdateViewportGridConstants(ctx.engine.context, ctx.grid_renderer, view_proj);
+		const Diligent::float3 grid_origin{
+			viewport_state.grid_origin[0],
+			viewport_state.grid_origin[1],
+			viewport_state.grid_origin[2]};
+		UpdateViewportGridConstants(ctx.engine.context, ctx.grid_renderer, view_proj, grid_origin);
 
 		Diligent::Viewport vp;
 		vp.TopLeftX = 0.0f;
@@ -634,7 +1357,7 @@ int main(int argc, char** argv)
 	style.FontScaleDpi = display_scale;
 
 	EditorPaths paths = ParseEditorPaths(argc, argv);
-	std::string project_root = paths.project_root;
+	std::string project_root = ResolveProjectRoot(paths.project_root);
 	std::string world_file = paths.world_file;
 	std::string project_error;
 	std::string scene_error;
@@ -653,7 +1376,8 @@ int main(int argc, char** argv)
 
 	diligent.grid_ready = InitViewportGridRenderer(
 		diligent.engine.device,
-		Diligent::TEX_FORMAT_RGBA8_UNORM,
+		diligent.engine.swapchain ? diligent.engine.swapchain->GetDesc().ColorBufferFormat
+			: Diligent::TEX_FORMAT_RGBA8_UNORM,
 		Diligent::TEX_FORMAT_D32_FLOAT,
 		diligent.grid_renderer);
 	SetEngineProjectRoot(diligent.engine, project_root);
@@ -672,10 +1396,11 @@ int main(int argc, char** argv)
 	ConsolePanelState console_panel;
 	ViewportPanelState viewport_panel;
 	project_panel.error = project_error;
-	project_panel.selected_id = project_nodes.empty() ? -1 : 0;
+	project_panel.selected_id = DefaultProjectSelection(project_nodes);
 	scene_panel.error = scene_error;
 	scene_panel.selected_id = scene_nodes.empty() ? -1 : 0;
 	SelectionTarget active_target = SelectionTarget::Project;
+	WorldRenderSettingsCache world_settings_cache;
 	DEdit2_SetConsoleBindings({&project_nodes, &project_props, &scene_nodes, &scene_props});
 
 	auto load_scene_world = [&](const std::string& path)
@@ -691,6 +1416,7 @@ int main(int argc, char** argv)
 		if (const NodeProperties* world_props = FindWorldProperties(scene_props))
 		{
 			ApplyWorldSettingsToRenderer(*world_props);
+			UpdateWorldSettingsCache(*world_props, world_settings_cache);
 		}
 
 		const std::string compiled_path = FindCompiledWorldPath(world_file, project_root);
@@ -799,11 +1525,11 @@ int main(int argc, char** argv)
 			const std::string initial_path = project_root.empty() ? fs::current_path().string() : project_root;
 			if (OpenFolderDialog(initial_path, selected_path))
 			{
-				project_root = selected_path;
+				project_root = ResolveProjectRoot(selected_path);
 				project_error.clear();
 				project_nodes = BuildProjectTree(project_root, project_props, project_error);
 				project_panel.error = project_error;
-				project_panel.selected_id = project_nodes.empty() ? -1 : 0;
+				project_panel.selected_id = DefaultProjectSelection(project_nodes);
 				project_panel.tree_ui = {};
 				world_browser.refresh = true;
 				SetEngineProjectRoot(diligent.engine, project_root);
@@ -812,11 +1538,11 @@ int main(int argc, char** argv)
 		}
 		if (menu_actions.open_recent_project)
 		{
-			project_root = menu_actions.recent_project_path;
+			project_root = ResolveProjectRoot(menu_actions.recent_project_path);
 			project_error.clear();
 			project_nodes = BuildProjectTree(project_root, project_props, project_error);
 			project_panel.error = project_error;
-			project_panel.selected_id = project_nodes.empty() ? -1 : 0;
+			project_panel.selected_id = DefaultProjectSelection(project_nodes);
 			project_panel.tree_ui = {};
 			world_browser.refresh = true;
 			SetEngineProjectRoot(diligent.engine, project_root);
@@ -874,6 +1600,40 @@ int main(int argc, char** argv)
 				// toggle only
 			}
 			ImGui::SameLine();
+			if (ImGui::Button("Center"))
+			{
+				float bounds_min[3] = {0.0f, 0.0f, 0.0f};
+				float bounds_max[3] = {0.0f, 0.0f, 0.0f};
+				if (TryGetWorldBounds(scene_props, bounds_min, bounds_max))
+				{
+					const float center[3] = {
+						(bounds_min[0] + bounds_max[0]) * 0.5f,
+						(bounds_min[1] + bounds_max[1]) * 0.5f,
+						(bounds_min[2] + bounds_max[2]) * 0.5f};
+					viewport_panel.grid_origin[0] = center[0];
+					viewport_panel.grid_origin[1] = center[1];
+					viewport_panel.grid_origin[2] = center[2];
+					viewport_panel.target[0] = center[0];
+					viewport_panel.target[1] = center[1];
+					viewport_panel.target[2] = center[2];
+
+					const float dx = bounds_max[0] - bounds_min[0];
+					const float dy = bounds_max[1] - bounds_min[1];
+					const float dz = bounds_max[2] - bounds_min[2];
+					const float radius = 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz);
+					const float desired = std::max(100.0f, radius * 2.6f);
+					viewport_panel.orbit_distance = std::min(desired, 20000.0f);
+					if (viewport_panel.fly_mode)
+					{
+						SyncFlyFromOrbit(viewport_panel);
+					}
+				}
+				else
+				{
+					DEdit2_Log("World bounds unavailable; cannot center view.");
+				}
+			}
+			ImGui::SameLine();
 			bool previous_fly_mode = viewport_panel.fly_mode;
 			ImGui::Checkbox("Fly", &viewport_panel.fly_mode);
 			if (viewport_panel.fly_mode != previous_fly_mode)
@@ -887,8 +1647,6 @@ int main(int argc, char** argv)
 					SyncOrbitFromFly(viewport_panel);
 				}
 			}
-			ImGui::SameLine();
-			ImGui::TextUnformatted("Gizmo:");
 			ImGui::SameLine();
 			bool gizmo_move = viewport_panel.gizmo_mode == ViewportPanelState::GizmoMode::Translate;
 			bool gizmo_rotate = viewport_panel.gizmo_mode == ViewportPanelState::GizmoMode::Rotate;
@@ -911,6 +1669,11 @@ int main(int argc, char** argv)
 			if (ImGui::Button("Gizmo Settings"))
 			{
 				ImGui::OpenPopup("GizmoSettings");
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Render"))
+			{
+				ImGui::OpenPopup("RenderSettings");
 			}
 			if (ImGui::BeginPopup("GizmoSettings"))
 			{
@@ -994,8 +1757,113 @@ int main(int argc, char** argv)
 					"%.2f");
 				ImGui::EndPopup();
 			}
+			if (ImGui::BeginPopup("RenderSettings"))
+			{
+				if (ImGui::BeginTabBar("RenderSettingsTabs"))
+				{
+					if (ImGui::BeginTabItem("Draw"))
+					{
+						if (ImGui::Button("All On"))
+						{
+							viewport_panel.render_draw_world = true;
+							viewport_panel.render_draw_world_models = true;
+							viewport_panel.render_draw_models = true;
+							viewport_panel.render_draw_sprites = true;
+							viewport_panel.render_draw_polygrids = true;
+							viewport_panel.render_draw_particles = true;
+							viewport_panel.render_draw_volume_effects = true;
+							viewport_panel.render_draw_line_systems = true;
+							viewport_panel.render_draw_canvases = true;
+							viewport_panel.render_draw_sky = true;
+						}
+						ImGui::SameLine();
+						if (ImGui::Button("All Off"))
+						{
+							viewport_panel.render_draw_world = false;
+							viewport_panel.render_draw_world_models = false;
+							viewport_panel.render_draw_models = false;
+							viewport_panel.render_draw_sprites = false;
+							viewport_panel.render_draw_polygrids = false;
+							viewport_panel.render_draw_particles = false;
+							viewport_panel.render_draw_volume_effects = false;
+							viewport_panel.render_draw_line_systems = false;
+							viewport_panel.render_draw_canvases = false;
+							viewport_panel.render_draw_sky = false;
+						}
+						ImGui::Separator();
+						ImGui::Checkbox("World", &viewport_panel.render_draw_world);
+						ImGui::Checkbox("World Models", &viewport_panel.render_draw_world_models);
+						ImGui::Checkbox("Models", &viewport_panel.render_draw_models);
+						ImGui::Checkbox("Sprites", &viewport_panel.render_draw_sprites);
+						ImGui::Checkbox("PolyGrids", &viewport_panel.render_draw_polygrids);
+						ImGui::Checkbox("Particles", &viewport_panel.render_draw_particles);
+						ImGui::Checkbox("Volume Effects", &viewport_panel.render_draw_volume_effects);
+						ImGui::Checkbox("Line Systems", &viewport_panel.render_draw_line_systems);
+						ImGui::Checkbox("Canvases", &viewport_panel.render_draw_canvases);
+						ImGui::Checkbox("Sky", &viewport_panel.render_draw_sky);
+						ImGui::EndTabItem();
+					}
+
+					if (ImGui::BeginTabItem("Modes"))
+					{
+						ImGui::Checkbox("Wireframe World", &viewport_panel.render_wireframe_world);
+						ImGui::Checkbox("Wireframe Models", &viewport_panel.render_wireframe_models);
+						ImGui::Checkbox("Flat Shaded", &viewport_panel.render_draw_flat);
+						ImGui::Checkbox("Lightmap", &viewport_panel.render_lightmap);
+						ImGui::Checkbox("Lightmaps Only", &viewport_panel.render_lightmaps_only);
+						ImGui::Checkbox("Draw Sorted", &viewport_panel.render_draw_sorted);
+						ImGui::EndTabItem();
+					}
+
+					if (ImGui::BeginTabItem("Models"))
+					{
+						ImGui::Checkbox("Solid Models", &viewport_panel.render_draw_solid_models);
+						ImGui::Checkbox("Translucent Models", &viewport_panel.render_draw_translucent_models);
+						ImGui::Checkbox("Texture Models", &viewport_panel.render_texture_models);
+						ImGui::DragInt("Model LOD Offset", &viewport_panel.render_model_lod_offset, 1.0f, -5, 5);
+						ImGui::EndTabItem();
+					}
+
+					if (ImGui::BeginTabItem("Lighting"))
+					{
+						ImGui::Checkbox("Light Models", &viewport_panel.render_light_models);
+						ImGui::Checkbox("Apply Ambient", &viewport_panel.render_model_apply_ambient);
+						ImGui::Checkbox("Apply Sun", &viewport_panel.render_model_apply_sun);
+						ImGui::SliderFloat("Saturation", &viewport_panel.render_model_saturation, 0.0f, 2.0f, "%.2f");
+						ImGui::EndTabItem();
+					}
+
+					if (ImGui::BeginTabItem("Debug"))
+					{
+						ImGui::Checkbox("Draw Boxes", &viewport_panel.render_model_debug_boxes);
+						ImGui::Checkbox("Draw Touching Lights", &viewport_panel.render_model_debug_touching_lights);
+						ImGui::Checkbox("Draw Skeleton", &viewport_panel.render_model_debug_skeleton);
+						ImGui::Checkbox("Draw OBBs", &viewport_panel.render_model_debug_obbs);
+						ImGui::Checkbox("Draw Vertex Normals", &viewport_panel.render_model_debug_vertex_normals);
+						ImGui::EndTabItem();
+					}
+
+					if (ImGui::BeginTabItem("Post FX"))
+					{
+						ImGui::Checkbox("Screen Glow", &viewport_panel.render_screen_glow_enable);
+						ImGui::Checkbox("Show Glow Texture", &viewport_panel.render_screen_glow_show_texture);
+						ImGui::SameLine();
+						ImGui::DragFloat("Scale##GlowTex", &viewport_panel.render_screen_glow_show_texture_scale, 0.01f, 0.05f, 1.0f);
+						ImGui::Checkbox("Show Glow Filter", &viewport_panel.render_screen_glow_show_filter);
+						ImGui::SameLine();
+						ImGui::DragFloat("Scale##GlowFilter", &viewport_panel.render_screen_glow_show_filter_scale, 0.01f, 0.05f, 1.0f);
+						ImGui::DragFloat("Glow UV Scale", &viewport_panel.render_screen_glow_uv_scale, 0.01f, 0.1f, 2.0f);
+						ImGui::DragInt("Glow Texture Size", &viewport_panel.render_screen_glow_texture_size, 1.0f, 64, 2048);
+						ImGui::DragInt("Glow Filter Size", &viewport_panel.render_screen_glow_filter_size, 1.0f, 4, 128);
+						ImGui::EndTabItem();
+					}
+
+					ImGui::EndTabBar();
+				}
+				ImGui::EndPopup();
+			}
 			ImGui::SameLine();
-			if (ImGui::Button("Reset View"))
+			if (ImGui::Button("Reset"))
 			{
 				viewport_panel.initialized = false;
 			}
@@ -1018,9 +1886,44 @@ int main(int argc, char** argv)
 				ImGui::TextUnformatted("Viewport inactive.");
 			}
 
+			const DEdit2TexViewState& texview = DEdit2_GetTexViewState();
+			if (drew_image && texview.enabled && texview.view && texview.width > 0 && texview.height > 0)
+			{
+				const float max_size = std::min(256.0f, avail.x * 0.35f);
+				const float aspect = static_cast<float>(texview.height) / static_cast<float>(texview.width);
+				ImVec2 size(max_size, max_size * aspect);
+				const float max_height = avail.y * 0.35f;
+				if (size.y > max_height && max_height > 0.0f)
+				{
+					size.y = max_height;
+					size.x = size.y / aspect;
+				}
+
+				const ImVec2 pos(
+					viewport_pos.x + avail.x - size.x - 8.0f,
+					viewport_pos.y + 8.0f);
+				ImDrawList* draw_list = ImGui::GetWindowDrawList();
+				draw_list->AddImage(
+					reinterpret_cast<ImTextureID>(texview.view),
+					pos,
+					ImVec2(pos.x + size.x, pos.y + size.y));
+				draw_list->AddRect(
+					pos,
+					ImVec2(pos.x + size.x, pos.y + size.y),
+					IM_COL32(255, 255, 255, 200));
+				draw_list->AddText(
+					ImVec2(pos.x, pos.y + size.y + 4.0f),
+					IM_COL32(255, 255, 255, 200),
+					texview.name.c_str());
+			}
+
 			const bool hovered = drew_image && ImGui::IsItemHovered();
 			UpdateViewportControls(viewport_panel, viewport_pos, avail, hovered);
 			bool gizmo_consumed_click = false;
+			int hovered_scene_id = -1;
+			ImVec2 hovered_scene_screen(0.0f, 0.0f);
+			Diligent::float3 hovered_hit_pos(0.0f, 0.0f, 0.0f);
+			bool hovered_hit_valid = false;
 			if (drew_image && hovered && active_target == SelectionTarget::Scene)
 			{
 				const int selected_id = scene_panel.selected_id;
@@ -1029,8 +1932,9 @@ int main(int argc, char** argv)
 				{
 					const TreeNode& node = scene_nodes[selected_id];
 					NodeProperties& props = scene_props[selected_id];
-					if (!node.deleted && !node.is_folder && !props.locked)
-					{
+						if (!node.deleted && !node.is_folder && !props.locked &&
+							SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
+						{
 						const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
 						const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
 
@@ -1056,6 +1960,60 @@ int main(int argc, char** argv)
 					}
 				}
 			}
+			if (hovered && !scene_nodes.empty() && !scene_props.empty())
+			{
+				const ImVec2 mouse = ImGui::GetIO().MousePos;
+				const ImVec2 local(mouse.x - viewport_pos.x, mouse.y - viewport_pos.y);
+				const PickRay pick_ray = BuildPickRay(viewport_panel, avail, local);
+				float best_t = 1.0e30f;
+				int best_id = -1;
+
+				const size_t count = std::min(scene_nodes.size(), scene_props.size());
+				for (size_t i = 0; i < count; ++i)
+				{
+					const TreeNode& node = scene_nodes[i];
+					if (node.deleted || node.is_folder)
+					{
+						continue;
+					}
+					if (!SceneNodePassesFilters(
+							scene_panel,
+							static_cast<int>(i),
+							scene_nodes,
+							scene_props))
+					{
+						continue;
+					}
+					float hit_t = 0.0f;
+					if (!RaycastNode(scene_props[i], pick_ray, hit_t))
+					{
+						continue;
+					}
+					if (hit_t < best_t)
+					{
+						best_t = hit_t;
+						best_id = static_cast<int>(i);
+					}
+				}
+
+				if (best_id >= 0)
+				{
+					hovered_scene_id = best_id;
+					const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
+					const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
+					hovered_hit_pos = Add(pick_ray.origin, Scale(pick_ray.dir, best_t));
+					hovered_hit_valid = true;
+
+					ImVec2 screen_pos;
+					float pick_pos[3] = {scene_props[best_id].position[0], scene_props[best_id].position[1], scene_props[best_id].position[2]};
+					TryGetNodePickPosition(scene_props[best_id], pick_pos);
+					if (ProjectWorldToScreen(view_proj, &hovered_hit_pos.x, avail, screen_pos) ||
+						ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
+					{
+						hovered_scene_screen = screen_pos;
+					}
+				}
+			}
 			if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
 				if (!scene_nodes.empty() && !scene_props.empty())
@@ -1064,58 +2022,95 @@ int main(int argc, char** argv)
 					{
 						// Gizmo took this click.
 					}
-					else
+					else if (hovered_scene_id >= 0)
 					{
-						const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
-						const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
-						const ImVec2 mouse = ImGui::GetIO().MousePos;
-						const ImVec2 local(mouse.x - viewport_pos.x, mouse.y - viewport_pos.y);
-
-						const float pick_radius = 10.0f;
-						const float max_dist2 = pick_radius * pick_radius;
-						float best_dist2 = max_dist2;
-						int best_id = -1;
-
-						const size_t count = std::min(scene_nodes.size(), scene_props.size());
-						for (size_t i = 0; i < count; ++i)
-						{
-							const TreeNode& node = scene_nodes[i];
-							if (node.deleted || node.is_folder)
-							{
-								continue;
-							}
-							ImVec2 screen_pos;
-							if (!ProjectWorldToScreen(view_proj, scene_props[i].position, avail, screen_pos))
-							{
-								continue;
-							}
-							const float dx = screen_pos.x - local.x;
-							const float dy = screen_pos.y - local.y;
-							const float dist2 = dx * dx + dy * dy;
-							if (dist2 < best_dist2)
-							{
-								best_dist2 = dist2;
-								best_id = static_cast<int>(i);
-							}
-						}
-
-						if (best_id >= 0)
-						{
-							scene_panel.selected_id = best_id;
-							active_target = SelectionTarget::Scene;
-						}
+						scene_panel.selected_id = hovered_scene_id;
+						active_target = SelectionTarget::Scene;
 					}
 				}
 			}
 			if (drew_image)
 			{
+				const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
+				const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
+				const size_t count = std::min(scene_nodes.size(), scene_props.size());
+				const int selected_id = scene_panel.selected_id;
+				if (selected_id >= 0 && static_cast<size_t>(selected_id) < count)
+				{
+					const TreeNode& node = scene_nodes[selected_id];
+					const NodeProperties& props = scene_props[selected_id];
+					if (!node.deleted && !node.is_folder &&
+						SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
+					{
+						float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
+						if (TryGetNodePickPosition(props, pick_pos))
+						{
+							ImVec2 screen_pos;
+							if (ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
+							{
+								ImDrawList* draw_list = ImGui::GetWindowDrawList();
+								const ImVec2 screen(
+									viewport_pos.x + screen_pos.x,
+									viewport_pos.y + screen_pos.y);
+								const ImU32 color = IM_COL32(255, 200, 0, 230);
+								draw_list->AddCircle(screen, 10.0f, color, 24, 2.0f);
+								draw_list->AddLine(
+									ImVec2(screen.x - 8.0f, screen.y),
+									ImVec2(screen.x + 8.0f, screen.y),
+									color,
+									2.0f);
+								draw_list->AddLine(
+									ImVec2(screen.x, screen.y - 8.0f),
+									ImVec2(screen.x, screen.y + 8.0f),
+									color,
+									2.0f);
+							}
+						}
+					}
+				}
+
+				if (hovered_scene_id >= 0)
+				{
+					ImDrawList* draw_list = ImGui::GetWindowDrawList();
+					const ImVec2 screen_pos(
+						viewport_pos.x + hovered_scene_screen.x,
+						viewport_pos.y + hovered_scene_screen.y);
+					draw_list->AddCircle(screen_pos, 6.0f, IM_COL32(255, 255, 255, 200), 16, 1.5f);
+
+					const TreeNode& node = scene_nodes[hovered_scene_id];
+					const NodeProperties& props = scene_props[hovered_scene_id];
+					float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
+					TryGetNodePickPosition(props, pick_pos);
+					ImGui::BeginTooltip();
+					ImGui::Text("%s", node.name.c_str());
+					if (!props.type.empty())
+					{
+						ImGui::Text("Type: %s", props.type.c_str());
+					}
+					if (!props.class_name.empty())
+					{
+						ImGui::Text("Class: %s", props.class_name.c_str());
+					}
+					if (hovered_hit_valid)
+					{
+						ImGui::Text("Hit: %.1f %.1f %.1f", hovered_hit_pos.x, hovered_hit_pos.y, hovered_hit_pos.z);
+					}
+					ImGui::Text("Center: %.1f %.1f %.1f", pick_pos[0], pick_pos[1], pick_pos[2]);
+					ImGui::EndTooltip();
+				}
 				DrawViewportOverlay(viewport_panel, ImGui::GetWindowDrawList(), viewport_pos, avail);
 			}
-		}
-		ImGui::End();
+	}
+	ImGui::End();
 
-		const NodeProperties* world_props = FindWorldProperties(scene_props);
-		RenderViewport(diligent, viewport_panel, world_props);
+	const NodeProperties* world_props = FindWorldProperties(scene_props);
+	if (world_props && WorldSettingsDifferent(*world_props, world_settings_cache))
+	{
+		ApplyWorldSettingsToRenderer(*world_props);
+		UpdateWorldSettingsCache(*world_props, world_settings_cache);
+	}
+	ApplySceneVisibilityToRenderer(scene_panel, viewport_panel, scene_nodes, scene_props);
+	RenderViewport(diligent, viewport_panel, world_props);
 
 		Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
 		Diligent::ITextureView* back_dsv = diligent.engine.swapchain->GetDepthBufferDSV();

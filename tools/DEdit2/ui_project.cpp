@@ -34,22 +34,25 @@ void DrawProjectPanel(
 		state.filter.Draw("Filter##Project", 180.0f);
 		ImGui::Separator();
 		ImGui::BeginChild("ProjectTree", ImVec2(0.0f, 0.0f), true);
-		if (!nodes.empty())
+		if (!nodes.empty() && !nodes[0].children.empty())
 		{
-			DrawTreeNodes(
-				nodes,
-				0,
-				state.selected_id,
-				state.filter,
-				expand_mode,
-				state.tree_ui,
-				false,
-				SelectionTarget::Project,
-				active_target,
-				&project_root,
-				&props,
-				project_action,
-				undo_stack);
+			for (int child_id : nodes[0].children)
+			{
+				DrawTreeNodes(
+					nodes,
+					child_id,
+					state.selected_id,
+					state.filter,
+					expand_mode,
+					state.tree_ui,
+					false,
+					SelectionTarget::Project,
+					active_target,
+					&project_root,
+					&props,
+					project_action,
+					undo_stack);
+			}
 		}
 		else
 		{

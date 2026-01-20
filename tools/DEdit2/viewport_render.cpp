@@ -19,6 +19,8 @@ struct GridVertex
 struct GridConstants
 {
 	Diligent::float4x4 view_proj;
+	Diligent::float3 grid_origin;
+	float padding = 0.0f;
 };
 
 Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b)
@@ -165,6 +167,8 @@ bool InitViewportGridRenderer(
 cbuffer Camera : register(b0)
 {
     float4x4 g_ViewProj;
+    float3 g_GridOrigin;
+    float g_Pad;
 };
 
 struct VSInput
@@ -182,7 +186,7 @@ struct PSInput
 PSInput main(VSInput input)
 {
     PSInput output;
-    output.Pos = mul(g_ViewProj, float4(input.Pos, 1.0f));
+    output.Pos = mul(g_ViewProj, float4(input.Pos + g_GridOrigin, 1.0f));
     output.Color = input.Color;
     return output;
 }
@@ -265,7 +269,8 @@ float4 main(PSInput input) : SV_TARGET
 void UpdateViewportGridConstants(
 	Diligent::IDeviceContext* context,
 	ViewportGridRenderer& renderer,
-	const Diligent::float4x4& view_proj)
+	const Diligent::float4x4& view_proj,
+	const Diligent::float3& grid_origin)
 {
 	if (!context || !renderer.constant_buffer)
 	{
@@ -274,6 +279,7 @@ void UpdateViewportGridConstants(
 
 	Diligent::MapHelper<GridConstants> constants(context, renderer.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 	constants->view_proj = view_proj;
+	constants->grid_origin = grid_origin;
 }
 
 void DrawViewportGrid(

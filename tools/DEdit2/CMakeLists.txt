@@ -109,6 +109,7 @@ target_compile_definitions (
 	PRIVATE
 		LTJS_USE_DILIGENT_RENDER
 		LTJS_USE_TANGENT_AND_BINORMAL
+		LTJS_DEDIT2_FILEMGR
 )
 
 set_target_properties (
@@ -128,7 +129,6 @@ target_sources (
 		engine_console_stub.cpp
 		engine_sprite.cpp
 		engine_render.cpp
-		dtx_loader.cpp
 		lt_stream.cpp
 		texture_cache.cpp
 		ui_console.cpp
@@ -158,6 +158,15 @@ target_sources (
 		${LTJS_ROOT}/engine/libs/ltamgr/ltautil.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltawriter.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/lzsswindow.cpp
+		${LTJS_ROOT}/engine/runtime/client/src/client_filemgr.cpp
+		${LTJS_ROOT}/engine/runtime/client/src/sprite.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/io/src/sys/linux/linuxfile.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/src/sys/linux/lthread.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/src/sys/linux/ltthread.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/toport/src/stringmgr.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/toport/src/stringhelper.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/toport/src/bindmgr.cpp
+		dsys_stub.cpp
 		${LTJS_ROOT}/libs/imgui/imgui.cpp
 		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp
 		${LTJS_ROOT}/libs/imgui/imgui_tables.cpp
@@ -176,6 +185,8 @@ target_include_directories (
 		${LTJS_ROOT}/libs/imgui
 		${LTJS_ROOT}/libs/imgui/backends
 		${LTJS_ROOT}/libs/diligent
+		${LTJS_ROOT}/libs/lith
+		${LTJS_ROOT}/libs/stdlith
 		${LTJS_ROOT}/libs/diligent/DiligentCore/Primitives/interface
 		${LTJS_ROOT}/libs/diligent/DiligentCore/Common/interface
 		${LTJS_ROOT}/libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
@@ -184,6 +195,7 @@ target_include_directories (
 		${LTJS_ROOT}/libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
 		${LTJS_ROOT}/libs/diligent/DiligentTools/Imgui/interface
 		${LTJS_ROOT}/engine/libs/ltamgr
+		${LTJS_ROOT}/engine/libs/rezmgr
 		${LTJS_ROOT}/engine/sdk/inc
 		${LTJS_ROOT}/engine/runtime/kernel/src
 		${LTJS_ROOT}/engine/runtime/kernel/src/sys/linux

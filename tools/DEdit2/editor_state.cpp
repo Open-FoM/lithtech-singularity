@@ -7,14 +7,15 @@
 #include "ltaloadonlyalloc.h"
 #include "ltautil.h"
 #include "ltproperty.h"
+#include "lt_stream.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -178,30 +179,7 @@ bool TryParseBool(const char* text, bool& out)
 
 bool LoadBinaryFile(const std::string& path, std::vector<uint8_t>& out_data, std::string& error)
 {
-	out_data.clear();
-	error.clear();
-
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file)
-	{
-		error = "Failed to open world file.";
-		return false;
-	}
-	std::streamsize size = file.tellg();
-	if (size <= 0)
-	{
-		error = "World file is empty.";
-		return false;
-	}
-	file.seekg(0, std::ios::beg);
-	out_data.resize(static_cast<size_t>(size));
-	if (!file.read(reinterpret_cast<char*>(out_data.data()), size))
-	{
-		error = "Failed to read world file.";
-		out_data.clear();
-		return false;
-	}
-	return true;
+	return ReadFileToBuffer(path, out_data, error);
 }
 
 std::string MapBinaryObjectType(const std::string& raw_type)
@@ -569,6 +547,237 @@ bool ParseVector3(CLTANode* value, float out[3])
 	return false;
 }
 
+bool ParseNodeListVector(CLTANode* value, float out[3])
+{
+	if (value == nullptr)
+	{
+		return false;
+	}
+
+	if (ParseVector3Elements(value, out))
+	{
+		return true;
+	}
+
+	if (!value->IsList() || value->GetNumElements() < 2)
+	{
+		return false;
+	}
+
+	CLTANode* nested = value->GetElement(1);
+	if (nested == nullptr)
+	{
+		return false;
+	}
+
+	return ParseVector3(nested, out);
+}
+
+struct BrushGeometry
+{
+	bool valid = false;
+	float centroid[3] = {0.0f, 0.0f, 0.0f};
+	float bounds_min[3] = {0.0f, 0.0f, 0.0f};
+	float bounds_max[3] = {0.0f, 0.0f, 0.0f};
+	std::vector<float> vertices;
+	std::vector<uint32_t> indices;
+};
+
+bool ParsePointListGeometry(CLTANode* pointlist, BrushGeometry& out)
+{
+	if (!pointlist || !pointlist->IsList())
+	{
+		return false;
+	}
+
+	out.vertices.clear();
+	uint32_t start = 0;
+	if (pointlist->GetNumElements() > 0)
+	{
+		CLTANode* first = pointlist->GetElement(0);
+		if (first && first->IsAtom() && std::strcmp(first->GetValue(), "pointlist") == 0)
+		{
+			start = 1;
+		}
+	}
+
+	bool has_point = false;
+	double sum[3] = {0.0, 0.0, 0.0};
+	int count = 0;
+
+	for (uint32_t i = start; i < pointlist->GetNumElements(); ++i)
+	{
+		CLTANode* entry = pointlist->GetElement(i);
+		if (!entry || !entry->IsList())
+		{
+			continue;
+		}
+		float pos[3] = {0.0f, 0.0f, 0.0f};
+		if (!ParseVector3Elements(entry, pos))
+		{
+			continue;
+		}
+		out.vertices.push_back(pos[0]);
+		out.vertices.push_back(pos[1]);
+		out.vertices.push_back(pos[2]);
+		if (!has_point)
+		{
+			out.bounds_min[0] = pos[0];
+			out.bounds_min[1] = pos[1];
+			out.bounds_min[2] = pos[2];
+			out.bounds_max[0] = pos[0];
+			out.bounds_max[1] = pos[1];
+			out.bounds_max[2] = pos[2];
+			has_point = true;
+		}
+		else
+		{
+			out.bounds_min[0] = std::min(out.bounds_min[0], pos[0]);
+			out.bounds_min[1] = std::min(out.bounds_min[1], pos[1]);
+			out.bounds_min[2] = std::min(out.bounds_min[2], pos[2]);
+			out.bounds_max[0] = std::max(out.bounds_max[0], pos[0]);
+			out.bounds_max[1] = std::max(out.bounds_max[1], pos[1]);
+			out.bounds_max[2] = std::max(out.bounds_max[2], pos[2]);
+		}
+		sum[0] += pos[0];
+		sum[1] += pos[1];
+		sum[2] += pos[2];
+		++count;
+	}
+
+	if (!has_point || count <= 0)
+	{
+		return false;
+	}
+
+	out.centroid[0] = static_cast<float>(sum[0] / count);
+	out.centroid[1] = static_cast<float>(sum[1] / count);
+	out.centroid[2] = static_cast<float>(sum[2] / count);
+	return true;
+}
+
+bool ParseIndexList(CLTANode* list, std::vector<uint32_t>& out)
+{
+	out.clear();
+	if (!list || !list->IsList() || list->GetNumElements() < 2)
+	{
+		return false;
+	}
+
+	uint32_t start = 0;
+	if (list->GetNumElements() > 0)
+	{
+		CLTANode* first = list->GetElement(0);
+		if (first && first->IsAtom())
+		{
+			start = 1;
+		}
+	}
+
+	for (uint32_t i = start; i < list->GetNumElements(); ++i)
+	{
+		CLTANode* elem = list->GetElement(i);
+		if (!elem || !elem->IsAtom())
+		{
+			continue;
+		}
+		const char* text = elem->GetValue();
+		if (!text || text[0] == '\0')
+		{
+			continue;
+		}
+		char* end = nullptr;
+		long parsed = std::strtol(text, &end, 10);
+		if (end == text || parsed < 0)
+		{
+			continue;
+		}
+		out.push_back(static_cast<uint32_t>(parsed));
+	}
+
+	return out.size() >= 3;
+}
+
+void CollectBrushGeometry(CLTANode* polyhedronlist, std::vector<BrushGeometry>& out)
+{
+	out.clear();
+	if (!polyhedronlist || !polyhedronlist->IsList())
+	{
+		return;
+	}
+
+	uint32_t start = 0;
+	if (polyhedronlist->GetNumElements() > 0)
+	{
+		CLTANode* first = polyhedronlist->GetElement(0);
+		if (first && first->IsAtom() && std::strcmp(first->GetValue(), "polyhedronlist") == 0)
+		{
+			start = 1;
+		}
+	}
+
+	for (uint32_t i = start; i < polyhedronlist->GetNumElements(); ++i)
+	{
+		CLTANode* poly = polyhedronlist->GetElement(i);
+		BrushGeometry geometry;
+		if (poly && poly->IsList())
+		{
+			CLTANode* pointlist = CLTAUtil::ShallowFindList(poly, "pointlist");
+			if (pointlist && ParsePointListGeometry(pointlist, geometry))
+			{
+				geometry.valid = true;
+			}
+
+			CLTANode* polylist = CLTAUtil::ShallowFindList(poly, "polylist");
+			if (polylist && polylist->IsList())
+			{
+				uint32_t poly_start = 0;
+				if (polylist->GetNumElements() > 0)
+				{
+					CLTANode* first = polylist->GetElement(0);
+					if (first && first->IsAtom() && std::strcmp(first->GetValue(), "polylist") == 0)
+					{
+						poly_start = 1;
+					}
+				}
+				std::vector<uint32_t> face_indices;
+				const size_t vertex_count = geometry.vertices.size() / 3;
+				for (uint32_t p = poly_start; p < polylist->GetNumElements(); ++p)
+				{
+					CLTANode* editpoly = polylist->GetElement(p);
+					if (!editpoly || !editpoly->IsList())
+					{
+						continue;
+					}
+					CLTANode* face = CLTAUtil::ShallowFindList(editpoly, "f");
+					if (!ParseIndexList(face, face_indices))
+					{
+						continue;
+					}
+					if (face_indices.size() < 3)
+					{
+						continue;
+					}
+					const uint32_t i0 = face_indices[0];
+					for (size_t f = 1; f + 1 < face_indices.size(); ++f)
+					{
+						const uint32_t i1 = face_indices[f];
+						const uint32_t i2 = face_indices[f + 1];
+						if (i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count)
+						{
+							continue;
+						}
+						geometry.indices.push_back(i0);
+						geometry.indices.push_back(i1);
+						geometry.indices.push_back(i2);
+					}
+				}
+			}
+		}
+		out.push_back(std::move(geometry));
+	}
+}
+
 bool ExtractStringValue(CLTANode* value, std::string& out)
 {
 	if (value == nullptr)
@@ -907,6 +1116,111 @@ std::string StringifyNodeValue(CLTANode* value)
 	}
 	out += ")";
 	return out;
+}
+
+std::string StringifyListElements(CLTANode* list, uint32_t start_index)
+{
+	if (list == nullptr || !list->IsList() || start_index >= list->GetNumElements())
+	{
+		return {};
+	}
+	std::string out = "(";
+	const uint32_t available = list->GetNumElements() - start_index;
+	const uint32_t max_elems = std::min<uint32_t>(available, 6);
+	for (uint32_t i = 0; i < max_elems; ++i)
+	{
+		CLTANode* elem = list->GetElement(start_index + i);
+		if (!elem)
+		{
+			continue;
+		}
+		if (i > 0)
+		{
+			out += " ";
+		}
+		if (elem->IsAtom())
+		{
+			out += elem->GetValue();
+		}
+		else
+		{
+			out += "...";
+		}
+	}
+	if (available > max_elems)
+	{
+		out += " ...";
+	}
+	out += ")";
+	return out;
+}
+
+void AppendRawNodeFields(CLTANode* node, NodeProperties& props)
+{
+	if (!node || !node->IsList())
+	{
+		return;
+	}
+	for (uint32_t i = 0; i < node->GetNumElements(); ++i)
+	{
+		CLTANode* entry = node->GetElement(i);
+		if (!entry || !entry->IsList() || entry->GetNumElements() < 2)
+		{
+			continue;
+		}
+		CLTANode* key_node = entry->GetElement(0);
+		if (!key_node || !key_node->IsAtom())
+		{
+			continue;
+		}
+		const char* key_text = key_node->GetValue();
+		if (!key_text || key_text[0] == '\0')
+		{
+			continue;
+		}
+		if (std::strcmp(key_text, "childlist") == 0 || std::strcmp(key_text, "properties") == 0)
+		{
+			continue;
+		}
+		std::string value_text;
+		if (entry->GetNumElements() > 2)
+		{
+			value_text = StringifyListElements(entry, 1);
+		}
+		else
+		{
+			value_text = StringifyNodeValue(entry->GetElement(1));
+		}
+		props.raw_properties.emplace_back(key_text, value_text);
+	}
+}
+
+bool TryGetRawPropertyInt(const NodeProperties& props, const char* key, int& out)
+{
+	if (key == nullptr)
+	{
+		return false;
+	}
+	for (const auto& entry : props.raw_properties)
+	{
+		if (entry.first == key)
+		{
+			const char* text = entry.second.c_str();
+			if (!text || text[0] == '\0')
+			{
+				return false;
+			}
+			char* end = nullptr;
+			long parsed = std::strtol(text, &end, 10);
+			if (end == text)
+			{
+				return false;
+			}
+			out = static_cast<int>(parsed);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool ApplyProperty(NodeProperties& props, TreeNode& node, const std::string& name, CLTANode* value)
@@ -1320,10 +1634,8 @@ void ApplyPropertyList(NodeProperties& props, TreeNode& node, CLTANode* prop_lis
 		CLTANode* value = nullptr;
 		if (ParsePropertyEntry(entry, prop_name, value))
 		{
-			if (!ApplyProperty(props, node, prop_name, value))
-			{
-				props.raw_properties.emplace_back(prop_name, StringifyNodeValue(value));
-			}
+			props.raw_properties.emplace_back(prop_name, StringifyNodeValue(value));
+			ApplyProperty(props, node, prop_name, value);
 		}
 	}
 }
@@ -1551,7 +1863,8 @@ int BuildSceneNodeRecursive(
 	CLTANode* node,
 	const std::vector<CLTANode*>& global_prop_lists,
 	std::vector<TreeNode>& nodes,
-	std::vector<NodeProperties>& props)
+	std::vector<NodeProperties>& props,
+	bool is_root)
 {
 	if (!node)
 	{
@@ -1563,7 +1876,7 @@ int BuildSceneNodeRecursive(
 
 	NodeProperties node_props;
 	const std::string raw_type = GetSceneNodeType(node);
-	if (IsNodeList(node))
+	if (is_root && IsNodeList(node))
 	{
 		CLTANode* first = node->GetElement(0);
 		if (first && first->IsAtom() && std::strcmp(first->GetValue(), "worldnode") == 0)
@@ -1597,6 +1910,19 @@ int BuildSceneNodeRecursive(
 		node_props.class_name = raw_type;
 	}
 
+	if (!is_root && (node_props.type == "World" || node_props.type == "Entity"))
+	{
+		const std::string& source = node_props.class_name.empty() ? raw_type : node_props.class_name;
+		if (!source.empty())
+		{
+			const std::string mapped = MapBinaryObjectType(source);
+			if (!mapped.empty() && mapped != "World")
+			{
+				node_props.type = mapped;
+			}
+		}
+	}
+
 	ApplyFlags(node, node_props);
 
 	CLTANode* properties_node = CLTAUtil::ShallowFindList(node, "properties");
@@ -1612,6 +1938,47 @@ int BuildSceneNodeRecursive(
 			ApplyPropertyList(node_props, tree_node, properties_node);
 		}
 	}
+
+	float vec3[3] = {0.0f, 0.0f, 0.0f};
+	CLTANode* position = CLTAUtil::ShallowFindList(node, "position");
+	if (!position)
+	{
+		position = CLTAUtil::ShallowFindList(node, "pos");
+	}
+	if (position && ParseNodeListVector(position, vec3))
+	{
+		node_props.position[0] = vec3[0];
+		node_props.position[1] = vec3[1];
+		node_props.position[2] = vec3[2];
+	}
+
+	CLTANode* orientation = CLTAUtil::ShallowFindList(node, "orientation");
+	if (orientation && ParseNodeListVector(orientation, vec3))
+	{
+		node_props.rotation[0] = vec3[0];
+		node_props.rotation[1] = vec3[1];
+		node_props.rotation[2] = vec3[2];
+	}
+	else
+	{
+		CLTANode* rotation = CLTAUtil::ShallowFindList(node, "rotation");
+		if (rotation && ParseNodeListVector(rotation, vec3))
+		{
+			node_props.rotation[0] = vec3[0];
+			node_props.rotation[1] = vec3[1];
+			node_props.rotation[2] = vec3[2];
+		}
+	}
+
+	CLTANode* scale = CLTAUtil::ShallowFindList(node, "scale");
+	if (scale && ParseNodeListVector(scale, vec3))
+	{
+		node_props.scale[0] = vec3[0];
+		node_props.scale[1] = vec3[1];
+		node_props.scale[2] = vec3[2];
+	}
+
+	AppendRawNodeFields(node, node_props);
 
 	nodes.push_back(tree_node);
 	props.push_back(node_props);
@@ -1630,7 +1997,7 @@ int BuildSceneNodeRecursive(
 				{
 					continue;
 				}
-				const int child_id = BuildSceneNodeRecursive(child, global_prop_lists, nodes, props);
+				const int child_id = BuildSceneNodeRecursive(child, global_prop_lists, nodes, props, false);
 				if (child_id >= 0)
 				{
 					nodes[node_id].children.push_back(child_id);
@@ -1702,7 +2069,7 @@ std::vector<TreeNode> BuildProjectTree(
 	size_t total_nodes = 0;
 	AddProjectEntry(root, root, nodes, out_props, total_nodes, error);
 
-	if (nodes.empty())
+	if (nodes.empty() || (nodes.size() == 1 && nodes[0].children.empty()))
 	{
 		error = "No project content found.";
 	}
@@ -1769,6 +2136,16 @@ std::vector<TreeNode> BuildSceneTree(
 		}
 		prop_reader.Close();
 	}
+	std::vector<BrushGeometry> brush_geometry;
+	CLTAReader poly_reader;
+	if (poly_reader.Open(world_path.string().c_str(), CLTAUtil::IsFileCompressed(world_path.string().c_str())))
+	{
+		if (CLTANode* polyhedronlist = CLTANodeReader::LoadNode(&poly_reader, "polyhedronlist", &allocator))
+		{
+			CollectBrushGeometry(polyhedronlist, brush_geometry);
+		}
+		poly_reader.Close();
+	}
 
 	CLTANode* root = CLTAUtil::ShallowFindList(hierarchy, "worldnode");
 	if (!root)
@@ -1792,7 +2169,47 @@ std::vector<TreeNode> BuildSceneTree(
 		return {};
 	}
 
-	BuildSceneNodeRecursive(root, global_prop_lists, nodes, out_props);
+	BuildSceneNodeRecursive(root, global_prop_lists, nodes, out_props, true);
+	if (!brush_geometry.empty())
+	{
+		for (auto& props : out_props)
+		{
+			int brush_index = -1;
+			if (!TryGetRawPropertyInt(props, "brushindex", brush_index))
+			{
+				continue;
+			}
+			if (brush_index < 0 || static_cast<size_t>(brush_index) >= brush_geometry.size())
+			{
+				continue;
+			}
+			const BrushGeometry& bounds = brush_geometry[static_cast<size_t>(brush_index)];
+			if (!bounds.valid)
+			{
+				continue;
+			}
+			props.brush_index = brush_index;
+			props.brush_vertices = bounds.vertices;
+			props.brush_indices = bounds.indices;
+			char buffer[128];
+			std::snprintf(buffer, sizeof(buffer), "%.3f %.3f %.3f",
+				bounds.bounds_min[0], bounds.bounds_min[1], bounds.bounds_min[2]);
+			props.raw_properties.emplace_back("bounds_min", buffer);
+			std::snprintf(buffer, sizeof(buffer), "%.3f %.3f %.3f",
+				bounds.bounds_max[0], bounds.bounds_max[1], bounds.bounds_max[2]);
+			props.raw_properties.emplace_back("bounds_max", buffer);
+			std::snprintf(buffer, sizeof(buffer), "%.3f %.3f %.3f",
+				bounds.centroid[0], bounds.centroid[1], bounds.centroid[2]);
+			props.raw_properties.emplace_back("centroid", buffer);
+
+			if (props.position[0] == 0.0f && props.position[1] == 0.0f && props.position[2] == 0.0f)
+			{
+				props.position[0] = bounds.centroid[0];
+				props.position[1] = bounds.centroid[1];
+				props.position[2] = bounds.centroid[2];
+			}
+		}
+	}
 
 	allocator.FreeAllMemory();
 

@@ -15,6 +15,7 @@ struct ViewportPanelState
 	float fly_pos[3] = {0.0f, 0.0f, 0.0f};
 	float fly_speed = 800.0f;
 	float grid_spacing = 64.0f;
+	float grid_origin[3] = {0.0f, 0.0f, 0.0f};
 	enum class GizmoMode
 	{
 		Translate,
@@ -54,6 +55,43 @@ struct ViewportPanelState
 	float snap_translate_step = 1.0f;
 	float snap_rotate_step = 15.0f;
 	float snap_scale_step = 0.1f;
+	bool render_draw_world = true;
+	bool render_draw_world_models = true;
+	bool render_draw_models = true;
+	bool render_draw_sprites = true;
+	bool render_draw_polygrids = true;
+	bool render_draw_particles = true;
+	bool render_draw_volume_effects = true;
+	bool render_draw_line_systems = true;
+	bool render_draw_canvases = true;
+	bool render_draw_sky = true;
+	bool render_wireframe_world = false;
+	bool render_wireframe_models = false;
+	bool render_draw_flat = false;
+	bool render_lightmap = true;
+	bool render_lightmaps_only = false;
+	bool render_draw_sorted = true;
+	bool render_draw_solid_models = true;
+	bool render_draw_translucent_models = true;
+	bool render_texture_models = true;
+	bool render_light_models = true;
+	bool render_model_apply_ambient = true;
+	bool render_model_apply_sun = true;
+	float render_model_saturation = 1.0f;
+	int render_model_lod_offset = 0;
+	bool render_model_debug_boxes = false;
+	bool render_model_debug_touching_lights = false;
+	bool render_model_debug_skeleton = false;
+	bool render_model_debug_obbs = false;
+	bool render_model_debug_vertex_normals = false;
+	bool render_screen_glow_enable = false;
+	bool render_screen_glow_show_texture = false;
+	bool render_screen_glow_show_filter = false;
+	float render_screen_glow_show_texture_scale = 0.5f;
+	float render_screen_glow_show_filter_scale = 0.25f;
+	float render_screen_glow_uv_scale = 0.75f;
+	int render_screen_glow_texture_size = 256;
+	int render_screen_glow_filter_size = 28;
 };
 
 void ResetViewportPanel(ViewportPanelState& state, const ImVec2& size);

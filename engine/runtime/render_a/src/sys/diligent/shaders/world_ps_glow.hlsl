@@ -107,8 +107,8 @@ float4 PSMain(PSInput input) : SV_TARGET
 {
     float2 uv = ResolveTexCoord(0, input.texcoord0);
     float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
-
-    float3 color_linear = ToLinear(tex.rgb) * ToLinear(input.color.rgb);
+    float3 vertex_color = input.color.rgb;
+    float3 color_linear = ToLinear(tex.rgb) * ToLinear(vertex_color);
     float alpha = tex.a * input.color.a;
 
     float3 color = EncodeOutput(color_linear);

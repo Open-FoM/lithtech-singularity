@@ -46,6 +46,9 @@
 	    link_to_implementation(D3DRenderStyles, Default);
 		#endif // __D3D
 
+		// Client file manager implementation (used by tools like DEdit2).
+		link_to_implementation(CClientFileMgr, Default);
+
         //Remote Communication Contex LIB implements interfaces??
 
 #ifdef LIBLTINFO_OUTPUT_REDIRECTION

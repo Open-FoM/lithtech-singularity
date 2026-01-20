@@ -138,6 +138,12 @@ CTextureScriptInterpreter::~CTextureScriptInterpreter()
 //loads the specified script
 bool CTextureScriptInterpreter::LoadScript(const char* pszFilename)
 {
+	if (!g_pIClientFileMgr)
+	{
+		dsi_ConsolePrint("Texture script interpreter: file manager not available for '%s'.", pszFilename ? pszFilename : "");
+		return false;
+	}
+
 	//clear out any old script
 	Free();
 

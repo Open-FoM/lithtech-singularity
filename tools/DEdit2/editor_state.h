@@ -2,6 +2,7 @@
 
 #include "bsp_view.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,6 +52,9 @@ struct NodeProperties
 	std::string class_name;
 	std::string sky_pan_texture;
 	std::vector<std::pair<std::string, std::string>> raw_properties;
+	int brush_index = -1;
+	std::vector<float> brush_vertices;
+	std::vector<uint32_t> brush_indices;
 };
 
 struct TreeUiState

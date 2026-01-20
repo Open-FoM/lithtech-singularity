@@ -124,10 +124,33 @@ float4 ApplyFogLinear(float4 color_linear, float3 world_pos)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
+    if (g_FogParams.w > 3.5f)
+    {
+        float2 uv = input.uv0;
+        float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
+        return float4(tex.rgb, 1.0f);
+    }
+    if (g_FogParams.w > 2.5f)
+    {
+        float2 uv = ResolveTexCoord(0, input.texcoord0);
+        float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
+        return float4(tex.rgb, 1.0f);
+    }
+    if (g_FogParams.w > 1.5f)
+    {
+        float2 uv = ResolveTexCoord(0, input.texcoord0);
+        return float4(frac(uv.x), frac(uv.y), 0.0f, 1.0f);
+    }
+    if (g_FogParams.w > 0.5f)
+    {
+        float2 uv = input.uv0;
+        return float4(frac(uv.x), frac(uv.y), 0.0f, 1.0f);
+    }
+
     float2 uv = ResolveTexCoord(0, input.texcoord0);
     float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
-
-    float3 color_linear = ToLinear(tex.rgb) * ToLinear(input.color.rgb);
+    float3 vertex_color = input.color.rgb;
+    float3 color_linear = ToLinear(tex.rgb) * ToLinear(vertex_color);
     float alpha = tex.a * input.color.a;
     float4 fogged = ApplyFogLinear(float4(color_linear, alpha), input.world_pos);
 

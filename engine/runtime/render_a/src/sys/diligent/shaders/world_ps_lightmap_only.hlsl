@@ -126,8 +126,8 @@ float4 PSMain(PSInput input) : SV_TARGET
 {
     float2 uv = ResolveTexCoord(0, input.texcoord0);
     float4 lightmap = g_Texture1.Sample(g_Texture1_sampler, uv);
-
-    float3 color_linear = ToLinear(lightmap.rgb) * ToLinear(input.color.rgb);
+    float3 vertex_color = input.color.rgb;
+    float3 color_linear = ToLinear(lightmap.rgb) * ToLinear(vertex_color);
     float alpha = lightmap.a * input.color.a;
     float4 fogged = ApplyFogLinear(float4(color_linear, alpha), input.world_pos);
 

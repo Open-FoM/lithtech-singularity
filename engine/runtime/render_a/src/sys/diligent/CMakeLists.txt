@@ -58,6 +58,7 @@ set (diligent_shader_sources
 	diligent_get_world_pixel_shader_solid_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_solid.hlsl
 	diligent_get_world_pixel_shader_dynamic_light_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_dynamic_light.hlsl
 	diligent_get_world_pixel_shader_shadow_project_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_shadow_project.hlsl
+	diligent_get_world_pixel_shader_debug_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_debug.hlsl
 	diligent_get_model_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/model_ps_textured.hlsl
 	diligent_get_model_pixel_shader_solid_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/model_ps_solid.hlsl
 	GetVertexShaderSource=${CMAKE_CURRENT_SOURCE_DIR}/../../../../render_b/src/sys/diligent/shaders/drawprim_vs.hlsl
@@ -82,6 +83,7 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_solid.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_dynamic_light.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_shadow_project.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_debug.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/model_ps_textured.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/model_ps_solid.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../../render_b/src/sys/diligent/shaders/drawprim_vs.hlsl

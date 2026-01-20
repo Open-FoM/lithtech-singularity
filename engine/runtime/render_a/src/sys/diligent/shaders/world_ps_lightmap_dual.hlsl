@@ -134,8 +134,8 @@ float4 PSMain(PSInput input) : SV_TARGET
     float4 base_tex = g_Texture0.Sample(g_Texture0_sampler, uv0);
     float4 lightmap = g_Texture1.Sample(g_Texture1_sampler, uv1);
     float4 dual_tex = g_Texture2.Sample(g_Texture2_sampler, uv2);
-
-    float3 color_linear = ToLinear(base_tex.rgb) * ToLinear(lightmap.rgb) * ToLinear(dual_tex.rgb) * ToLinear(input.color.rgb);
+    float3 vertex_color = input.color.rgb;
+    float3 color_linear = ToLinear(base_tex.rgb) * ToLinear(lightmap.rgb) * ToLinear(dual_tex.rgb) * ToLinear(vertex_color);
     float alpha = base_tex.a * lightmap.a * dual_tex.a * input.color.a;
     float4 fogged = ApplyFogLinear(float4(color_linear, alpha), input.world_pos);
 

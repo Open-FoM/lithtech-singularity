@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -123,33 +122,7 @@ struct BinaryReader
 
 bool LoadBinaryFile(const std::string& path, std::vector<uint8_t>& out_data, std::string& error)
 {
-	out_data.clear();
-	error.clear();
-
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file)
-	{
-		error = "Failed to open world file.";
-		return false;
-	}
-
-	const std::streamsize size = file.tellg();
-	if (size <= 0)
-	{
-		error = "World file is empty.";
-		return false;
-	}
-
-	file.seekg(0, std::ios::beg);
-	out_data.resize(static_cast<size_t>(size));
-	if (!file.read(reinterpret_cast<char*>(out_data.data()), size))
-	{
-		error = "Failed to read world file.";
-		out_data.clear();
-		return false;
-	}
-
-	return true;
+	return ReadFileToBuffer(path, out_data, error);
 }
 
 bool ReadPropString(BinaryReader& reader, uint16_t prop_len, std::string& out)
@@ -296,7 +269,6 @@ bool LoadWorldGeometry(const std::string& world_path, BspWorldView& out_view, st
 		out_error = "World file header is invalid.";
 		return false;
 	}
-	(void)world_offset;
 
 	out_view.world_bounds.min[0] = world_min.x;
 	out_view.world_bounds.min[1] = world_min.y;
@@ -304,6 +276,13 @@ bool LoadWorldGeometry(const std::string& world_path, BspWorldView& out_view, st
 	out_view.world_bounds.max[0] = world_max.x;
 	out_view.world_bounds.max[1] = world_max.y;
 	out_view.world_bounds.max[2] = world_max.z;
+
+	out_view.world_bounds.min[0] += world_offset.x;
+	out_view.world_bounds.min[1] += world_offset.y;
+	out_view.world_bounds.min[2] += world_offset.z;
+	out_view.world_bounds.max[0] += world_offset.x;
+	out_view.world_bounds.max[1] += world_offset.y;
+	out_view.world_bounds.max[2] += world_offset.z;
 
 	WorldTree world_tree;
 	if (!world_tree.LoadLayout(stream.get()))
@@ -344,12 +323,12 @@ bool LoadWorldGeometry(const std::string& world_path, BspWorldView& out_view, st
 			model_view.name = "WorldModel " + std::to_string(model_index);
 		}
 
-		model_view.bounds.min[0] = bsp->m_MinBox.x;
-		model_view.bounds.min[1] = bsp->m_MinBox.y;
-		model_view.bounds.min[2] = bsp->m_MinBox.z;
-		model_view.bounds.max[0] = bsp->m_MaxBox.x;
-		model_view.bounds.max[1] = bsp->m_MaxBox.y;
-		model_view.bounds.max[2] = bsp->m_MaxBox.z;
+		model_view.bounds.min[0] = bsp->m_MinBox.x + world_offset.x;
+		model_view.bounds.min[1] = bsp->m_MinBox.y + world_offset.y;
+		model_view.bounds.min[2] = bsp->m_MinBox.z + world_offset.z;
+		model_view.bounds.max[0] = bsp->m_MaxBox.x + world_offset.x;
+		model_view.bounds.max[1] = bsp->m_MaxBox.y + world_offset.y;
+		model_view.bounds.max[2] = bsp->m_MaxBox.z + world_offset.z;
 
 		std::vector<SurfaceAccum> surface_accum;
 		surface_accum.resize(bsp->m_nSurfaces);
@@ -376,21 +355,22 @@ bool LoadWorldGeometry(const std::string& world_path, BspWorldView& out_view, st
 
 			SurfaceAccum& accum = surface_accum[static_cast<size_t>(surface_index)];
 			accum.poly_count++;
-			accum.centroid_sum += poly->GetCenter();
+			accum.centroid_sum += (poly->GetCenter() + world_offset);
 
 			if (poly->GetNumVertices() > 0)
 			{
-				LTVector poly_min = poly->GetVertex(0);
+				LTVector poly_min = poly->GetVertex(0) + world_offset;
 				LTVector poly_max = poly_min;
 				for (uint32 v = 1; v < poly->GetNumVertices(); ++v)
 				{
 					const LTVector& vert = poly->GetVertex(v);
-					poly_min.x = std::min(poly_min.x, vert.x);
-					poly_min.y = std::min(poly_min.y, vert.y);
-					poly_min.z = std::min(poly_min.z, vert.z);
-					poly_max.x = std::max(poly_max.x, vert.x);
-					poly_max.y = std::max(poly_max.y, vert.y);
-					poly_max.z = std::max(poly_max.z, vert.z);
+					const LTVector shifted_vert(vert.x + world_offset.x, vert.y + world_offset.y, vert.z + world_offset.z);
+					poly_min.x = std::min(poly_min.x, shifted_vert.x);
+					poly_min.y = std::min(poly_min.y, shifted_vert.y);
+					poly_min.z = std::min(poly_min.z, shifted_vert.z);
+					poly_max.x = std::max(poly_max.x, shifted_vert.x);
+					poly_max.y = std::max(poly_max.y, shifted_vert.y);
+					poly_max.z = std::max(poly_max.z, shifted_vert.z);
 				}
 				UpdateBounds(poly_min, accum.bounds_min, accum.bounds_max, accum.has_bounds);
 				UpdateBounds(poly_max, accum.bounds_min, accum.bounds_max, accum.has_bounds);

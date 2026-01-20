@@ -33,7 +33,8 @@ bool InitViewportGridRenderer(
 void UpdateViewportGridConstants(
 	Diligent::IDeviceContext* context,
 	ViewportGridRenderer& renderer,
-	const Diligent::float4x4& view_proj);
+	const Diligent::float4x4& view_proj,
+	const Diligent::float3& grid_origin);
 
 void DrawViewportGrid(
 	Diligent::IDeviceContext* context,

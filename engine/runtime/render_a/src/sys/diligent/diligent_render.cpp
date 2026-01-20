@@ -1,5 +1,6 @@
 #include "bdefs.h"
 #include "renderstruct.h"
+#include "diligent_render.h"
 #include "ltbasedefs.h"
 #include "ltbasetypes.h"
 #include "pixelformat.h"
@@ -13,6 +14,7 @@
 #include "world_client_bsp.h"
 #include "world_shared_bsp.h"
 #include "world_tree.h"
+#include "de_world.h"
 #include "lightmap_compress.h"
 #include "ltrotation.h"
 #include "ltvector.h"
@@ -92,6 +94,8 @@ uint32 g_diligent_object_frame_code = 0;
 ViewParams g_ViewParams;
 Diligent::ITextureView* g_output_render_target_override = nullptr;
 Diligent::ITextureView* g_output_depth_target_override = nullptr;
+static int g_diligent_shaders_enabled = 1;
+static LTVector g_diligent_world_offset(0.0f, 0.0f, 0.0f);
 
 namespace
 {
@@ -112,6 +116,14 @@ static bool g_diligent_shadow_mode = false;
 static ConVar<int> g_CV_ScreenGlow_DrawCanvases("ScreenGlow_DrawCanvases", 1);
 static ConVar<int> g_CV_ScreenGlowBlurMultiTap("ScreenGlowBlurMultiTap", 1);
 static ConVar<int> g_CV_ToneMapEnable("ToneMapEnable", 1);
+static int g_diligent_force_white_vertex_color = 0;
+static int g_diligent_force_textured_world = 0;
+static int g_diligent_world_uv_debug = 0;
+static DiligentWorldPipelineStats g_diligent_pipeline_stats{};
+static int g_diligent_world_ps_debug = 0;
+static int g_diligent_world_tex_debug_mode = 0;
+static int g_diligent_world_texel_uv = 0;
+static int g_diligent_world_use_base_vertex = 1;
 
 struct DiligentSurface
 {
@@ -209,6 +221,19 @@ struct DiligentRBVertex
 #endif
 };
 
+#ifdef LTJS_USE_TANGENT_AND_BINORMAL
+struct DiligentRBVertexLegacy
+{
+	LTVector position;
+	float u0;
+	float v0;
+	float u1;
+	float v1;
+	uint32 color;
+	LTVector normal;
+};
+#endif
+
 struct DiligentRBGeometryPoly
 {
 	using TVertList = std::vector<LTVector>;
@@ -253,6 +278,14 @@ struct DiligentRenderTexture
 	Diligent::RefCntAutoPtr<Diligent::ITexture> texture;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> srv;
 	TextureData* texture_data = nullptr;
+	struct DtxTextureDeleter
+	{
+		void operator()(TextureData* ptr) const
+		{
+			dtx_Destroy(ptr);
+		}
+	};
+	std::unique_ptr<TextureData, DtxTextureDeleter> converted_texture_data;
 	uint32 width = 0;
 	uint32 height = 0;
 	BPPIdent format = BPP_32;
@@ -275,6 +308,7 @@ struct DiligentRenderBlock
 	std::vector<DiligentRBLightGroup> light_groups;
 	std::vector<DiligentRBVertex> vertices;
 	std::vector<uint16> indices;
+	bool use_base_vertex = true;
 	bool lightmaps_dirty = true;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> vertex_buffer;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> index_buffer;
@@ -306,6 +340,14 @@ struct DiligentWorldVertex
 	float normal[3];
 };
 
+struct DiligentDebugLineVertex
+{
+	float position[3];
+	float color[4];
+	float uv0[2];
+	float uv1[2];
+};
+
 struct DiligentWorldConstants
 {
 	std::array<float, 16> mvp{};
@@ -326,6 +368,7 @@ struct DiligentModelConstants
 	std::array<float, 16> mvp{};
 	std::array<float, 16> model{};
 	float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	float model_params[4] = {1.0f, 1.0f, 1.0f, 0.0f};
 	float camera_pos[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float fog_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -352,6 +395,7 @@ struct DiligentWorldResources
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_bump;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_volume_effect;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_shadow_project;
+	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_debug;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> constant_buffer;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> shadow_project_constants;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> vertex_buffer;
@@ -712,6 +756,7 @@ std::string diligent_build_model_vertex_shader_source(const DiligentMeshLayout& 
 	source += "    float4x4 g_MVP;\n";
 	source += "    float4x4 g_Model;\n";
 	source += "    float4 g_Color;\n";
+	source += "    float4 g_ModelParams;\n";
 	source += "    float4 g_CameraPos;\n";
 	source += "    float4 g_FogColor;\n";
 	source += "    float4 g_FogParams;\n";
@@ -771,7 +816,24 @@ std::string diligent_build_model_vertex_shader_source(const DiligentMeshLayout& 
 	source += ";\n";
 	source += "    float4 world_pos = mul(g_Model, float4(position, 1.0f));\n";
 	source += "    output.position = mul(g_MVP, float4(position, 1.0f));\n";
-	source += "    output.color = vertex_color * g_Color;\n";
+	source += "    float3 lit_color = vertex_color.rgb;\n";
+	source += "    if (g_ModelParams.x < 0.5f)\n";
+	source += "    {\n";
+	source += "        lit_color = float3(1.0f, 1.0f, 1.0f);\n";
+	source += "    }\n";
+	source += "    else\n";
+	source += "    {\n";
+	source += "        float light_scale = g_ModelParams.y + g_ModelParams.z;\n";
+	source += "        if (light_scale <= 0.0f)\n";
+	source += "        {\n";
+	source += "            lit_color = float3(1.0f, 1.0f, 1.0f);\n";
+	source += "        }\n";
+	source += "        else\n";
+	source += "        {\n";
+	source += "            lit_color *= (light_scale * 0.5f);\n";
+	source += "        }\n";
+	source += "    }\n";
+	source += "    output.color = float4(lit_color, vertex_color.a) * g_Color;\n";
 	source += "    output.uv = uv;\n";
 	source += "    output.world_pos = world_pos.xyz;\n";
 	source += "    return output;\n";
@@ -794,6 +856,7 @@ public:
 	uint32 GetBoneEffector() const { return m_bone_effector; }
 	uint32 GetIndexCount() const { return m_poly_count * 3; }
 	const DiligentMeshLayout& GetLayout() const { return m_layout; }
+	const std::array<std::vector<uint8>, 4>& GetVertexData() const { return m_vertex_data; }
 	Diligent::IBuffer* GetVertexBuffer(uint32 index) const { return index < m_vertex_buffers.size() ? m_vertex_buffers[index].RawPtr() : nullptr; }
 	Diligent::IBuffer* GetIndexBuffer() const { return m_index_buffer.RawPtr(); }
 
@@ -841,6 +904,7 @@ public:
 	uint32 GetPolyCount() override { return m_poly_count; }
 	uint32 GetIndexCount() const { return m_poly_count * 3; }
 	const DiligentMeshLayout& GetLayout() const { return m_layout; }
+	const std::array<std::vector<uint8>, 4>& GetVertexData() const { return m_vertex_data; }
 	Diligent::IBuffer* GetVertexBuffer(uint32 index) const { return index < m_vertex_buffers.size() ? m_vertex_buffers[index].RawPtr() : nullptr; }
 	Diligent::IBuffer* GetIndexBuffer() const { return m_index_buffer.RawPtr(); }
 
@@ -903,6 +967,7 @@ public:
 	uint32 GetIndexCount() const { return m_poly_count * 3; }
 	uint32 GetBoneEffector() const { return m_bone_effector; }
 	const DiligentMeshLayout& GetLayout() const { return m_layout; }
+	const std::array<std::vector<uint8>, 4>& GetVertexData() const { return m_vertex_data; }
 	Diligent::IBuffer* GetVertexBuffer(uint32 index) const { return index < m_vertex_buffers.size() ? m_vertex_buffers[index].RawPtr() : nullptr; }
 	Diligent::IBuffer* GetIndexBuffer() const { return m_index_buffer.RawPtr(); }
 
@@ -1021,10 +1086,14 @@ struct DiligentWorldPipelineKey
 	uint8 mode = kWorldPipelineSolid;
 	uint8 blend_mode = kWorldBlendSolid;
 	uint8 depth_mode = kWorldDepthEnabled;
+	uint8 wireframe = 0;
 
 	bool operator==(const DiligentWorldPipelineKey& other) const
 	{
-		return mode == other.mode && blend_mode == other.blend_mode && depth_mode == other.depth_mode;
+		return mode == other.mode &&
+			blend_mode == other.blend_mode &&
+			depth_mode == other.depth_mode &&
+			wireframe == other.wireframe;
 	}
 };
 
@@ -1036,6 +1105,7 @@ struct DiligentWorldPipelineKeyHash
 		hash = diligent_hash_combine(hash, key.mode);
 		hash = diligent_hash_combine(hash, key.blend_mode);
 		hash = diligent_hash_combine(hash, key.depth_mode);
+		hash = diligent_hash_combine(hash, key.wireframe);
 		return static_cast<size_t>(hash);
 	}
 };
@@ -1073,6 +1143,10 @@ DiligentWorldResources g_world_resources;
 DiligentModelResources g_model_resources;
 DiligentWorldPipelines g_world_pipelines;
 DiligentLinePipelines g_line_pipelines;
+
+std::vector<DiligentDebugLineVertex> g_diligent_debug_lines;
+Diligent::RefCntAutoPtr<Diligent::IBuffer> g_diligent_debug_line_buffer;
+uint32 g_diligent_debug_line_buffer_size = 0;
 DiligentOptimized2DResources g_optimized_2d_resources;
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_debug_white_texture;
 Diligent::RefCntAutoPtr<Diligent::ITextureView> g_debug_white_texture_srv;
@@ -1574,6 +1648,22 @@ Diligent::ITextureView* diligent_get_lightmap_view(DiligentRBSection& section)
 		return nullptr;
 	}
 
+	bool any_light = false;
+	for (const auto value : decompressed)
+	{
+		if (value != 0)
+		{
+			any_light = true;
+			break;
+		}
+	}
+	if (!any_light)
+	{
+		section.lightmap_data.clear();
+		section.lightmap_size = 0;
+		return nullptr;
+	}
+
 	if (!diligent_upload_lightmap_texture(section, decompressed))
 	{
 		return nullptr;
@@ -1694,13 +1784,21 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 	uint32 remaining = 0;
 	if (diligent_GetStreamRemaining(stream, remaining))
 	{
-		const uint64 max_vertices = remaining / sizeof(DiligentRBVertex);
+		const uint64 min_vertex_size =
+#ifdef LTJS_USE_TANGENT_AND_BINORMAL
+			sizeof(DiligentRBVertexLegacy);
+#else
+			sizeof(DiligentRBVertex);
+#endif
+		const uint64 max_vertices = remaining / min_vertex_size;
 		if (vertex_count > max_vertices)
 		{
 			dsi_ConsolePrint("Diligent: invalid vertex count %u (remaining=%u).", vertex_count, remaining);
 			return false;
 		}
 	}
+	uint32 vertex_pos = 0;
+	stream->GetPos(&vertex_pos);
 	vertices.clear();
 	vertices.resize(vertex_count);
 	if (!vertices.empty())
@@ -1710,21 +1808,64 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 
 	uint32 tri_count = 0;
 	*stream >> tri_count;
-	if (tri_count > (std::numeric_limits<uint32>::max() / 3))
+	auto validate_tri_count = [&](uint32 value) -> bool
+	{
+		if (value > (std::numeric_limits<uint32>::max() / 3))
+		{
+			return false;
+		}
+		if (diligent_GetStreamRemaining(stream, remaining))
+		{
+			const uint64 bytes_per_tri = sizeof(uint32) * 4;
+			const uint64 max_tris = bytes_per_tri ? (remaining / bytes_per_tri) : 0;
+			return value <= max_tris;
+		}
+		return true;
+	};
+
+#ifdef LTJS_USE_TANGENT_AND_BINORMAL
+	if (!validate_tri_count(tri_count))
+	{
+		stream->SeekTo(vertex_pos);
+		std::vector<DiligentRBVertexLegacy> legacy_vertices;
+		legacy_vertices.resize(vertex_count);
+		if (!legacy_vertices.empty())
+		{
+			stream->Read(legacy_vertices.data(), sizeof(DiligentRBVertexLegacy) * legacy_vertices.size());
+		}
+		*stream >> tri_count;
+		if (!validate_tri_count(tri_count))
+		{
+			dsi_ConsolePrint("Diligent: invalid triangle count %u.", tri_count);
+			return false;
+		}
+
+		for (size_t i = 0; i < vertices.size(); ++i)
+		{
+			const auto& src = legacy_vertices[i];
+			auto& dst = vertices[i];
+			dst.position = src.position;
+			dst.u0 = src.u0;
+			dst.v0 = src.v0;
+			dst.u1 = src.u1;
+			dst.v1 = src.v1;
+			dst.color = src.color;
+			dst.normal = src.normal;
+			dst.tangent.Init(0.0f, 0.0f, 0.0f);
+			dst.binormal.Init(0.0f, 0.0f, 0.0f);
+		}
+	}
+	else
+	{
+		// tri_count validated for tangent/binormal layout.
+	}
+#else
+	if (!validate_tri_count(tri_count))
 	{
 		dsi_ConsolePrint("Diligent: invalid triangle count %u.", tri_count);
 		return false;
 	}
-	if (diligent_GetStreamRemaining(stream, remaining))
-	{
-		const uint64 bytes_per_tri = sizeof(uint32) * 4;
-		const uint64 max_tris = bytes_per_tri ? (remaining / bytes_per_tri) : 0;
-		if (tri_count > max_tris)
-		{
-			dsi_ConsolePrint("Diligent: invalid triangle count %u (remaining=%u).", tri_count, remaining);
-			return false;
-		}
-	}
+#endif
 	indices.clear();
 	indices.resize(tri_count * 3);
 	if (!indices.empty())
@@ -1772,6 +1913,19 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 				}
 			}
 		}
+	}
+	if (!sections.empty())
+	{
+		bool base_vertex = true;
+		for (const auto& section_ptr : sections)
+		{
+			if (section_ptr && section_ptr->start_vertex != 0)
+			{
+				base_vertex = false;
+				break;
+			}
+		}
+		use_base_vertex = base_vertex;
 	}
 
 	uint32 sky_portal_count = 0;
@@ -1932,10 +2086,20 @@ bool DiligentRenderBlock::EnsureGpuBuffers()
 		dst.position[2] = src.position.z;
 
 		const uint32 color = src.color;
-		dst.color[0] = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
-		dst.color[1] = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
-		dst.color[2] = static_cast<float>(color & 0xFF) / 255.0f;
-		dst.color[3] = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+		if (g_diligent_force_white_vertex_color)
+		{
+			dst.color[0] = 1.0f;
+			dst.color[1] = 1.0f;
+			dst.color[2] = 1.0f;
+			dst.color[3] = 1.0f;
+		}
+		else
+		{
+			dst.color[0] = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+			dst.color[1] = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+			dst.color[2] = static_cast<float>(color & 0xFF) / 255.0f;
+			dst.color[3] = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+		}
 		dst.uv0[0] = src.u0;
 		dst.uv0[1] = src.v0;
 		dst.uv1[0] = src.u1;
@@ -3334,7 +3498,7 @@ Diligent::IShader* diligent_get_model_vertex_shader(const DiligentMeshLayout& la
 
 bool diligent_ensure_world_shaders()
 {
-	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project)
+	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug)
 	{
 		return true;
 	}
@@ -3434,7 +3598,13 @@ bool diligent_ensure_world_shaders()
 		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_shadow_project);
 	}
 
-	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project;
+	if (!g_world_resources.pixel_shader_debug)
+	{
+		shader_info.Source = diligent_get_world_pixel_shader_debug_source();
+		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_debug);
+	}
+
+	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug;
 }
 
 DiligentWorldPipeline* diligent_get_world_pipeline(
@@ -3442,7 +3612,12 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	DiligentWorldBlendMode blend_mode,
 	DiligentWorldDepthMode depth_mode)
 {
-	DiligentWorldPipelineKey key{mode, blend_mode, depth_mode};
+	DiligentWorldPipelineKey key{
+		mode,
+		blend_mode,
+		depth_mode,
+		static_cast<uint8>(g_CV_Wireframe.m_Val != 0 ? 1 : 0)
+	};
 	auto it = g_world_pipelines.pipelines.find(key);
 	if (it != g_world_pipelines.pipelines.end())
 	{
@@ -3534,6 +3709,8 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
 	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
 	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pipeline_info.GraphicsPipeline.RasterizerDesc.FillMode =
+		g_CV_Wireframe.m_Val != 0 ? Diligent::FILL_MODE_WIREFRAME : Diligent::FILL_MODE_SOLID;
 	if (mode == kWorldPipelineShadowProject && g_CV_ModelShadow_Proj_BackFaceCull.m_Val)
 	{
 		pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_BACK;
@@ -3577,7 +3754,11 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	}
 
 	pipeline_info.pVS = g_world_resources.vertex_shader;
-	if (mode == kWorldPipelineLightmap)
+	if (g_diligent_world_ps_debug)
+	{
+		pipeline_info.pPS = g_world_resources.pixel_shader_debug;
+	}
+	else if (mode == kWorldPipelineLightmap)
 	{
 		pipeline_info.pPS = g_world_resources.pixel_shader_lightmap;
 	}
@@ -3636,16 +3817,25 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[0].SamplerOrTextureName = "g_Texture0_sampler";
 	sampler_desc[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[1].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[1].SamplerOrTextureName = "g_Texture1_sampler";
 	sampler_desc[2].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[2].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[2].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[2].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler_desc[2].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[2].SamplerOrTextureName = "g_Texture2_sampler";
 
 	if (mode == kWorldPipelineVolumeEffect)
@@ -3653,6 +3843,14 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		sampler_desc[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	}
+	else if (mode == kWorldPipelineLightmap ||
+		mode == kWorldPipelineLightmapOnly ||
+		mode == kWorldPipelineLightmapDual)
+	{
+		sampler_desc[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		sampler_desc[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		sampler_desc[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
 	}
 
 	if (mode == kWorldPipelineTextured || mode == kWorldPipelineGlowTextured || mode == kWorldPipelineVolumeEffect)
@@ -3841,6 +4039,117 @@ DiligentLinePipeline* diligent_get_line_pipeline(
 	return result.second ? &result.first->second : nullptr;
 }
 
+bool diligent_draw_debug_lines()
+{
+	if (g_diligent_debug_lines.empty())
+	{
+		return true;
+	}
+
+	if (!g_immediate_context || !g_swap_chain)
+	{
+		return false;
+	}
+
+	if (!diligent_ensure_world_constant_buffer())
+	{
+		return false;
+	}
+
+	auto* pipeline = diligent_get_line_pipeline(kWorldBlendSolid, kWorldDepthEnabled);
+	if (!pipeline || !pipeline->pipeline_state)
+	{
+		return false;
+	}
+
+	const uint32 data_size = static_cast<uint32>(g_diligent_debug_lines.size() * sizeof(DiligentDebugLineVertex));
+	if (!g_diligent_debug_line_buffer || g_diligent_debug_line_buffer_size < data_size)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_debug_lines";
+		desc.Size = data_size;
+		desc.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		desc.ElementByteStride = sizeof(DiligentDebugLineVertex);
+		g_diligent_debug_line_buffer.Release();
+		g_render_device->CreateBuffer(desc, nullptr, &g_diligent_debug_line_buffer);
+		if (!g_diligent_debug_line_buffer)
+		{
+			return false;
+		}
+		g_diligent_debug_line_buffer_size = data_size;
+	}
+
+	void* mapped_vertices = nullptr;
+	g_immediate_context->MapBuffer(
+		g_diligent_debug_line_buffer,
+		Diligent::MAP_WRITE,
+		Diligent::MAP_FLAG_DISCARD,
+		mapped_vertices);
+	if (!mapped_vertices)
+	{
+		return false;
+	}
+	std::memcpy(mapped_vertices, g_diligent_debug_lines.data(), data_size);
+	g_immediate_context->UnmapBuffer(g_diligent_debug_line_buffer, Diligent::MAP_WRITE);
+
+	DiligentWorldConstants constants;
+	LTMatrix world_matrix;
+	world_matrix.Identity();
+	LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * world_matrix;
+	diligent_store_matrix_from_lt(mvp, constants.mvp);
+	diligent_store_matrix_from_lt(g_ViewParams.m_mView, constants.view);
+	diligent_store_matrix_from_lt(world_matrix, constants.world);
+	constants.camera_pos[0] = g_ViewParams.m_Pos.x;
+	constants.camera_pos[1] = g_ViewParams.m_Pos.y;
+	constants.camera_pos[2] = g_ViewParams.m_Pos.z;
+	constants.camera_pos[3] = 0.0f;
+	constants.fog_color[0] = 0.0f;
+	constants.fog_color[1] = 0.0f;
+	constants.fog_color[2] = 0.0f;
+	constants.fog_color[3] = 0.0f;
+	constants.fog_params[0] = 0.0f;
+	constants.fog_params[1] = diligent_get_tonemap_enabled();
+	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
+	constants.fog_params[3] = 0.0f;
+
+	void* mapped_constants = nullptr;
+	g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
+
+	auto* render_target = diligent_get_active_render_target();
+	auto* depth_target = diligent_get_active_depth_target();
+	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::IBuffer* buffer = g_diligent_debug_line_buffer.RawPtr();
+	Diligent::Uint64 offsets[] = {0};
+	g_immediate_context->SetVertexBuffers(
+		0,
+		1,
+		&buffer,
+		offsets,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+
+	g_immediate_context->SetPipelineState(pipeline->pipeline_state);
+	if (pipeline->srb)
+	{
+		g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
+	Diligent::DrawAttribs draw_attribs;
+	draw_attribs.NumVertices = static_cast<uint32>(g_diligent_debug_lines.size());
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_immediate_context->Draw(draw_attribs);
+	return true;
+}
+
 bool diligent_ensure_world_vertex_buffer(uint32 size)
 {
 	if (g_world_resources.vertex_buffer && g_world_resources.vertex_buffer_size >= size)
@@ -3958,10 +4267,67 @@ void diligent_apply_texture_effect_constants(
 		const int32 use_uv1 = stage.use_uv1 ? 1 : 0;
 		constants.tex_effect_uv[stage_index] = {use_uv1, 0, 0, 0};
 
+		bool apply_scale = false;
+		float scale_u = 1.0f;
+		float scale_v = 1.0f;
+		if (g_diligent_world_texel_uv)
+		{
+			if (stage.channel == TSChannel_Base)
+			{
+				SharedTexture* base_texture = section.textures[0];
+				if (base_texture && g_render_struct)
+				{
+					TextureData* texture_data = g_render_struct->GetTexture(base_texture);
+					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
+					{
+						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						apply_scale = true;
+					}
+				}
+			}
+			else if (stage.channel == TSChannel_LightMap)
+			{
+				if (section.lightmap_width > 0 && section.lightmap_height > 0)
+				{
+					scale_u = 1.0f / static_cast<float>(section.lightmap_width);
+					scale_v = 1.0f / static_cast<float>(section.lightmap_height);
+					apply_scale = true;
+				}
+			}
+			else if (stage.channel == TSChannel_DualTexture)
+			{
+				SharedTexture* dual_texture = section.textures[1];
+				if (dual_texture && g_render_struct)
+				{
+					TextureData* texture_data = g_render_struct->GetTexture(dual_texture);
+					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
+					{
+						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						apply_scale = true;
+					}
+				}
+			}
+		}
+
 		TextureScriptStageData stage_data;
 		if (!section.texture_effect || !section.texture_effect->GetStageData(stage.channel, stage_data))
 		{
-			constants.tex_effect_params[stage_index] = {0, 3, 2, 0};
+			const int32 enable = apply_scale ? 1 : 0;
+			constants.tex_effect_params[stage_index] = {
+				enable,
+				static_cast<int32>(ITextureScriptEvaluator::INPUT_UV),
+				2,
+				0};
+			if (apply_scale)
+			{
+				LTMatrix scale_matrix;
+				scale_matrix.Identity();
+				scale_matrix.m[0][0] = scale_u;
+				scale_matrix.m[1][1] = scale_v;
+				diligent_store_matrix_from_lt(scale_matrix, constants.tex_effect_matrices[stage_index]);
+			}
 			continue;
 		}
 
@@ -3985,7 +4351,16 @@ void diligent_apply_texture_effect_constants(
 
 		const int32 projected = (stage_data.flags & ITextureScriptEvaluator::FLAG_PROJECTED) ? 1 : 0;
 		constants.tex_effect_params[stage_index] = {1, static_cast<int32>(stage_data.input_type), coord_count, projected};
-		diligent_store_matrix_from_lt(stage_data.transform, constants.tex_effect_matrices[stage_index]);
+		LTMatrix final_matrix = stage_data.transform;
+		if (apply_scale)
+		{
+			LTMatrix scale_matrix;
+			scale_matrix.Identity();
+			scale_matrix.m[0][0] = scale_u;
+			scale_matrix.m[1][1] = scale_v;
+			final_matrix = scale_matrix * final_matrix;
+		}
+		diligent_store_matrix_from_lt(final_matrix, constants.tex_effect_matrices[stage_index]);
 	}
 }
 
@@ -4420,7 +4795,14 @@ void diligent_fill_world_constants(
 	constants.fog_params[0] = fog_far;
 	constants.fog_params[1] = diligent_get_tonemap_enabled();
 	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
-	constants.fog_params[3] = 0.0f;
+	if (g_diligent_world_tex_debug_mode != 0)
+	{
+		constants.fog_params[3] = static_cast<float>(g_diligent_world_tex_debug_mode);
+	}
+	else
+	{
+		constants.fog_params[3] = g_diligent_world_uv_debug ? 1.0f : 0.0f;
+	}
 	diligent_init_texture_effect_constants(constants);
 }
 
@@ -4579,6 +4961,10 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			Diligent::ITextureView* lightmap_view = diligent_get_lightmap_view(section);
+			if (g_CV_LightMap.m_Val == 0)
+			{
+				lightmap_view = nullptr;
+			}
 
 			uint8 mode = kWorldPipelineSkip;
 			switch (static_cast<DiligentPCShaderType>(section.shader_code))
@@ -4657,9 +5043,70 @@ bool diligent_draw_render_blocks_with_constants(
 					break;
 			}
 
+			if (g_diligent_force_textured_world)
+			{
+				mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
+			}
+
+			if (!g_diligent_shaders_enabled)
+			{
+				mode = kWorldPipelineSolid;
+			}
+
+			if (g_CV_LightmapsOnly.m_Val != 0)
+			{
+				mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
+			}
+
+			if (g_CV_DrawFlat.m_Val != 0)
+			{
+				mode = kWorldPipelineSolid;
+			}
+
 			if (mode == kWorldPipelineSkip)
 			{
+				++g_diligent_pipeline_stats.mode_skip;
 				continue;
+			}
+
+			++g_diligent_pipeline_stats.total_sections;
+			switch (mode)
+			{
+				case kWorldPipelineSolid:
+					++g_diligent_pipeline_stats.mode_solid;
+					break;
+				case kWorldPipelineTextured:
+					++g_diligent_pipeline_stats.mode_textured;
+					break;
+				case kWorldPipelineLightmap:
+					++g_diligent_pipeline_stats.mode_lightmap;
+					break;
+				case kWorldPipelineLightmapOnly:
+					++g_diligent_pipeline_stats.mode_lightmap_only;
+					break;
+				case kWorldPipelineDualTexture:
+					++g_diligent_pipeline_stats.mode_dual;
+					break;
+				case kWorldPipelineLightmapDual:
+					++g_diligent_pipeline_stats.mode_lightmap_dual;
+					break;
+				case kWorldPipelineBump:
+					++g_diligent_pipeline_stats.mode_bump;
+					break;
+				case kWorldPipelineGlowTextured:
+					++g_diligent_pipeline_stats.mode_glow;
+					break;
+				case kWorldPipelineDynamicLight:
+					++g_diligent_pipeline_stats.mode_dynamic_light;
+					break;
+				case kWorldPipelineVolumeEffect:
+					++g_diligent_pipeline_stats.mode_volume;
+					break;
+				case kWorldPipelineShadowProject:
+					++g_diligent_pipeline_stats.mode_shadow_project;
+					break;
+				default:
+					break;
 			}
 
 			auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
@@ -4747,7 +5194,10 @@ bool diligent_draw_render_blocks_with_constants(
 			draw_attribs.NumIndices = section.tri_count * 3;
 			draw_attribs.IndexType = Diligent::VT_UINT16;
 			draw_attribs.FirstIndexLocation = section.start_index;
-			draw_attribs.BaseVertex = static_cast<int32>(section.start_vertex);
+			const bool use_base_vertex = g_diligent_world_use_base_vertex && block->use_base_vertex;
+			draw_attribs.BaseVertex = use_base_vertex
+				? static_cast<int32>(section.start_vertex)
+				: 0;
 			draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 			g_immediate_context->DrawIndexed(draw_attribs);
 		}
@@ -4859,7 +5309,10 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 				draw_attribs.NumIndices = section.tri_count * 3;
 				draw_attribs.IndexType = Diligent::VT_UINT16;
 				draw_attribs.FirstIndexLocation = section.start_index;
-				draw_attribs.BaseVertex = static_cast<int32>(section.start_vertex);
+				const bool use_base_vertex = g_diligent_world_use_base_vertex && block->use_base_vertex;
+				draw_attribs.BaseVertex = use_base_vertex
+					? static_cast<int32>(section.start_vertex)
+					: 0;
 				draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 				g_immediate_context->DrawIndexed(draw_attribs);
 			}
@@ -4871,6 +5324,11 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 
 bool diligent_draw_world_blocks()
 {
+	if (!g_CV_DrawWorld.m_Val)
+	{
+		return true;
+	}
+
 	if (g_visible_render_blocks.empty())
 	{
 		return true;
@@ -4880,6 +5338,9 @@ bool diligent_draw_world_blocks()
 	DiligentWorldConstants constants;
 	LTMatrix world_matrix;
 	world_matrix.Identity();
+	world_matrix.m[0][3] = g_diligent_world_offset.x;
+	world_matrix.m[1][3] = g_diligent_world_offset.y;
+	world_matrix.m[2][3] = g_diligent_world_offset.z;
 	LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * world_matrix;
 	diligent_store_matrix_from_lt(mvp, constants.mvp);
 	diligent_store_matrix_from_lt(g_ViewParams.m_mView, constants.view);
@@ -4895,7 +5356,14 @@ bool diligent_draw_world_blocks()
 	constants.fog_params[0] = g_CV_FogFarZ.m_Val;
 	constants.fog_params[1] = diligent_get_tonemap_enabled();
 	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
-	constants.fog_params[3] = 0.0f;
+	if (g_diligent_world_tex_debug_mode != 0)
+	{
+		constants.fog_params[3] = static_cast<float>(g_diligent_world_tex_debug_mode);
+	}
+	else
+	{
+		constants.fog_params[3] = g_diligent_world_uv_debug ? 1.0f : 0.0f;
+	}
 	if (g_diligent_num_world_dynamic_lights > 0)
 	{
 		const DynamicLight* light = g_diligent_world_dynamic_lights[0];
@@ -4962,6 +5430,9 @@ bool diligent_draw_world_model_list_with_view(
 
 		DiligentWorldConstants constants;
 		LTMatrix world_matrix = instance->m_Transform;
+		world_matrix.m[0][3] += g_diligent_world_offset.x;
+		world_matrix.m[1][3] += g_diligent_world_offset.y;
+		world_matrix.m[2][3] += g_diligent_world_offset.z;
 		LTMatrix mvp = view_params.m_mProjection * view_params.m_mView * world_matrix;
 		diligent_store_matrix_from_lt(mvp, constants.mvp);
 		diligent_store_matrix_from_lt(view_params.m_mView, constants.view);
@@ -4977,7 +5448,14 @@ bool diligent_draw_world_model_list_with_view(
 		constants.fog_params[0] = fog_far_z;
 		constants.fog_params[1] = diligent_get_tonemap_enabled();
 		constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
-		constants.fog_params[3] = 0.0f;
+		if (g_diligent_world_tex_debug_mode != 0)
+		{
+			constants.fog_params[3] = static_cast<float>(g_diligent_world_tex_debug_mode);
+		}
+		else
+		{
+			constants.fog_params[3] = g_diligent_world_uv_debug ? 1.0f : 0.0f;
+		}
 		if (g_diligent_num_world_dynamic_lights > 0)
 		{
 			const DynamicLight* light = g_diligent_world_dynamic_lights[0];
@@ -5052,6 +5530,9 @@ bool diligent_draw_world_models_glow(const std::vector<WorldModelInstance*>& mod
 
 		DiligentWorldConstants constants = base_constants;
 		LTMatrix world_matrix = instance->m_Transform;
+		world_matrix.m[0][3] += g_diligent_world_offset.x;
+		world_matrix.m[1][3] += g_diligent_world_offset.y;
+		world_matrix.m[2][3] += g_diligent_world_offset.z;
 		LTMatrix mvp = g_ViewParams.m_mProjection * g_ViewParams.m_mView * world_matrix;
 		diligent_store_matrix_from_lt(mvp, constants.mvp);
 		diligent_store_matrix_from_lt(world_matrix, constants.world);
@@ -6401,7 +6882,14 @@ bool diligent_draw_model_instance_shadow(
 			continue;
 		}
 
-		CDIModelDrawable* lod = piece->GetLOD(0);
+		const int32 lod_bias = g_CV_ModelLODOffset.m_Val;
+		const LTVector to_camera = g_ViewParams.m_Pos - instance->m_Pos;
+		const float dist = to_camera.Mag();
+		CDIModelDrawable* lod = piece->GetLODFromDist(lod_bias, dist);
+		if (!lod)
+		{
+			lod = piece->GetLOD(0);
+		}
 		if (!lod)
 		{
 			continue;
@@ -6809,7 +7297,10 @@ void diligent_draw_shadow_projection_blocks(const std::vector<DiligentRenderBloc
 			draw_attribs.NumIndices = section.tri_count * 3;
 			draw_attribs.IndexType = Diligent::VT_UINT16;
 			draw_attribs.FirstIndexLocation = section.start_index;
-			draw_attribs.BaseVertex = static_cast<int32>(section.start_vertex);
+			const bool use_base_vertex = g_diligent_world_use_base_vertex && block->use_base_vertex;
+			draw_attribs.BaseVertex = use_base_vertex
+				? static_cast<int32>(section.start_vertex)
+				: 0;
 			draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 			g_immediate_context->DrawIndexed(draw_attribs);
 		}
@@ -8156,7 +8647,10 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			draw_attribs.NumIndices = section.tri_count * 3;
 			draw_attribs.IndexType = Diligent::VT_UINT16;
 			draw_attribs.FirstIndexLocation = section.start_index;
-			draw_attribs.BaseVertex = static_cast<int32>(section.start_vertex);
+			const bool use_base_vertex = g_diligent_world_use_base_vertex && block->use_base_vertex;
+			draw_attribs.BaseVertex = use_base_vertex
+				? static_cast<int32>(section.start_vertex)
+				: 0;
 			draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 			g_immediate_context->DrawIndexed(draw_attribs);
 		}
@@ -8288,6 +8782,243 @@ DiligentTextureArray diligent_resolve_textures(const RenderPassOp& pass, SharedT
 	}
 
 	return textures;
+}
+
+bool diligent_model_debug_enabled()
+{
+	return g_CV_ModelDebug_DrawBoxes.m_Val != 0 ||
+		g_CV_ModelDebug_DrawTouchingLights.m_Val != 0 ||
+		g_CV_ModelDebug_DrawSkeleton.m_Val != 0 ||
+		g_CV_ModelDebug_DrawOBBS.m_Val != 0 ||
+		g_CV_ModelDebug_DrawVertexNormals.m_Val != 0;
+}
+
+LTRGBColor diligent_make_debug_color(uint8 r, uint8 g, uint8 b, uint8 a = 255)
+{
+	LTRGBColor color{};
+	color.rgb.r = r;
+	color.rgb.g = g;
+	color.rgb.b = b;
+	color.rgb.a = a;
+	return color;
+}
+
+void diligent_debug_clear_lines()
+{
+	g_diligent_debug_lines.clear();
+}
+
+void diligent_debug_add_line(const LTVector& from, const LTVector& to, const LTRGBColor& color)
+{
+	DiligentDebugLineVertex v0{};
+	DiligentDebugLineVertex v1{};
+	v0.position[0] = from.x;
+	v0.position[1] = from.y;
+	v0.position[2] = from.z;
+	v1.position[0] = to.x;
+	v1.position[1] = to.y;
+	v1.position[2] = to.z;
+	const float r = static_cast<float>(color.rgb.r) / 255.0f;
+	const float g = static_cast<float>(color.rgb.g) / 255.0f;
+	const float b = static_cast<float>(color.rgb.b) / 255.0f;
+	const float a = static_cast<float>(color.rgb.a) / 255.0f;
+	v0.color[0] = r;
+	v0.color[1] = g;
+	v0.color[2] = b;
+	v0.color[3] = a;
+	v1.color[0] = r;
+	v1.color[1] = g;
+	v1.color[2] = b;
+	v1.color[3] = a;
+	g_diligent_debug_lines.push_back(v0);
+	g_diligent_debug_lines.push_back(v1);
+}
+
+void diligent_debug_add_aabb(const LTVector& center, const LTVector& dims, const LTRGBColor& color)
+{
+	const LTVector min = center - dims;
+	const LTVector max = center + dims;
+	const LTVector p0(min.x, min.y, min.z);
+	const LTVector p1(max.x, min.y, min.z);
+	const LTVector p2(max.x, max.y, min.z);
+	const LTVector p3(min.x, max.y, min.z);
+	const LTVector p4(min.x, min.y, max.z);
+	const LTVector p5(max.x, min.y, max.z);
+	const LTVector p6(max.x, max.y, max.z);
+	const LTVector p7(min.x, max.y, max.z);
+
+	diligent_debug_add_line(p0, p1, color);
+	diligent_debug_add_line(p1, p2, color);
+	diligent_debug_add_line(p2, p3, color);
+	diligent_debug_add_line(p3, p0, color);
+	diligent_debug_add_line(p4, p5, color);
+	diligent_debug_add_line(p5, p6, color);
+	diligent_debug_add_line(p6, p7, color);
+	diligent_debug_add_line(p7, p4, color);
+	diligent_debug_add_line(p0, p4, color);
+	diligent_debug_add_line(p1, p5, color);
+	diligent_debug_add_line(p2, p6, color);
+	diligent_debug_add_line(p3, p7, color);
+}
+
+LTVector diligent_transform_point(const LTMatrix& matrix, const LTVector& point)
+{
+	LTVector out;
+	out.x = matrix.m[0][0] * point.x + matrix.m[0][1] * point.y + matrix.m[0][2] * point.z + matrix.m[0][3];
+	out.y = matrix.m[1][0] * point.x + matrix.m[1][1] * point.y + matrix.m[1][2] * point.z + matrix.m[1][3];
+	out.z = matrix.m[2][0] * point.x + matrix.m[2][1] * point.y + matrix.m[2][2] * point.z + matrix.m[2][3];
+	return out;
+}
+
+LTVector diligent_transform_dir(const LTMatrix& matrix, const LTVector& dir)
+{
+	LTVector out;
+	out.x = matrix.m[0][0] * dir.x + matrix.m[0][1] * dir.y + matrix.m[0][2] * dir.z;
+	out.y = matrix.m[1][0] * dir.x + matrix.m[1][1] * dir.y + matrix.m[1][2] * dir.z;
+	out.z = matrix.m[2][0] * dir.x + matrix.m[2][1] * dir.y + matrix.m[2][2] * dir.z;
+	return out;
+}
+
+void diligent_debug_add_obb(const ModelOBB& obb, const LTRGBColor& color)
+{
+	const LTVector axis_x = obb.m_Basis[0] * obb.m_Size.x;
+	const LTVector axis_y = obb.m_Basis[1] * obb.m_Size.y;
+	const LTVector axis_z = obb.m_Basis[2] * obb.m_Size.z;
+	const LTVector center = obb.m_Pos;
+
+	LTVector corners[8];
+	corners[0] = center - axis_x - axis_y - axis_z;
+	corners[1] = center + axis_x - axis_y - axis_z;
+	corners[2] = center + axis_x + axis_y - axis_z;
+	corners[3] = center - axis_x + axis_y - axis_z;
+	corners[4] = center - axis_x - axis_y + axis_z;
+	corners[5] = center + axis_x - axis_y + axis_z;
+	corners[6] = center + axis_x + axis_y + axis_z;
+	corners[7] = center - axis_x + axis_y + axis_z;
+
+	diligent_debug_add_line(corners[0], corners[1], color);
+	diligent_debug_add_line(corners[1], corners[2], color);
+	diligent_debug_add_line(corners[2], corners[3], color);
+	diligent_debug_add_line(corners[3], corners[0], color);
+	diligent_debug_add_line(corners[4], corners[5], color);
+	diligent_debug_add_line(corners[5], corners[6], color);
+	diligent_debug_add_line(corners[6], corners[7], color);
+	diligent_debug_add_line(corners[7], corners[4], color);
+	diligent_debug_add_line(corners[0], corners[4], color);
+	diligent_debug_add_line(corners[1], corners[5], color);
+	diligent_debug_add_line(corners[2], corners[6], color);
+	diligent_debug_add_line(corners[3], corners[7], color);
+}
+
+bool diligent_read_vertex_vec3(
+	const DiligentMeshLayout& layout,
+	const std::array<std::vector<uint8>, 4>& vertex_data,
+	int32 attrib_index,
+	uint32 vertex_index,
+	bool signed_normal,
+	LTVector& out)
+{
+	if (attrib_index < 0)
+	{
+		return false;
+	}
+
+	const Diligent::LayoutElement* element = nullptr;
+	for (const auto& elem : layout.elements)
+	{
+		if (elem.InputIndex == static_cast<uint32>(attrib_index))
+		{
+			element = &elem;
+			break;
+		}
+	}
+	if (!element)
+	{
+		return false;
+	}
+
+	const uint32 stream = element->BufferSlot;
+	if (stream >= vertex_data.size())
+	{
+		return false;
+	}
+	const uint32 stride = layout.strides[stream];
+	if (stride == 0)
+	{
+		return false;
+	}
+	const auto& data = vertex_data[stream];
+	const size_t offset = static_cast<size_t>(element->RelativeOffset) + static_cast<size_t>(stride) * vertex_index;
+	if (offset + sizeof(float) * 3 > data.size())
+	{
+		return false;
+	}
+
+	if (element->ValueType == Diligent::VT_FLOAT32)
+	{
+		const float* vals = reinterpret_cast<const float*>(data.data() + offset);
+		out.x = vals[0];
+		out.y = (element->NumComponents > 1) ? vals[1] : 0.0f;
+		out.z = (element->NumComponents > 2) ? vals[2] : 0.0f;
+		return true;
+	}
+
+	if (element->ValueType == Diligent::VT_UINT8)
+	{
+		const uint8* vals = data.data() + offset;
+		float x = vals[0] / 255.0f;
+		float y = (element->NumComponents > 1) ? vals[1] / 255.0f : 0.0f;
+		float z = (element->NumComponents > 2) ? vals[2] / 255.0f : 0.0f;
+		if (element->IsNormalized && signed_normal)
+		{
+			x = x * 2.0f - 1.0f;
+			y = y * 2.0f - 1.0f;
+			z = z * 2.0f - 1.0f;
+		}
+		out.x = x;
+		out.y = y;
+		out.z = z;
+		return true;
+	}
+
+	return false;
+}
+
+void diligent_debug_add_vertex_normals(
+	const DiligentMeshLayout& layout,
+	const std::array<std::vector<uint8>, 4>& vertex_data,
+	uint32 vertex_count,
+	const LTMatrix& model_matrix,
+	const LTRGBColor& color)
+{
+	if (layout.position_attrib < 0 || layout.normal_attrib < 0 || vertex_count == 0)
+	{
+		return;
+	}
+
+	constexpr uint32 kMaxNormals = 2048;
+	const uint32 step = vertex_count > kMaxNormals ? (vertex_count / kMaxNormals) : 1;
+	const float normal_scale = 5.0f;
+
+	for (uint32 i = 0; i < vertex_count; i += step)
+	{
+		LTVector pos;
+		LTVector normal;
+		if (!diligent_read_vertex_vec3(layout, vertex_data, layout.position_attrib, i, false, pos))
+		{
+			continue;
+		}
+		if (!diligent_read_vertex_vec3(layout, vertex_data, layout.normal_attrib, i, true, normal))
+		{
+			continue;
+		}
+
+		const LTVector world_pos = diligent_transform_point(model_matrix, pos);
+		LTVector world_normal = diligent_transform_dir(model_matrix, normal);
+		world_normal.Norm();
+		const LTVector end = world_pos + world_normal * normal_scale;
+		diligent_debug_add_line(world_pos, end, color);
+	}
 }
 
 struct DiligentSrbKey
@@ -8591,14 +9322,16 @@ DiligentModelPipeline* diligent_get_model_pipeline(
 
 SharedTexture* g_drawprim_texture = nullptr;
 
+FormatMgr g_FormatMgr;
+
 Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
 {
 	switch (format)
 	{
 		case BPP_32:
-			return Diligent::TEX_FORMAT_RGBA8_UNORM;
+			return Diligent::TEX_FORMAT_BGRA8_UNORM;
 		case BPP_24:
-			return Diligent::TEX_FORMAT_RGBA8_UNORM;
+			return Diligent::TEX_FORMAT_UNKNOWN;
 		case BPP_16:
 			return Diligent::TEX_FORMAT_B5G6R5_UNORM;
 		case BPP_S3TC_DXT1:
@@ -8610,6 +9343,243 @@ Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
 		default:
 			return Diligent::TEX_FORMAT_UNKNOWN;
 	}
+}
+
+static inline BPPIdent diligent_get_bpp_ident_const(const DtxHeader& header)
+{
+	return header.m_Extra[2] == 0 ? BPP_32 : static_cast<BPPIdent>(header.m_Extra[2]);
+}
+
+bool diligent_is_texture_format_supported(Diligent::TEXTURE_FORMAT format)
+{
+	return g_render_device && g_render_device->GetTextureFormatInfo(format).Supported;
+}
+
+uint32 diligent_calc_compressed_stride(BPPIdent format, uint32 width)
+{
+	const uint32 blocks_w = (width + 3) / 4;
+	switch (format)
+	{
+		case BPP_S3TC_DXT1:
+			return blocks_w * 8;
+		case BPP_S3TC_DXT3:
+		case BPP_S3TC_DXT5:
+			return blocks_w * 16;
+		default:
+			return 0;
+	}
+}
+
+std::unique_ptr<TextureData, DiligentRenderTexture::DtxTextureDeleter>
+diligent_convert_texture_to_bgra32(const TextureData* source, uint32 mip_count, uint32 mip_offset)
+{
+	if (!source || mip_count == 0)
+	{
+		return {};
+	}
+
+	if (mip_offset >= mip_count)
+	{
+		mip_offset = 0;
+	}
+	mip_count -= mip_offset;
+	if (mip_count == 0)
+	{
+		return {};
+	}
+
+	const auto& base_mip = source->m_Mips[mip_offset];
+	if (!base_mip.m_Data || base_mip.m_Width == 0 || base_mip.m_Height == 0)
+	{
+		return {};
+	}
+
+	auto* dest = dtx_Alloc(
+		BPP_32,
+		base_mip.m_Width,
+		base_mip.m_Height,
+		mip_count,
+		nullptr,
+		nullptr,
+		source->m_Header.m_IFlags);
+
+	if (!dest)
+	{
+		return {};
+	}
+
+	dtx_SetupDTXFormat2(BPP_32, &dest->m_PFormat);
+	dest->m_Header.m_IFlags = source->m_Header.m_IFlags;
+	dest->m_Header.m_UserFlags = source->m_Header.m_UserFlags;
+	dest->m_Header.m_nSections = source->m_Header.m_nSections;
+	std::memcpy(dest->m_Header.m_CommandString,
+		source->m_Header.m_CommandString,
+		sizeof(dest->m_Header.m_CommandString));
+
+	PFormat src_format = source->m_PFormat;
+
+	for (uint32 level = 0; level < mip_count; ++level)
+	{
+		const auto& src_mip = source->m_Mips[level + mip_offset];
+		auto& dst_mip = dest->m_Mips[level];
+		if (!src_mip.m_Data || !dst_mip.m_Data)
+		{
+			break;
+		}
+
+		FMConvertRequest request;
+		request.m_pSrcFormat = &src_format;
+		request.m_pSrc = const_cast<uint8*>(src_mip.m_Data);
+		request.m_SrcPitch = 0;
+		request.m_pSrcPalette = nullptr;
+		request.m_pDestFormat = &g_FormatMgr.m_32BitFormat;
+		request.m_pDest = dst_mip.m_Data;
+		request.m_DestPitch = dst_mip.m_Pitch;
+		request.m_Width = src_mip.m_Width;
+		request.m_Height = src_mip.m_Height;
+
+		if (g_FormatMgr.ConvertPixels(&request, nullptr) != LT_OK)
+		{
+			dtx_Destroy(dest);
+			return {};
+		}
+	}
+
+	return std::unique_ptr<TextureData, DiligentRenderTexture::DtxTextureDeleter>(dest);
+}
+
+std::unique_ptr<TextureData, DiligentRenderTexture::DtxTextureDeleter>
+diligent_clone_texture_data(const TextureData* source, uint32 mip_count)
+{
+	if (!source || mip_count == 0)
+	{
+		return {};
+	}
+
+	const auto& base_mip = source->m_Mips[0];
+	if (!base_mip.m_Data || base_mip.m_Width == 0 || base_mip.m_Height == 0)
+	{
+		return {};
+	}
+
+	const auto source_bpp = diligent_get_bpp_ident_const(source->m_Header);
+	auto* dest = dtx_Alloc(
+		source_bpp,
+		base_mip.m_Width,
+		base_mip.m_Height,
+		mip_count,
+		nullptr,
+		nullptr,
+		source->m_Header.m_IFlags);
+
+	if (!dest)
+	{
+		return {};
+	}
+
+	dtx_SetupDTXFormat2(source_bpp, &dest->m_PFormat);
+	dest->m_Header = source->m_Header;
+	dest->m_Header.m_nMipmaps = static_cast<uint16>(mip_count);
+	dest->m_Header.m_BaseWidth = static_cast<uint16>(base_mip.m_Width);
+	dest->m_Header.m_BaseHeight = static_cast<uint16>(base_mip.m_Height);
+
+	for (uint32 level = 0; level < mip_count; ++level)
+	{
+		const auto& src_mip = source->m_Mips[level];
+		auto& dst_mip = dest->m_Mips[level];
+		if (!src_mip.m_Data || !dst_mip.m_Data)
+		{
+			break;
+		}
+		const uint32 copy_size = LTMIN(static_cast<uint32>(src_mip.m_dataSize),
+			static_cast<uint32>(dst_mip.m_dataSize));
+		std::memcpy(dst_mip.m_Data, src_mip.m_Data, copy_size);
+	}
+
+	return std::unique_ptr<TextureData, DiligentRenderTexture::DtxTextureDeleter>(dest);
+}
+
+bool diligent_texture_has_visible_alpha(const TextureData* texture_data)
+{
+	if (!texture_data || diligent_get_bpp_ident_const(texture_data->m_Header) != BPP_32)
+	{
+		return false;
+	}
+
+	const auto& mip = texture_data->m_Mips[0];
+	if (!mip.m_Data || mip.m_Pitch <= 0 || mip.m_Height == 0)
+	{
+		return false;
+	}
+
+	const uint32 row_stride = static_cast<uint32>(mip.m_Pitch);
+	if (row_stride < mip.m_Width * sizeof(uint32))
+	{
+		return false;
+	}
+
+	const uint8* row = mip.m_Data;
+	const uint32 sample_stride = LTMAX<uint32>(1, mip.m_Width / 16);
+	for (uint32 y = 0; y < mip.m_Height; ++y)
+	{
+		const uint32* pixels = reinterpret_cast<const uint32*>(row);
+		for (uint32 x = 0; x < mip.m_Width; x += sample_stride)
+		{
+			if ((pixels[x] & 0xFF000000u) != 0)
+			{
+				return true;
+			}
+		}
+		row += row_stride;
+	}
+
+	return false;
+}
+
+void diligent_force_texture_alpha_opaque(TextureData* texture_data)
+{
+	if (!texture_data || diligent_get_bpp_ident_const(texture_data->m_Header) != BPP_32)
+	{
+		return;
+	}
+
+	for (uint32 level = 0; level < texture_data->m_Header.m_nMipmaps; ++level)
+	{
+		auto& mip = texture_data->m_Mips[level];
+		if (!mip.m_Data || mip.m_Pitch <= 0 || mip.m_Height == 0)
+		{
+			continue;
+		}
+
+		const uint32 row_stride = static_cast<uint32>(mip.m_Pitch);
+		if (row_stride < mip.m_Width * sizeof(uint32))
+		{
+			continue;
+		}
+
+		uint8* row = mip.m_Data;
+		for (uint32 y = 0; y < mip.m_Height; ++y)
+		{
+			auto* pixels = reinterpret_cast<uint32*>(row);
+			for (uint32 x = 0; x < mip.m_Width; ++x)
+			{
+				pixels[x] |= 0xFF000000u;
+			}
+			row += row_stride;
+		}
+	}
+}
+
+bool diligent_TestConvertTextureToBgra32_Internal(const TextureData* source, uint32 mip_count, TextureData*& out_converted)
+{
+	out_converted = nullptr;
+	auto converted = diligent_convert_texture_to_bgra32(source, mip_count, 0);
+	if (!converted)
+	{
+		return false;
+	}
+	out_converted = converted.release();
+	return true;
 }
 
 uint32 diligent_get_mip_count(const TextureData* texture_data)
@@ -8671,13 +9641,64 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 		return nullptr;
 	}
 
-	const auto mip_count = diligent_get_mip_count(texture_data);
+	auto mip_count = diligent_get_mip_count(texture_data);
 	if (mip_count == 0)
 	{
 		return nullptr;
 	}
 
-	const auto format = diligent_map_texture_format(texture_data->m_Header.GetBPPIdent());
+	const uint32 non_s3tc_offset = texture_data->m_Header.GetNonS3TCMipmapOffset();
+
+	const auto source_bpp = texture_data->m_Header.GetBPPIdent();
+	auto format = diligent_map_texture_format(source_bpp);
+
+	std::unique_ptr<TextureData, DiligentRenderTexture::DtxTextureDeleter> converted;
+	const bool wants_alpha = (texture_data->m_Header.m_UserFlags & (SURF_TRANSPARENT | SURF_ADDITIVE)) != 0;
+	const bool is_bpp32 = (source_bpp == BPP_32);
+	const bool is_bc_format = (format == Diligent::TEX_FORMAT_BC1_UNORM ||
+			format == Diligent::TEX_FORMAT_BC2_UNORM ||
+			format == Diligent::TEX_FORMAT_BC3_UNORM);
+	if (is_bc_format &&
+#if defined(__APPLE__)
+		true
+#else
+		!diligent_is_texture_format_supported(format)
+#endif
+		)
+	{
+		converted = diligent_convert_texture_to_bgra32(texture_data, mip_count, non_s3tc_offset);
+		if (!converted)
+		{
+			return nullptr;
+		}
+		texture_data = converted.get();
+		mip_count = diligent_get_mip_count(texture_data);
+		format = Diligent::TEX_FORMAT_BGRA8_UNORM;
+	}
+
+	if (format == Diligent::TEX_FORMAT_UNKNOWN && source_bpp == BPP_24)
+	{
+		converted = diligent_convert_texture_to_bgra32(texture_data, mip_count, 0);
+		if (!converted)
+		{
+			return nullptr;
+		}
+		texture_data = converted.get();
+		mip_count = diligent_get_mip_count(texture_data);
+		format = Diligent::TEX_FORMAT_BGRA8_UNORM;
+	}
+
+	if (is_bpp32 && !wants_alpha && !diligent_texture_has_visible_alpha(texture_data))
+	{
+		converted = diligent_clone_texture_data(texture_data, mip_count);
+		if (!converted)
+		{
+			return nullptr;
+		}
+		diligent_force_texture_alpha_opaque(converted.get());
+		texture_data = converted.get();
+	}
+
 	if (format == Diligent::TEX_FORMAT_UNKNOWN)
 	{
 		return nullptr;
@@ -8692,6 +9713,7 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 	auto* new_render_texture = new DiligentRenderTexture();
 	new_render_texture->texture_data = texture_data;
 	new_render_texture->format = texture_data->m_Header.GetBPPIdent();
+	new_render_texture->converted_texture_data = std::move(converted);
 
 	Diligent::TextureDesc desc;
 	desc.Name = "ltjs_shared_texture";
@@ -8715,7 +9737,12 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 
 		Diligent::TextureSubResData subresource;
 		subresource.pData = mip.m_Data;
-		subresource.Stride = static_cast<Diligent::Uint64>(mip.m_Pitch);
+		uint32 stride = static_cast<uint32>(mip.m_Pitch);
+		if (stride == 0 && IsFormatCompressed(texture_data->m_Header.GetBPPIdent()))
+		{
+			stride = diligent_calc_compressed_stride(texture_data->m_Header.GetBPPIdent(), mip.m_Width);
+		}
+		subresource.Stride = static_cast<Diligent::Uint64>(stride);
 		subresource.DepthStride = 0;
 		subresources.push_back(subresource);
 	}
@@ -8743,6 +9770,45 @@ Diligent::ITextureView* diligent_get_texture_view(SharedTexture* shared_texture,
 {
 	auto* render_texture = diligent_get_render_texture(shared_texture, texture_changed);
 	return render_texture ? render_texture->srv.RawPtr() : nullptr;
+}
+
+bool diligent_GetTextureDebugInfo_Internal(SharedTexture* texture, DiligentTextureDebugInfo& out_info)
+{
+	out_info = {};
+	if (!texture)
+	{
+		return false;
+	}
+
+	auto* render_texture = diligent_get_render_texture(texture, false);
+	if (!render_texture)
+	{
+		return false;
+	}
+
+	out_info.has_render_texture = true;
+	out_info.used_conversion = render_texture->converted_texture_data != nullptr;
+	out_info.width = render_texture->width;
+	out_info.height = render_texture->height;
+	if (render_texture->texture)
+	{
+		out_info.format = static_cast<uint32_t>(render_texture->texture->GetDesc().Format);
+	}
+	const TextureData* cpu_texture = render_texture->converted_texture_data
+		? render_texture->converted_texture_data.get()
+		: render_texture->texture_data;
+	if (cpu_texture)
+	{
+		const auto bpp = cpu_texture->m_Header.m_Extra[2] == 0
+			? BPP_32
+			: static_cast<BPPIdent>(cpu_texture->m_Header.m_Extra[2]);
+		if (bpp == BPP_32 && cpu_texture->m_Mips[0].m_Data)
+		{
+			out_info.has_cpu_pixel = true;
+			std::memcpy(&out_info.first_pixel, cpu_texture->m_Mips[0].m_Data, sizeof(uint32));
+		}
+	}
+	return true;
 }
 
 Diligent::RefCntAutoPtr<Diligent::IBuffer> diligent_create_buffer(
@@ -10351,6 +11417,11 @@ bool diligent_should_process_model(LTObject* object)
 		return false;
 	}
 
+	if (!g_CV_DrawModels.m_Val)
+	{
+		return false;
+	}
+
 	if ((object->m_Flags & FLAG_VISIBLE) == 0)
 	{
 		return false;
@@ -10362,6 +11433,16 @@ bool diligent_should_process_model(LTObject* object)
 	}
 
 	if (object->m_WTFrameCode == g_diligent_object_frame_code)
+	{
+		return false;
+	}
+
+	const bool translucent = object->IsTranslucent();
+	if (translucent && !g_CV_DrawTranslucentModels.m_Val)
+	{
+		return false;
+	}
+	if (!translucent && !g_CV_DrawSolidModels.m_Val)
 	{
 		return false;
 	}
@@ -10861,6 +11942,190 @@ void diligent_process_model_attachments(LTObject* object, uint32 depth)
 	}
 }
 
+void diligent_debug_add_model_skeleton(ModelInstance* instance, Model* model, const LTRGBColor& color)
+{
+	if (!instance || !model)
+	{
+		return;
+	}
+
+	const uint32 node_count = model->NumNodes();
+	for (uint32 node_index = 0; node_index < node_count; ++node_index)
+	{
+		ModelNode* node = model->GetNode(node_index);
+		if (!node)
+		{
+			continue;
+		}
+		const uint32 parent_index = node->GetParentNodeIndex();
+		if (parent_index == NODEPARENT_NONE || parent_index >= node_count)
+		{
+			continue;
+		}
+
+		LTMatrix node_transform;
+		LTMatrix parent_transform;
+		if (!diligent_get_model_transform(instance, node_index, node_transform) ||
+			!diligent_get_model_transform(instance, parent_index, parent_transform))
+		{
+			continue;
+		}
+
+		const LTVector node_pos(node_transform.m[0][3], node_transform.m[1][3], node_transform.m[2][3]);
+		const LTVector parent_pos(parent_transform.m[0][3], parent_transform.m[1][3], parent_transform.m[2][3]);
+		diligent_debug_add_line(parent_pos, node_pos, color);
+	}
+}
+
+void diligent_debug_add_model_boxes(ModelInstance* instance)
+{
+	if (!instance)
+	{
+		return;
+	}
+
+	const LTRGBColor box_color = diligent_make_debug_color(255, 64, 64);
+	diligent_debug_add_aabb(instance->m_Pos, instance->m_Dims, box_color);
+}
+
+void diligent_debug_add_model_obbs(ModelInstance* instance)
+{
+#if(MODEL_OBB)
+	if (!instance)
+	{
+		return;
+	}
+
+	if (!instance->IsCollisionObjectsEnabled())
+	{
+		instance->EnableCollisionObjects();
+	}
+
+	const uint32 count = instance->NumCollisionObjects();
+	if (count == 0)
+	{
+		return;
+	}
+
+	const LTRGBColor obb_color = diligent_make_debug_color(64, 255, 64);
+	for (uint32 i = 0; i < count; ++i)
+	{
+		const ModelOBB* obb = instance->GetCollisionObject(i);
+		if (!obb)
+		{
+			continue;
+		}
+		diligent_debug_add_obb(*obb, obb_color);
+	}
+#else
+	static_cast<void>(instance);
+#endif
+}
+
+void diligent_debug_add_model_vertex_normals(ModelInstance* instance, CDIModelDrawable* drawable)
+{
+	if (!instance || !drawable)
+	{
+		return;
+	}
+
+	const LTRGBColor color = diligent_make_debug_color(255, 0, 255);
+	if (drawable->GetType() == CRenderObject::eRigidMesh)
+	{
+		auto* mesh = static_cast<DiligentRigidMesh*>(drawable);
+		LTMatrix model_matrix;
+		diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_debug_add_vertex_normals(
+			mesh->GetLayout(),
+			mesh->GetVertexData(),
+			mesh->GetVertexCount(),
+			model_matrix,
+			color);
+	}
+	else if (drawable->GetType() == CRenderObject::eSkelMesh)
+	{
+		auto* mesh = static_cast<DiligentSkelMesh*>(drawable);
+		LTMatrix model_matrix;
+		model_matrix.Identity();
+		diligent_debug_add_vertex_normals(
+			mesh->GetLayout(),
+			mesh->GetVertexData(),
+			mesh->GetVertexCount(),
+			model_matrix,
+			color);
+	}
+	else if (drawable->GetType() == CRenderObject::eVAMesh)
+	{
+		auto* mesh = static_cast<DiligentVAMesh*>(drawable);
+		LTMatrix model_matrix;
+		diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_debug_add_vertex_normals(
+			mesh->GetLayout(),
+			mesh->GetVertexData(),
+			mesh->GetVertexCount(),
+			model_matrix,
+			color);
+	}
+}
+
+void diligent_debug_add_model_touching_lights(ModelInstance* instance)
+{
+	if (!instance)
+	{
+		return;
+	}
+
+	const float radius = instance->m_Dims.Mag();
+	for (uint32 i = 0; i < g_diligent_num_world_dynamic_lights; ++i)
+	{
+		const DynamicLight* light = g_diligent_world_dynamic_lights[i];
+		if (!light)
+		{
+			continue;
+		}
+
+		const LTVector delta = instance->m_Pos - light->m_Pos;
+		if (delta.Mag() <= (light->m_LightRadius + radius))
+		{
+			const LTRGBColor touch_color = diligent_make_debug_color(255, 255, 64);
+			diligent_debug_add_aabb(instance->m_Pos, instance->m_Dims, touch_color);
+			break;
+		}
+	}
+}
+
+void diligent_debug_add_model_info(ModelInstance* instance)
+{
+	if (!instance || !diligent_model_debug_enabled())
+	{
+		return;
+	}
+
+	Model* model = instance->GetModelDB();
+	if (!model)
+	{
+		return;
+	}
+
+	if (g_CV_ModelDebug_DrawBoxes.m_Val)
+	{
+		diligent_debug_add_model_boxes(instance);
+	}
+	if (g_CV_ModelDebug_DrawOBBS.m_Val)
+	{
+		diligent_debug_add_model_obbs(instance);
+	}
+	if (g_CV_ModelDebug_DrawSkeleton.m_Val)
+	{
+		const LTRGBColor skel_color = diligent_make_debug_color(64, 192, 255);
+		diligent_debug_add_model_skeleton(instance, model, skel_color);
+	}
+	if (g_CV_ModelDebug_DrawTouchingLights.m_Val)
+	{
+		diligent_debug_add_model_touching_lights(instance);
+	}
+}
+
 void diligent_process_model_object(LTObject* object)
 {
 	if (!diligent_should_process_model(object))
@@ -10869,6 +12134,7 @@ void diligent_process_model_object(LTObject* object)
 	}
 
 	object->m_WTFrameCode = g_diligent_object_frame_code;
+	diligent_debug_add_model_info(object->ToModel());
 	if (!g_diligent_shadow_mode && !g_diligent_glow_mode && g_CV_ModelShadow_Proj_Enable.m_Val)
 	{
 		ModelInstance* instance = object->ToModel();
@@ -11503,10 +12769,36 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	DiligentModelConstants constants;
 	diligent_store_matrix_from_lt(mvp, constants.mvp);
 	diligent_store_matrix_from_lt(model_matrix, constants.model);
-	constants.color[0] = static_cast<float>(instance->m_ColorR) / 255.0f;
-	constants.color[1] = static_cast<float>(instance->m_ColorG) / 255.0f;
-	constants.color[2] = static_cast<float>(instance->m_ColorB) / 255.0f;
+	LTVector object_color(
+		static_cast<float>(instance->m_ColorR),
+		static_cast<float>(instance->m_ColorG),
+		static_cast<float>(instance->m_ColorB));
+	LTVector light_add(0.0f, 0.0f, 0.0f);
+	ModelHookData hook_data{};
+	if (diligent_get_model_hook_data(instance, hook_data))
+	{
+		object_color = hook_data.m_ObjectColor;
+		light_add = hook_data.m_LightAdd;
+	}
+
+	if (!g_CV_LightModels.m_Val)
+	{
+		object_color.Init(255.0f, 255.0f, 255.0f);
+		light_add.Init(0.0f, 0.0f, 0.0f);
+	}
+
+	LTVector final_color = object_color + light_add;
+	final_color.x = LTCLAMP(final_color.x, 0.0f, 255.0f);
+	final_color.y = LTCLAMP(final_color.y, 0.0f, 255.0f);
+	final_color.z = LTCLAMP(final_color.z, 0.0f, 255.0f);
+	constants.color[0] = final_color.x / 255.0f;
+	constants.color[1] = final_color.y / 255.0f;
+	constants.color[2] = final_color.z / 255.0f;
 	constants.color[3] = static_cast<float>(instance->m_ColorA) / 255.0f;
+	constants.model_params[0] = g_CV_LightModels.m_Val != 0 ? 1.0f : 0.0f;
+	constants.model_params[1] = g_CV_ModelApplyAmbient.m_Val != 0 ? 1.0f : 0.0f;
+	constants.model_params[2] = g_CV_ModelApplySun.m_Val != 0 ? 1.0f : 0.0f;
+	constants.model_params[3] = 0.0f;
 	constants.camera_pos[0] = g_ViewParams.m_Pos.x;
 	constants.camera_pos[1] = g_ViewParams.m_Pos.y;
 	constants.camera_pos[2] = g_ViewParams.m_Pos.z;
@@ -11563,7 +12855,7 @@ bool diligent_draw_mesh_with_pipeline_for_target(
 		return false;
 	}
 
-	const bool uses_texture = textures[0] != nullptr;
+	const bool uses_texture = (g_diligent_shaders_enabled != 0) && (textures[0] != nullptr);
 	DiligentModelPipeline* pipeline = diligent_get_model_pipeline_for_target(
 		pass,
 		shader_pass,
@@ -11844,6 +13136,11 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 			continue;
 		}
 
+		if (g_CV_ModelDebug_DrawVertexNormals.m_Val)
+		{
+			diligent_debug_add_model_vertex_normals(instance, lod);
+		}
+
 	CRenderStyle* render_style = nullptr;
 	if (!instance->GetRenderStyle(piece->m_iRenderStyle, &render_style) || !render_style)
 	{
@@ -11903,7 +13200,23 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 			RSRenderPassShaders shader_pass{};
 			render_style->GetRenderPassShaders(pass_index, &shader_pass);
 
+			if (g_CV_WireframeModels.m_Val)
+			{
+				pass.FillMode = RENDERSTYLE_WIRE;
+			}
+			if (!g_CV_TextureModels.m_Val)
+			{
+				for (auto& stage : pass.TextureStages)
+				{
+					stage.TextureParam = RENDERSTYLE_NOTEXTURE;
+				}
+			}
+
 			DiligentTextureArray textures = diligent_resolve_textures(pass, piece_textures.data());
+			if (!g_CV_TextureModels.m_Val)
+			{
+				textures.fill(nullptr);
+			}
 
 			if (rigid_mesh)
 			{
@@ -11934,11 +13247,19 @@ bool diligent_draw_models(SceneDesc* desc)
 	{
 		return true;
 	}
+	if (!g_CV_DrawModels.m_Val)
+	{
+		return true;
+	}
+	if (diligent_model_debug_enabled())
+	{
+		diligent_debug_clear_lines();
+	}
 
 	g_diligent_shadow_queue.clear();
 	g_diligent_shadow_projection_queue.clear();
 	g_diligent_translucent_models.clear();
-	g_diligent_collect_translucent_models = g_CV_DrawSorted.m_Val != 0;
+	g_diligent_collect_translucent_models = (g_CV_DrawSorted.m_Val != 0) && (g_CV_DrawTranslucentModels.m_Val != 0);
 
 	if (desc->m_DrawMode == DRAWMODE_OBJECTLIST)
 	{
@@ -12439,6 +13760,10 @@ void diligent_collect_polygrids(SceneDesc* desc)
 bool diligent_draw_models_glow(SceneDesc* desc, const CRenderStyleMap& render_style_map)
 {
 	if (!desc)
+	{
+		return true;
+	}
+	if (!g_CV_DrawModels.m_Val)
 	{
 		return true;
 	}
@@ -13462,6 +14787,14 @@ if (!lt_InitViewFrustum(
 		return RENDER_ERROR;
 	}
 
+	if (diligent_model_debug_enabled())
+	{
+		if (!diligent_draw_debug_lines())
+		{
+			return RENDER_ERROR;
+		}
+	}
+
 	diligent_render_screen_glow(desc);
 
 	return RENDER_OK;
@@ -13952,6 +15285,7 @@ void diligent_Term(bool)
 	g_world_resources.pixel_shader_bump.Release();
 	g_world_resources.pixel_shader_volume_effect.Release();
 	g_world_resources.pixel_shader_shadow_project.Release();
+	g_world_resources.pixel_shader_debug.Release();
 	g_world_resources.constant_buffer.Release();
 	g_world_resources.shadow_project_constants.Release();
 	g_world_resources.vertex_buffer.Release();
@@ -14050,6 +15384,369 @@ void diligent_SetOutputTargets(Diligent::ITextureView* render_target, Diligent::
 	g_output_depth_target_override = depth_target;
 }
 
+bool diligent_GetTextureDebugInfo(SharedTexture* texture, DiligentTextureDebugInfo& out_info)
+{
+	return diligent_GetTextureDebugInfo_Internal(texture, out_info);
+}
+
+bool diligent_GetWorldColorStats(DiligentWorldColorStats& out_stats)
+{
+	out_stats = {};
+	out_stats.min_r = 255;
+	out_stats.min_g = 255;
+	out_stats.min_b = 255;
+	out_stats.min_a = 255;
+
+	if (!g_render_world)
+	{
+		return false;
+	}
+
+	uint64_t total = 0;
+	uint64_t zero = 0;
+
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		const auto& verts = block_ptr->vertices;
+		for (const auto& vert : verts)
+		{
+			++total;
+			const uint32 color = vert.color;
+			if (color == 0)
+			{
+				++zero;
+			}
+			const uint32 a = (color >> 24) & 0xFF;
+			const uint32 r = (color >> 16) & 0xFF;
+			const uint32 g = (color >> 8) & 0xFF;
+			const uint32 b = color & 0xFF;
+			out_stats.min_r = LTMIN(out_stats.min_r, r);
+			out_stats.min_g = LTMIN(out_stats.min_g, g);
+			out_stats.min_b = LTMIN(out_stats.min_b, b);
+			out_stats.min_a = LTMIN(out_stats.min_a, a);
+			out_stats.max_r = LTMAX(out_stats.max_r, r);
+			out_stats.max_g = LTMAX(out_stats.max_g, g);
+			out_stats.max_b = LTMAX(out_stats.max_b, b);
+			out_stats.max_a = LTMAX(out_stats.max_a, a);
+		}
+	}
+
+	out_stats.vertex_count = total;
+	out_stats.zero_color_count = zero;
+	return total > 0;
+}
+
+void diligent_SetForceWhiteVertexColor(int enabled)
+{
+	g_diligent_force_white_vertex_color = enabled ? 1 : 0;
+}
+
+int diligent_GetForceWhiteVertexColor()
+{
+	return g_diligent_force_white_vertex_color;
+}
+
+bool diligent_GetWorldTextureStats(DiligentWorldTextureStats& out_stats)
+{
+	out_stats = {};
+
+	if (!g_render_world)
+	{
+		return false;
+	}
+
+	uint64_t sections = 0;
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+
+		for (const auto& section_ptr : block_ptr->sections)
+		{
+			if (!section_ptr)
+			{
+				continue;
+			}
+
+			++sections;
+			const auto& section = *section_ptr;
+			if (section.textures[0])
+			{
+				++out_stats.texture0_present;
+				if (diligent_get_texture_view(section.textures[0], false))
+				{
+					++out_stats.texture0_view;
+				}
+			}
+			if (section.textures[1])
+			{
+				++out_stats.texture1_present;
+				if (diligent_get_texture_view(section.textures[1], false))
+				{
+					++out_stats.texture1_view;
+				}
+			}
+			if (section.lightmap_size != 0 && section.lightmap_width != 0 && section.lightmap_height != 0)
+			{
+				++out_stats.lightmap_present;
+				if (diligent_get_lightmap_view(const_cast<DiligentRBSection&>(section)))
+				{
+					++out_stats.lightmap_view;
+				}
+			}
+		}
+	}
+
+	out_stats.section_count = sections;
+	return sections > 0;
+}
+
+bool diligent_GetFogDebugInfo(DiligentFogDebugInfo& out_info)
+{
+	out_info = {};
+	out_info.enabled = g_CV_FogEnable.m_Val;
+	out_info.near_z = g_CV_FogNearZ.m_Val;
+	out_info.far_z = g_CV_FogFarZ.m_Val;
+	out_info.color_r = g_CV_FogColorR.m_Val;
+	out_info.color_g = g_CV_FogColorG.m_Val;
+	out_info.color_b = g_CV_FogColorB.m_Val;
+	return true;
+}
+
+void diligent_SetFogEnabled(int enabled)
+{
+	g_CV_FogEnable.m_Val = enabled ? 1 : 0;
+}
+
+void diligent_SetFogRange(float near_z, float far_z)
+{
+	g_CV_FogNearZ.m_Val = near_z;
+	g_CV_FogFarZ.m_Val = far_z;
+}
+
+void diligent_InvalidateWorldGeometry()
+{
+	if (!g_render_world)
+	{
+		return;
+	}
+
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		block_ptr->vertex_buffer.Release();
+		block_ptr->index_buffer.Release();
+	}
+}
+
+void diligent_SetForceTexturedWorld(int enabled)
+{
+	g_diligent_force_textured_world = enabled ? 1 : 0;
+}
+
+int diligent_GetForceTexturedWorld()
+{
+	return g_diligent_force_textured_world;
+}
+
+void diligent_SetWorldUvDebug(int enabled)
+{
+	g_diligent_world_uv_debug = enabled ? 1 : 0;
+}
+
+int diligent_GetWorldUvDebug()
+{
+	return g_diligent_world_uv_debug;
+}
+
+void diligent_SetWorldPsDebug(int enabled)
+{
+	g_diligent_world_ps_debug = enabled ? 1 : 0;
+	g_world_pipelines.pipelines.clear();
+}
+
+int diligent_GetWorldPsDebug()
+{
+	return g_diligent_world_ps_debug;
+}
+
+void diligent_ResetWorldShaders()
+{
+	g_world_pipelines.pipelines.clear();
+	g_world_resources.vertex_shader.Release();
+	g_world_resources.pixel_shader_textured.Release();
+	g_world_resources.pixel_shader_glow.Release();
+	g_world_resources.pixel_shader_lightmap.Release();
+	g_world_resources.pixel_shader_lightmap_only.Release();
+	g_world_resources.pixel_shader_dual.Release();
+	g_world_resources.pixel_shader_lightmap_dual.Release();
+	g_world_resources.pixel_shader_solid.Release();
+	g_world_resources.pixel_shader_dynamic_light.Release();
+	g_world_resources.pixel_shader_bump.Release();
+	g_world_resources.pixel_shader_volume_effect.Release();
+	g_world_resources.pixel_shader_shadow_project.Release();
+	g_world_resources.pixel_shader_debug.Release();
+}
+
+void diligent_SetWorldTexDebugMode(int mode)
+{
+	g_diligent_world_tex_debug_mode = LTMAX(0, LTMIN(mode, 4));
+}
+
+int diligent_GetWorldTexDebugMode()
+{
+	return g_diligent_world_tex_debug_mode;
+}
+
+void diligent_SetWorldTexelUV(int enabled)
+{
+	g_diligent_world_texel_uv = enabled ? 1 : 0;
+}
+
+int diligent_GetWorldTexelUV()
+{
+	return g_diligent_world_texel_uv;
+}
+
+void diligent_SetWorldUseBaseVertex(int enabled)
+{
+	g_diligent_world_use_base_vertex = enabled ? 1 : 0;
+}
+
+int diligent_GetWorldUseBaseVertex()
+{
+	return g_diligent_world_use_base_vertex;
+}
+
+bool diligent_GetWorldUvStats(DiligentWorldUvStats& out_stats)
+{
+	out_stats = {};
+
+	if (!g_render_world)
+	{
+		return false;
+	}
+
+	bool has_range = false;
+	float min_u0 = 0.0f;
+	float min_v0 = 0.0f;
+	float max_u0 = 0.0f;
+	float max_v0 = 0.0f;
+	float min_u1 = 0.0f;
+	float min_v1 = 0.0f;
+	float max_u1 = 0.0f;
+	float max_v1 = 0.0f;
+
+	uint64_t count = 0;
+	uint64_t nan0 = 0;
+	uint64_t nan1 = 0;
+
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		const auto& verts = block_ptr->vertices;
+		for (const auto& vert : verts)
+		{
+			++count;
+			const float u0 = vert.u0;
+			const float v0 = vert.v0;
+			const float u1 = vert.u1;
+			const float v1 = vert.v1;
+
+			if (std::isnan(u0) || std::isnan(v0))
+			{
+				++nan0;
+			}
+			if (std::isnan(u1) || std::isnan(v1))
+			{
+				++nan1;
+			}
+
+			if (!has_range)
+			{
+				min_u0 = max_u0 = u0;
+				min_v0 = max_v0 = v0;
+				min_u1 = max_u1 = u1;
+				min_v1 = max_v1 = v1;
+				has_range = true;
+			}
+			else
+			{
+				min_u0 = LTMIN(min_u0, u0);
+				min_v0 = LTMIN(min_v0, v0);
+				max_u0 = LTMAX(max_u0, u0);
+				max_v0 = LTMAX(max_v0, v0);
+				min_u1 = LTMIN(min_u1, u1);
+				min_v1 = LTMIN(min_v1, v1);
+				max_u1 = LTMAX(max_u1, u1);
+				max_v1 = LTMAX(max_v1, v1);
+			}
+		}
+	}
+
+	if (!has_range)
+	{
+		return false;
+	}
+
+	out_stats.vertex_count = count;
+	out_stats.nan_uv0 = nan0;
+	out_stats.nan_uv1 = nan1;
+	out_stats.min_u0 = min_u0;
+	out_stats.min_v0 = min_v0;
+	out_stats.max_u0 = max_u0;
+	out_stats.max_v0 = max_v0;
+	out_stats.min_u1 = min_u1;
+	out_stats.min_v1 = min_v1;
+	out_stats.max_u1 = max_u1;
+	out_stats.max_v1 = max_v1;
+	out_stats.has_range = true;
+	return true;
+}
+
+void diligent_ResetWorldPipelineStats()
+{
+	g_diligent_pipeline_stats = {};
+}
+
+bool diligent_GetWorldPipelineStats(DiligentWorldPipelineStats& out_stats)
+{
+	out_stats = g_diligent_pipeline_stats;
+	return true;
+}
+
+void diligent_SetWorldOffset(const LTVector& offset)
+{
+	g_diligent_world_offset = offset;
+}
+
+const LTVector& diligent_GetWorldOffset()
+{
+	return g_diligent_world_offset;
+}
+
+void diligent_SetShadersEnabled(int enabled)
+{
+	g_diligent_shaders_enabled = enabled ? 1 : 0;
+}
+
+int diligent_GetShadersEnabled()
+{
+	return g_diligent_shaders_enabled;
+}
+
 Diligent::ITextureView* diligent_get_drawprim_texture_view(SharedTexture* shared_texture, bool texture_changed)
 {
 	return diligent_get_texture_view(shared_texture, texture_changed);
@@ -14122,4 +15819,9 @@ void rdll_RenderDLLSetup(RenderStruct* render_struct)
 	render_struct->AddGlowRenderStyleMapping = diligent_AddGlowRenderStyleMapping;
 	render_struct->SetGlowDefaultRenderStyle = diligent_SetGlowDefaultRenderStyle;
 	render_struct->SetNoGlowRenderStyle = diligent_SetNoGlowRenderStyle;
+}
+
+bool diligent_TestConvertTextureToBgra32(const TextureData* source, uint32 mip_count, TextureData*& out_converted)
+{
+	return diligent_TestConvertTextureToBgra32_Internal(source, mip_count, out_converted);
 }

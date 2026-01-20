@@ -186,7 +186,6 @@ void DrawSceneProperties(
 	TreeNode& node = nodes[selected_id];
 	NodeProperties& node_props = props[selected_id];
 	const bool empty_name = IsNameEmptyOrWhitespace(node.name);
-	const bool duplicate_name = HasDuplicateSiblingName(nodes, 0, selected_id, node.name);
 
 	ImGui::TextUnformatted("Scene Object");
 	ImGui::Separator();
@@ -194,10 +193,6 @@ void DrawSceneProperties(
 	if (empty_name)
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Name cannot be empty.");
-	}
-	if (duplicate_name)
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Name must be unique among siblings.");
 	}
 	ImGui::InputText("Type", &node_props.type);
 	ImGui::TextUnformatted("Path");
@@ -236,17 +231,21 @@ void DrawSceneProperties(
 		DrawEntityProperties(node_props);
 	}
 
-	if (!node_props.raw_properties.empty())
+	if (ImGui::CollapsingHeader("Raw Properties"))
 	{
-		if (ImGui::CollapsingHeader("Raw Properties"))
+		ImGui::BeginChild("RawProps", ImVec2(0.0f, 160.0f), true);
+		if (node_props.raw_properties.empty())
 		{
-			ImGui::BeginChild("RawProps", ImVec2(0.0f, 160.0f), true);
+			ImGui::TextUnformatted("No raw properties available.");
+		}
+		else
+		{
 			for (const auto& entry : node_props.raw_properties)
 			{
 				ImGui::Text("%s: %s", entry.first.c_str(), entry.second.c_str());
 			}
-			ImGui::EndChild();
 		}
+		ImGui::EndChild();
 	}
 }
 } // namespace

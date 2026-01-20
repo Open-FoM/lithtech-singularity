@@ -38,6 +38,9 @@ void ResetViewportPanel(ViewportPanelState& state, const ImVec2& size)
 	state.target[0] = 0.0f;
 	state.target[1] = 0.0f;
 	state.target[2] = 0.0f;
+	state.grid_origin[0] = 0.0f;
+	state.grid_origin[1] = 0.0f;
+	state.grid_origin[2] = 0.0f;
 	SyncFlyFromOrbit(state);
 	state.initialized = true;
 }

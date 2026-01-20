@@ -294,8 +294,14 @@ void DrawTreeNodes(
 	const std::string* project_root,
 	const std::vector<NodeProperties>* props,
 	ProjectContextAction* project_action,
-	UndoStack* undo_stack)
+	UndoStack* undo_stack,
+	TreeNodeFilter node_filter,
+	void* node_filter_user)
 {
+	if (node_filter && !node_filter(node_id, nodes, props, node_filter_user))
+	{
+		return;
+	}
 	if (!NodeMatchesFilter(nodes, node_id, filter))
 	{
 		return;
@@ -456,7 +462,9 @@ void DrawTreeNodes(
 				project_root,
 				props,
 				project_action,
-				undo_stack);
+				undo_stack,
+				node_filter,
+				node_filter_user);
 		}
 		ImGui::TreePop();
 	}

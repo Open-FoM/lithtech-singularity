@@ -5,8 +5,10 @@
 #include "ltjs_main_window_descriptor.h"
 
 #include "render.h"
+#include "dedit2_concommand.h"
 #include "world_shared_bsp.h"
 #include "ltvector.h"
+#include "diligent_render.h"
 
 #include <SDL3/SDL.h>
 
@@ -208,6 +210,39 @@ void ShutdownEngineRenderer(EngineRenderContext& ctx)
 	ctx.render_struct = nullptr;
 	ctx.world_loaded = false;
 	g_texture_cache = nullptr;
+	TermClientFileMgr();
+}
+
+std::vector<std::string> BuildFileMgrTrees(const std::string& project_root, const std::string& world_path)
+{
+	std::vector<std::string> roots;
+	if (!project_root.empty())
+	{
+		const std::filesystem::path root(project_root);
+		roots.push_back(root.string());
+		roots.push_back((root / "Rez").string());
+		roots.push_back((root / "Resources").string());
+		roots.push_back((root / "Worlds").string());
+		roots.push_back((root / "Resources" / "Rez").string());
+		roots.push_back((root / "Resources" / "Worlds").string());
+	}
+
+	if (!world_path.empty())
+	{
+		const std::filesystem::path world_dir = std::filesystem::path(world_path).parent_path();
+		if (!world_dir.empty())
+		{
+			roots.push_back(world_dir.string());
+			const std::filesystem::path world_parent = world_dir.parent_path();
+			if (!world_parent.empty())
+			{
+				roots.push_back(world_parent.string());
+				roots.push_back((world_parent / "Rez").string());
+			}
+		}
+	}
+
+	return roots;
 }
 
 void SetEngineProjectRoot(EngineRenderContext& ctx, const std::string& root)
@@ -215,14 +250,7 @@ void SetEngineProjectRoot(EngineRenderContext& ctx, const std::string& root)
 	ctx.project_root = root;
 	ctx.textures.Clear();
 
-	std::vector<std::string> roots;
-	if (!root.empty())
-	{
-		roots.push_back(root);
-		roots.push_back((std::filesystem::path(root) / "Rez").string());
-		roots.push_back((std::filesystem::path(root) / "Worlds").string());
-	}
-	ctx.textures.SetSearchRoots(roots);
+	SetClientFileMgrTrees(BuildFileMgrTrees(root, {}));
 }
 
 TextureCache* GetEngineTextureCache()
@@ -236,6 +264,16 @@ bool LoadRenderWorld(EngineRenderContext& ctx, const std::string& world_path, st
 	{
 		error = "Renderer not initialized.";
 		return false;
+	}
+
+	diligent_SetWorldOffset(LTVector(0.0f, 0.0f, 0.0f));
+
+	const auto trees = BuildFileMgrTrees(ctx.project_root, world_path);
+	SetClientFileMgrTrees(trees);
+	DEdit2_Log("File manager trees:");
+	for (const auto& root : trees)
+	{
+		DEdit2_Log("  %s", root.c_str());
 	}
 
 	ILTStream* stream = OpenFileStream(world_path);
@@ -267,6 +305,39 @@ bool LoadRenderWorld(EngineRenderContext& ctx, const std::string& world_path, st
 		stream->Release();
 		return false;
 	}
+
+	uint32 info_len = 0;
+	stream->Read(&info_len, sizeof(info_len));
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		error = "World header invalid or unsupported.";
+		stream->Release();
+		return false;
+	}
+
+	if (info_len > 0)
+	{
+		const uint32 skip_to = stream->GetPos() + info_len;
+		if (stream->SeekTo(skip_to) != LT_OK)
+		{
+			error = "World header invalid or unsupported.";
+			stream->Release();
+			return false;
+		}
+	}
+
+	LTVector world_min{};
+	LTVector world_max{};
+	LTVector world_offset{};
+	*stream >> world_min >> world_max >> world_offset;
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		error = "World header invalid or unsupported.";
+		stream->Release();
+		return false;
+	}
+
+	diligent_SetWorldOffset(world_offset);
 
 	if (stream->SeekTo(render_pos) != LT_OK)
 	{
