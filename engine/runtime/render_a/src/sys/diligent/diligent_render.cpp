@@ -3636,17 +3636,17 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		sampler_desc[0].SamplerOrTextureName = "g_Texture0";
+	sampler_desc[0].SamplerOrTextureName = "g_Texture0_sampler";
 	sampler_desc[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[1].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		sampler_desc[1].SamplerOrTextureName = "g_Texture1";
+	sampler_desc[1].SamplerOrTextureName = "g_Texture1_sampler";
 	sampler_desc[2].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[2].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		sampler_desc[2].SamplerOrTextureName = "g_Texture2";
+	sampler_desc[2].SamplerOrTextureName = "g_Texture2_sampler";
 
 	if (mode == kWorldPipelineVolumeEffect)
 	{
@@ -3702,7 +3702,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		sampler_desc[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 		sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
-				sampler_desc[0].SamplerOrTextureName = "g_ShadowTexture";
+			sampler_desc[0].SamplerOrTextureName = "g_ShadowTexture_sampler";
 		pipeline_info.PSODesc.ResourceLayout.Variables = variables + 3;
 		pipeline_info.PSODesc.ResourceLayout.NumVariables = 1u;
 		pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = sampler_desc;

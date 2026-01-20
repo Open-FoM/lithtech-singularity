@@ -409,7 +409,9 @@ bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height
 	color_desc.Height = height;
 	color_desc.MipLevels = 1;
 	color_desc.ArraySize = 1;
-	color_desc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+	color_desc.Format = ctx.engine.swapchain
+		? ctx.engine.swapchain->GetDesc().ColorBufferFormat
+		: Diligent::TEX_FORMAT_RGBA8_UNORM;
 	color_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 
 	ctx.engine.device->CreateTexture(color_desc, nullptr, &ctx.viewport.color);
