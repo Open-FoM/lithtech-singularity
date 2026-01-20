@@ -13,6 +13,7 @@ target_compile_definitions (
 		LTJS_DILIGENT_RENDER
 		LTJS_USE_DILIGENT_RENDER
 		MODEL_SUPPORT_ABC
+		LTJS_USE_TANGENT_AND_BINORMAL
 )
 
 target_include_directories (

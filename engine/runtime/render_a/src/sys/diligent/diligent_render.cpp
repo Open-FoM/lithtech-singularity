@@ -56,6 +56,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -1581,6 +1582,29 @@ Diligent::ITextureView* diligent_get_lightmap_view(DiligentRBSection& section)
 	return section.lightmap_srv;
 }
 
+bool diligent_GetStreamRemaining(ILTStream* stream, uint32& out_remaining)
+{
+	if (!stream)
+	{
+		return false;
+	}
+
+	uint32 pos = 0;
+	uint32 len = 0;
+	if (stream->GetPos(&pos) != LT_OK || stream->GetLen(&len) != LT_OK)
+	{
+		return false;
+	}
+
+	if (len < pos)
+	{
+		return false;
+	}
+
+	out_remaining = len - pos;
+	return true;
+}
+
 bool DiligentRenderBlock::Load(ILTStream* stream)
 {
 	if (!stream)
@@ -1667,6 +1691,16 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 
 	uint32 vertex_count = 0;
 	*stream >> vertex_count;
+	uint32 remaining = 0;
+	if (diligent_GetStreamRemaining(stream, remaining))
+	{
+		const uint64 max_vertices = remaining / sizeof(DiligentRBVertex);
+		if (vertex_count > max_vertices)
+		{
+			dsi_ConsolePrint("Diligent: invalid vertex count %u (remaining=%u).", vertex_count, remaining);
+			return false;
+		}
+	}
 	vertices.clear();
 	vertices.resize(vertex_count);
 	if (!vertices.empty())
@@ -1676,6 +1710,21 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 
 	uint32 tri_count = 0;
 	*stream >> tri_count;
+	if (tri_count > (std::numeric_limits<uint32>::max() / 3))
+	{
+		dsi_ConsolePrint("Diligent: invalid triangle count %u.", tri_count);
+		return false;
+	}
+	if (diligent_GetStreamRemaining(stream, remaining))
+	{
+		const uint64 bytes_per_tri = sizeof(uint32) * 4;
+		const uint64 max_tris = bytes_per_tri ? (remaining / bytes_per_tri) : 0;
+		if (tri_count > max_tris)
+		{
+			dsi_ConsolePrint("Diligent: invalid triangle count %u (remaining=%u).", tri_count, remaining);
+			return false;
+		}
+	}
 	indices.clear();
 	indices.resize(tri_count * 3);
 	if (!indices.empty())

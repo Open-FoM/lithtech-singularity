@@ -108,6 +108,7 @@ target_compile_definitions (
 	${PROJECT_NAME}
 	PRIVATE
 		LTJS_USE_DILIGENT_RENDER
+		LTJS_USE_TANGENT_AND_BINORMAL
 )
 
 set_target_properties (

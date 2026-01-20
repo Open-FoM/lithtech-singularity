@@ -104,7 +104,8 @@ void UpdateViewportControls(ViewportPanelState& state, const ImVec2& origin, con
 		const float up[3] = {0.0f, 1.0f, 0.0f};
 
 		float move[3] = {0.0f, 0.0f, 0.0f};
-		if (!io.WantCaptureKeyboard)
+		const bool allow_keyboard = !io.WantTextInput && !ImGui::IsAnyItemActive();
+		if (allow_keyboard)
 		{
 			if (ImGui::IsKeyDown(ImGuiKey_W))
 			{

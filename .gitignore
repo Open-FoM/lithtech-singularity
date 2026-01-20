@@ -23,3 +23,4 @@ ipch/
 *.vcxproj.user
 *.VC.db
 *.VC.VC.opendb
+.DS_Store
