@@ -4993,7 +4993,10 @@ bool diligent_draw_render_blocks_with_constants(
 					}
 					else if (lightmap_view)
 					{
-						mode = kWorldPipelineLightmapOnly;
+						// Skip: kPcShaderLightmapTexture expects a texture, but none is available.
+						// Rendering lightmap-only would overwrite properly textured sections.
+						// This handles LightAnim placeholder textures and any other missing textures.
+						mode = kWorldPipelineSkip;
 					}
 					else
 					{
@@ -5033,7 +5036,8 @@ bool diligent_draw_render_blocks_with_constants(
 					}
 					else if (lightmap_view)
 					{
-						mode = kWorldPipelineLightmapOnly;
+						// Skip: kPcShaderLightmapDualTexture expects textures, but none available.
+						mode = kWorldPipelineSkip;
 					}
 					else
 					{
@@ -9797,6 +9801,16 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 		texture_data = converted.get();
 		mip_count = diligent_get_mip_count(texture_data);
 		format = Diligent::TEX_FORMAT_BGRA8_UNORM;
+
+		// Fix #3: Check if decompressed BC texture has all-zero alpha
+		const bool bc_all_alpha_zero = !diligent_texture_has_visible_alpha(converted.get());
+		// Force alpha opaque if:
+		// 1. No alpha wanted (!wants_alpha), OR
+		// 2. All alpha is zero (texture would be invisible regardless of wants_alpha)
+		if (!wants_alpha || bc_all_alpha_zero)
+		{
+			diligent_force_texture_alpha_opaque(converted.get());
+		}
 	}
 
 	if (format == Diligent::TEX_FORMAT_UNKNOWN && source_bpp == BPP_24)
@@ -9811,15 +9825,25 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 		format = Diligent::TEX_FORMAT_BGRA8_UNORM;
 	}
 
-	if (is_bpp32 && !wants_alpha && !diligent_texture_has_visible_alpha(texture_data))
+	// Fix #4: Handle BPP_32 textures with all-zero alpha
+	if (is_bpp32 && !converted)
 	{
-		converted = diligent_clone_texture_data(texture_data, mip_count);
-		if (!converted)
+		// Check if all alpha is zero - texture would be invisible
+		const bool all_alpha_zero = !diligent_texture_has_visible_alpha(texture_data);
+
+		// Force alpha opaque if:
+		// 1. No alpha wanted (!wants_alpha), OR
+		// 2. All alpha is zero (texture would be invisible regardless of wants_alpha)
+		if (!wants_alpha || all_alpha_zero)
 		{
-			return nullptr;
+			converted = diligent_clone_texture_data(texture_data, mip_count);
+			if (!converted)
+			{
+				return nullptr;
+			}
+			diligent_force_texture_alpha_opaque(converted.get());
+			texture_data = converted.get();
 		}
-		diligent_force_texture_alpha_opaque(converted.get());
-		texture_data = converted.get();
 	}
 
 	if (format == Diligent::TEX_FORMAT_UNKNOWN)
@@ -9861,9 +9885,17 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 		Diligent::TextureSubResData subresource;
 		subresource.pData = mip.m_Data;
 		uint32 stride = static_cast<uint32>(mip.m_Pitch);
-		if (stride == 0 && IsFormatCompressed(texture_data->m_Header.GetBPPIdent()))
+		if (stride == 0)
 		{
-			stride = diligent_calc_compressed_stride(texture_data->m_Header.GetBPPIdent(), mip.m_Width);
+			if (IsFormatCompressed(texture_data->m_Header.GetBPPIdent()))
+			{
+				stride = diligent_calc_compressed_stride(texture_data->m_Header.GetBPPIdent(), mip.m_Width);
+			}
+			else
+			{
+				// Uncompressed RGBA8/BGRA8: 4 bytes per pixel
+				stride = mip.m_Width * 4;
+			}
 		}
 		subresource.Stride = static_cast<Diligent::Uint64>(stride);
 		subresource.DepthStride = 0;

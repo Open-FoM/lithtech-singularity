@@ -1,4 +1,5 @@
 #include "engine_render.h"
+#include "diligent_render.h"
 
 #include "lt_stream.h"
 
@@ -163,9 +164,6 @@ bool InitEngineRenderer(SDL_Window* window, void* native_handle, EngineRenderCon
 		error = "Renderer init failed: renderer returned error.";
 		return false;
 	}
-
-	diligent_SetWorldTexEffectsEnabled(1);
-	diligent_SetWorldUseImmutableSamplers(1);
 
 	ctx.render_struct->m_bInitted = true;
 	ctx.render_struct->m_bLoaded = true;
