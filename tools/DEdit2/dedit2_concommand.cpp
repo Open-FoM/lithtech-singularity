@@ -390,7 +390,7 @@ void CmdWorldPipelineStats(int, const char*[])
 		return;
 	}
 
-	DEdit2_Log("World pipelines: total=%llu skip=%llu solid=%llu tex=%llu lm=%llu lm_only=%llu dual=%llu lm_dual=%llu bump=%llu glow=%llu dyn=%llu vol=%llu shadow=%llu",
+	DEdit2_Log("World pipelines: total=%llu skip=%llu solid=%llu tex=%llu lm=%llu lm_only=%llu dual=%llu lm_dual=%llu bump=%llu glow=%llu dyn=%llu vol=%llu shadow=%llu flat=%llu normals=%llu",
 		static_cast<unsigned long long>(stats.total_sections),
 		static_cast<unsigned long long>(stats.mode_skip),
 		static_cast<unsigned long long>(stats.mode_solid),
@@ -403,7 +403,9 @@ void CmdWorldPipelineStats(int, const char*[])
 		static_cast<unsigned long long>(stats.mode_glow),
 		static_cast<unsigned long long>(stats.mode_dynamic_light),
 		static_cast<unsigned long long>(stats.mode_volume),
-		static_cast<unsigned long long>(stats.mode_shadow_project));
+		static_cast<unsigned long long>(stats.mode_shadow_project),
+		static_cast<unsigned long long>(stats.mode_flat),
+		static_cast<unsigned long long>(stats.mode_normals));
 }
 
 void CmdWorldPipelineReset(int, const char*[])

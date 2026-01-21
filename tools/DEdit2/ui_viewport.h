@@ -67,9 +67,11 @@ struct ViewportPanelState
 	bool render_draw_sky = true;
 	bool render_wireframe_world = false;
 	bool render_wireframe_models = false;
-	bool render_draw_flat = false;
+	int render_world_shading_mode = 0;
+	bool render_wireframe_overlay = false;
 	bool render_lightmap = true;
 	bool render_lightmaps_only = false;
+	bool render_fullbright = false;
 	bool render_draw_sorted = true;
 	bool render_draw_solid_models = true;
 	bool render_draw_translucent_models = true;
@@ -99,6 +101,15 @@ struct ViewportPanelState
 	float render_screen_glow_uv_scale = 0.75f;
 	int render_screen_glow_texture_size = 256;
 	int render_screen_glow_filter_size = 28;
+	bool render_ssao_enable = false;
+	float render_ssao_radius = 60.0f;
+	float render_ssao_bias = 2.0f;
+	float render_ssao_intensity = 1.0f;
+	float render_ssao_power = 1.25f;
+	int render_ssao_sample_count = 8;
+	int render_ssao_downscale = 2;
+	bool render_ssao_blur_enable = true;
+	float render_ssao_blur_radius = 1.0f;
 };
 
 void ResetViewportPanel(ViewportPanelState& state, const ImVec2& size);

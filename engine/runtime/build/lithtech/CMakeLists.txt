@@ -208,6 +208,8 @@ set (diligent_shader_sources
 	diligent_get_world_pixel_shader_volume_effect_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_volume_effect.hlsl
 	diligent_get_world_pixel_shader_lightmap_dual_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_lightmap_dual.hlsl
 	diligent_get_world_pixel_shader_solid_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_solid.hlsl
+	diligent_get_world_pixel_shader_flat_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_flat.hlsl
+	diligent_get_world_pixel_shader_normals_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_normals.hlsl
 	diligent_get_world_pixel_shader_dynamic_light_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_dynamic_light.hlsl
 	diligent_get_world_pixel_shader_shadow_project_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_shadow_project.hlsl
 	diligent_get_model_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/model_ps_textured.hlsl
@@ -232,6 +234,8 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_volume_effect.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_lightmap_dual.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_solid.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_flat.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_normals.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_dynamic_light.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/world_ps_shadow_project.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/../../render_a/src/sys/diligent/shaders/model_ps_textured.hlsl

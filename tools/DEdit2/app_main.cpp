@@ -887,7 +887,9 @@ void ApplySceneVisibilityToRenderer(
 
 	g_CV_Wireframe = viewport_state.render_wireframe_world ? 1 : 0;
 	g_CV_WireframeModels = viewport_state.render_wireframe_models ? 1 : 0;
-	g_CV_DrawFlat = viewport_state.render_draw_flat ? 1 : 0;
+	g_CV_WorldShadingMode = viewport_state.render_world_shading_mode;
+	g_CV_DrawFlat = (viewport_state.render_world_shading_mode == 1) ? 1 : 0;
+	g_CV_WireframeOverlay = viewport_state.render_wireframe_overlay ? 1 : 0;
 	{
 		const int new_fullbright = viewport_state.render_fullbright ? 1 : 0;
 		if (new_fullbright != g_CV_Fullbright.m_Val)
@@ -1825,7 +1827,9 @@ int main(int argc, char** argv)
 					{
 						ImGui::Checkbox("Wireframe World", &viewport_panel.render_wireframe_world);
 						ImGui::Checkbox("Wireframe Models", &viewport_panel.render_wireframe_models);
-						ImGui::Checkbox("Flat Shaded", &viewport_panel.render_draw_flat);
+						const char* shading_modes[] = {"Textured", "Flat", "Normals"};
+						ImGui::Combo("World Shading Mode", &viewport_panel.render_world_shading_mode, shading_modes, IM_ARRAYSIZE(shading_modes));
+						ImGui::Checkbox("Wireframe Overlay", &viewport_panel.render_wireframe_overlay);
 						ImGui::Checkbox("Fullbright", &viewport_panel.render_fullbright);
 						ImGui::Checkbox("Lightmap", &viewport_panel.render_lightmap);
 						ImGui::Checkbox("Lightmaps Only", &viewport_panel.render_lightmaps_only);

@@ -229,6 +229,8 @@ RCONVAR(g_CV_Wireframe, "Wireframe", int, 0);
 RCONVAR(g_CV_WireframeModels, "WireframeModels", int, 0);
 RCONVAR(g_CV_LightMap, "LightMap", int, 1);
 RCONVAR(g_CV_DrawFlat, "DrawFlat", int, 0);
+RCONVAR(g_CV_WorldShadingMode, "WorldShadingMode", int, 0);
+RCONVAR(g_CV_WireframeOverlay, "WireframeOverlay", int, 0);
 RCONVAR(g_CV_Fullbright, "Fullbright", int, 0);
 RCONVAR(g_CV_LightmapsOnly, "LightmapsOnly", int, 0);
 RCONVAR(g_CV_DrawSorted, "DrawSorted", int, 1);

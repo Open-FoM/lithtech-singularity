@@ -46,6 +46,9 @@ set (diligent_shader_sources
 	diligent_get_optimized_2d_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/optimized_2d_ps.hlsl
 	diligent_get_glow_blur_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/glow_blur_vs.hlsl
 	diligent_get_glow_blur_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/glow_blur_ps.hlsl
+	diligent_get_ssao_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_ps.hlsl
+	diligent_get_ssao_blur_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
+	diligent_get_ssao_composite_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	diligent_get_world_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	diligent_get_world_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	diligent_get_world_pixel_shader_glow_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
@@ -56,6 +59,8 @@ set (diligent_shader_sources
 	diligent_get_world_pixel_shader_volume_effect_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_volume_effect.hlsl
 	diligent_get_world_pixel_shader_lightmap_dual_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_lightmap_dual.hlsl
 	diligent_get_world_pixel_shader_solid_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_solid.hlsl
+	diligent_get_world_pixel_shader_flat_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_flat.hlsl
+	diligent_get_world_pixel_shader_normals_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_normals.hlsl
 	diligent_get_world_pixel_shader_dynamic_light_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_dynamic_light.hlsl
 	diligent_get_world_pixel_shader_shadow_project_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_shadow_project.hlsl
 	diligent_get_world_pixel_shader_debug_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_debug.hlsl
@@ -71,6 +76,9 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/optimized_2d_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/glow_blur_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/glow_blur_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
@@ -81,6 +89,8 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_volume_effect.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_lightmap_dual.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_solid.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_flat.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_normals.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_dynamic_light.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_shadow_project.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_debug.hlsl

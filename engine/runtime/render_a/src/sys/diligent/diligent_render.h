@@ -116,6 +116,8 @@ struct DiligentWorldPipelineStats
 	uint64_t mode_dynamic_light = 0;
 	uint64_t mode_volume = 0;
 	uint64_t mode_shadow_project = 0;
+	uint64_t mode_flat = 0;
+	uint64_t mode_normals = 0;
 };
 
 void diligent_ResetWorldPipelineStats();

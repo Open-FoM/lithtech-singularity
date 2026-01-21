@@ -391,6 +391,8 @@ struct DiligentWorldResources
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_dual;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_lightmap_dual;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_solid;
+	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_flat;
+	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_normals;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_dynamic_light;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_bump;
 	Diligent::RefCntAutoPtr<Diligent::IShader> pixel_shader_volume_effect;
@@ -1009,8 +1011,31 @@ enum DiligentWorldPipelineMode : uint8
 	kWorldPipelineDynamicLight = 7,
 	kWorldPipelineBump = 8,
 	kWorldPipelineVolumeEffect = 9,
-	kWorldPipelineShadowProject = 10
+	kWorldPipelineShadowProject = 10,
+	kWorldPipelineFlat = 11,
+	kWorldPipelineNormals = 12
 };
+
+enum DiligentWorldShadingMode : int
+{
+	kWorldShadingTextured = 0,
+	kWorldShadingFlat = 1,
+	kWorldShadingNormals = 2
+};
+
+int diligent_get_world_shading_mode()
+{
+	int mode = g_CV_WorldShadingMode.m_Val;
+	if (mode < kWorldShadingTextured || mode > kWorldShadingNormals)
+	{
+		mode = kWorldShadingTextured;
+	}
+	if (mode == kWorldShadingTextured && g_CV_DrawFlat.m_Val != 0)
+	{
+		mode = kWorldShadingFlat;
+	}
+	return mode;
+}
 
 struct DiligentTextureEffectStage
 {
@@ -3515,7 +3540,7 @@ Diligent::IShader* diligent_get_model_vertex_shader(const DiligentMeshLayout& la
 
 bool diligent_ensure_world_shaders()
 {
-	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug)
+	if (g_world_resources.vertex_shader && g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_flat && g_world_resources.pixel_shader_normals && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug)
 	{
 		return true;
 	}
@@ -3602,6 +3627,16 @@ bool diligent_ensure_world_shaders()
 		shader_info.Source = diligent_get_world_pixel_shader_solid_source();
 		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_solid);
 	}
+	if (!g_world_resources.pixel_shader_flat)
+	{
+		shader_info.Source = diligent_get_world_pixel_shader_flat_source();
+		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_flat);
+	}
+	if (!g_world_resources.pixel_shader_normals)
+	{
+		shader_info.Source = diligent_get_world_pixel_shader_normals_source();
+		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_normals);
+	}
 
 	if (!g_world_resources.pixel_shader_dynamic_light)
 	{
@@ -3621,19 +3656,20 @@ bool diligent_ensure_world_shaders()
 		g_render_device->CreateShader(shader_info, &g_world_resources.pixel_shader_debug);
 	}
 
-	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug;
+	return g_world_resources.pixel_shader_textured && g_world_resources.pixel_shader_glow && g_world_resources.pixel_shader_lightmap && g_world_resources.pixel_shader_lightmap_only && g_world_resources.pixel_shader_dual && g_world_resources.pixel_shader_lightmap_dual && g_world_resources.pixel_shader_solid && g_world_resources.pixel_shader_flat && g_world_resources.pixel_shader_normals && g_world_resources.pixel_shader_dynamic_light && g_world_resources.pixel_shader_bump && g_world_resources.pixel_shader_volume_effect && g_world_resources.pixel_shader_shadow_project && g_world_resources.pixel_shader_debug;
 }
 
 DiligentWorldPipeline* diligent_get_world_pipeline(
 	uint8 mode,
 	DiligentWorldBlendMode blend_mode,
-	DiligentWorldDepthMode depth_mode)
+	DiligentWorldDepthMode depth_mode,
+	bool wireframe)
 {
 	DiligentWorldPipelineKey key{
 		mode,
 		blend_mode,
 		depth_mode,
-		static_cast<uint8>(g_CV_Wireframe.m_Val != 0 ? 1 : 0)
+		static_cast<uint8>(wireframe ? 1 : 0)
 	};
 	auto it = g_world_pipelines.pipelines.find(key);
 	if (it != g_world_pipelines.pipelines.end())
@@ -3704,6 +3740,14 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	{
 		pipeline_info.PSODesc.Name = "ltjs_world_shadow_project";
 	}
+	else if (mode == kWorldPipelineFlat)
+	{
+		pipeline_info.PSODesc.Name = "ltjs_world_flat";
+	}
+	else if (mode == kWorldPipelineNormals)
+	{
+		pipeline_info.PSODesc.Name = "ltjs_world_normals";
+	}
 	else
 	{
 		pipeline_info.PSODesc.Name = "ltjs_world_unlit";
@@ -3728,7 +3772,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
 	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 	pipeline_info.GraphicsPipeline.RasterizerDesc.FillMode =
-		g_CV_Wireframe.m_Val != 0 ? Diligent::FILL_MODE_WIREFRAME : Diligent::FILL_MODE_SOLID;
+		wireframe ? Diligent::FILL_MODE_WIREFRAME : Diligent::FILL_MODE_SOLID;
 	if (mode == kWorldPipelineShadowProject && g_CV_ModelShadow_Proj_BackFaceCull.m_Val)
 	{
 		pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_BACK;
@@ -3815,6 +3859,14 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	else if (mode == kWorldPipelineShadowProject)
 	{
 		pipeline_info.pPS = g_world_resources.pixel_shader_shadow_project;
+	}
+	else if (mode == kWorldPipelineFlat)
+	{
+		pipeline_info.pPS = g_world_resources.pixel_shader_flat;
+	}
+	else if (mode == kWorldPipelineNormals)
+	{
+		pipeline_info.pPS = g_world_resources.pixel_shader_normals;
 	}
 	else
 	{
@@ -4528,7 +4580,16 @@ bool diligent_draw_world_immediate(
 	{
 		mode = kWorldPipelineTextured;
 	}
-	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
+	const int shading_mode = diligent_get_world_shading_mode();
+	if (shading_mode == kWorldShadingFlat)
+	{
+		mode = kWorldPipelineFlat;
+	}
+	else if (shading_mode == kWorldShadingNormals)
+	{
+		mode = kWorldPipelineNormals;
+	}
+	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode, g_CV_Wireframe.m_Val != 0);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 	{
 		return false;
@@ -4641,7 +4702,16 @@ bool diligent_draw_world_immediate_mode(
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	g_immediate_context->SetIndexBuffer(g_world_resources.index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
+	const int shading_mode = diligent_get_world_shading_mode();
+	if (shading_mode == kWorldShadingFlat)
+	{
+		mode = kWorldPipelineFlat;
+	}
+	else if (shading_mode == kWorldShadingNormals)
+	{
+		mode = kWorldPipelineNormals;
+	}
+	auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode, g_CV_Wireframe.m_Val != 0);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 	{
 		return false;
@@ -4930,6 +5000,9 @@ bool diligent_draw_render_blocks_with_constants(
 		return false;
 	}
 
+	const int shading_mode = diligent_get_world_shading_mode();
+	const bool wireframe_overlay = (g_CV_WireframeOverlay.m_Val != 0) && (g_CV_Wireframe.m_Val == 0);
+
 	auto* render_target = diligent_get_active_render_target();
 	auto* depth_target = diligent_get_active_depth_target();
 	g_immediate_context->SetRenderTargets(1, &render_target, depth_target, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -5078,9 +5151,16 @@ bool diligent_draw_render_blocks_with_constants(
 				mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
 			}
 
-			if (g_CV_DrawFlat.m_Val != 0)
+			if (mode != kWorldPipelineSkip)
 			{
-				mode = kWorldPipelineSolid;
+				if (shading_mode == kWorldShadingFlat)
+				{
+					mode = kWorldPipelineFlat;
+				}
+				else if (shading_mode == kWorldShadingNormals)
+				{
+					mode = kWorldPipelineNormals;
+				}
 			}
 
 			if (mode == kWorldPipelineSkip)
@@ -5125,11 +5205,17 @@ bool diligent_draw_render_blocks_with_constants(
 				case kWorldPipelineShadowProject:
 					++g_diligent_pipeline_stats.mode_shadow_project;
 					break;
+				case kWorldPipelineFlat:
+					++g_diligent_pipeline_stats.mode_flat;
+					break;
+				case kWorldPipelineNormals:
+					++g_diligent_pipeline_stats.mode_normals;
+					break;
 				default:
 					break;
 			}
 
-			auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode);
+			auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode, g_CV_Wireframe.m_Val != 0);
 			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 			{
 				continue;
@@ -5223,43 +5309,127 @@ bool diligent_draw_render_blocks_with_constants(
 		}
 	}
 
-	if (g_diligent_num_world_dynamic_lights == 0)
+	if (shading_mode == kWorldShadingTextured && g_diligent_num_world_dynamic_lights > 0)
 	{
-		return true;
+		auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, kWorldBlendSolid, kWorldDepthEnabled, g_CV_Wireframe.m_Val != 0);
+		if (light_pipeline && light_pipeline->pipeline_state && light_pipeline->srb)
+		{
+			for (uint32 light_index = 0; light_index < g_diligent_num_world_dynamic_lights; ++light_index)
+			{
+				const DynamicLight* light = g_diligent_world_dynamic_lights[light_index];
+				if (!light || light->m_LightRadius <= 0.0f)
+				{
+					continue;
+				}
+
+				DiligentWorldConstants light_constants = base_constants;
+				light_constants.dynamic_light_pos[0] = light->m_Pos.x;
+				light_constants.dynamic_light_pos[1] = light->m_Pos.y;
+				light_constants.dynamic_light_pos[2] = light->m_Pos.z;
+				light_constants.dynamic_light_pos[3] = light->m_LightRadius;
+				light_constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
+				light_constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
+				light_constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
+				light_constants.dynamic_light_color[3] = 1.0f;
+
+				void* light_mapped_constants = nullptr;
+				g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, light_mapped_constants);
+				if (!light_mapped_constants)
+				{
+					continue;
+				}
+				std::memcpy(light_mapped_constants, &light_constants, sizeof(light_constants));
+				g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
+
+				for (auto* block : blocks)
+				{
+					if (!block || block->vertices.empty() || block->indices.empty())
+					{
+						continue;
+					}
+
+					if (!block->EnsureGpuBuffers())
+					{
+						continue;
+					}
+
+					Diligent::IBuffer* buffers[] = {block->vertex_buffer};
+					Diligent::Uint64 offsets[] = {0};
+					g_immediate_context->SetVertexBuffers(
+						0,
+						1,
+						buffers,
+						offsets,
+						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+						Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+					g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+					g_immediate_context->SetPipelineState(light_pipeline->pipeline_state);
+					g_immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+					for (const auto& section_ptr : block->sections)
+					{
+						if (!section_ptr)
+						{
+							continue;
+						}
+
+						auto& section = *section_ptr;
+						if (section.fullbright)
+						{
+							continue;
+						}
+
+						bool can_light = false;
+						switch (static_cast<DiligentPCShaderType>(section.shader_code))
+						{
+							case kPcShaderGouraud:
+							case kPcShaderLightmap:
+							case kPcShaderLightmapTexture:
+							case kPcShaderDualTexture:
+							case kPcShaderLightmapDualTexture:
+								can_light = true;
+								break;
+							case kPcShaderSkypan:
+							case kPcShaderSkyPortal:
+							case kPcShaderOccluder:
+							case kPcShaderNone:
+							case kPcShaderUnknown:
+							default:
+								can_light = false;
+								break;
+						}
+
+						if (!can_light)
+						{
+							continue;
+						}
+
+						Diligent::DrawIndexedAttribs draw_attribs;
+						draw_attribs.NumIndices = section.tri_count * 3;
+						draw_attribs.IndexType = Diligent::VT_UINT16;
+						draw_attribs.FirstIndexLocation = section.start_index;
+						const bool use_base_vertex = g_diligent_world_use_base_vertex && block->use_base_vertex;
+						draw_attribs.BaseVertex = use_base_vertex
+							? static_cast<int32>(section.start_vertex)
+							: 0;
+						draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+						g_immediate_context->DrawIndexed(draw_attribs);
+					}
+				}
+			}
+		}
 	}
 
-auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, kWorldBlendSolid, kWorldDepthEnabled);
-	if (!light_pipeline || !light_pipeline->pipeline_state || !light_pipeline->srb)
+	if (wireframe_overlay)
 	{
-		return true;
-	}
-
-	for (uint32 light_index = 0; light_index < g_diligent_num_world_dynamic_lights; ++light_index)
-	{
-		const DynamicLight* light = g_diligent_world_dynamic_lights[light_index];
-		if (!light || light->m_LightRadius <= 0.0f)
+		void* overlay_constants = nullptr;
+		g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, overlay_constants);
+		if (overlay_constants)
 		{
-			continue;
+			std::memcpy(overlay_constants, &base_constants, sizeof(base_constants));
+			g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 		}
-
-		DiligentWorldConstants light_constants = base_constants;
-		light_constants.dynamic_light_pos[0] = light->m_Pos.x;
-		light_constants.dynamic_light_pos[1] = light->m_Pos.y;
-		light_constants.dynamic_light_pos[2] = light->m_Pos.z;
-		light_constants.dynamic_light_pos[3] = light->m_LightRadius;
-		light_constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
-		light_constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
-		light_constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
-		light_constants.dynamic_light_color[3] = 1.0f;
-
-		void* light_mapped_constants = nullptr;
-		g_immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, light_mapped_constants);
-		if (!light_mapped_constants)
-		{
-			continue;
-		}
-		std::memcpy(light_mapped_constants, &light_constants, sizeof(light_constants));
-		g_immediate_context->UnmapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE);
 
 		for (auto* block : blocks)
 		{
@@ -5284,8 +5454,14 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			g_immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-			g_immediate_context->SetPipelineState(light_pipeline->pipeline_state);
-			g_immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			auto* pipeline = diligent_get_world_pipeline(kWorldPipelineSolid, kWorldBlendAlpha, kWorldDepthEnabled, true);
+			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
+			{
+				continue;
+			}
+
+			g_immediate_context->SetPipelineState(pipeline->pipeline_state);
+			g_immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 			for (const auto& section_ptr : block->sections)
 			{
@@ -5295,12 +5471,7 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 				}
 
 				auto& section = *section_ptr;
-				if (section.fullbright)
-				{
-					continue;
-				}
-
-				bool can_light = false;
+				uint8 mode = kWorldPipelineSkip;
 				switch (static_cast<DiligentPCShaderType>(section.shader_code))
 				{
 					case kPcShaderGouraud:
@@ -5308,7 +5479,7 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 					case kPcShaderLightmapTexture:
 					case kPcShaderDualTexture:
 					case kPcShaderLightmapDualTexture:
-						can_light = true;
+						mode = kWorldPipelineSolid;
 						break;
 					case kPcShaderSkypan:
 					case kPcShaderSkyPortal:
@@ -5316,11 +5487,11 @@ auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, k
 					case kPcShaderNone:
 					case kPcShaderUnknown:
 					default:
-						can_light = false;
+						mode = kWorldPipelineSkip;
 						break;
 				}
 
-				if (!can_light)
+				if (mode == kWorldPipelineSkip)
 				{
 					continue;
 				}
@@ -7398,7 +7569,7 @@ bool diligent_begin_shadow_projection_pass(
 		return false;
 	}
 
-	auto* pipeline = diligent_get_world_pipeline(kWorldPipelineShadowProject, kWorldBlendMultiply, kWorldDepthEnabled);
+	auto* pipeline = diligent_get_world_pipeline(kWorldPipelineShadowProject, kWorldBlendMultiply, kWorldDepthEnabled, g_CV_Wireframe.m_Val != 0);
 	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 	{
 		return false;
@@ -8634,7 +8805,7 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			}
 
 			const uint8 mode = kWorldPipelineGlowTextured;
-			auto* pipeline = diligent_get_world_pipeline(mode, kWorldBlendSolid, kWorldDepthEnabled);
+			auto* pipeline = diligent_get_world_pipeline(mode, kWorldBlendSolid, kWorldDepthEnabled, g_CV_Wireframe.m_Val != 0);
 			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 			{
 				continue;
@@ -15448,6 +15619,8 @@ void diligent_Term(bool)
 	g_world_resources.pixel_shader_lightmap.Release();
 	g_world_resources.pixel_shader_lightmap_only.Release();
 	g_world_resources.pixel_shader_solid.Release();
+	g_world_resources.pixel_shader_flat.Release();
+	g_world_resources.pixel_shader_normals.Release();
 	g_world_resources.pixel_shader_dynamic_light.Release();
 	g_world_resources.pixel_shader_bump.Release();
 	g_world_resources.pixel_shader_volume_effect.Release();
@@ -15801,6 +15974,8 @@ void diligent_ResetWorldShaders()
 	g_world_resources.pixel_shader_dual.Release();
 	g_world_resources.pixel_shader_lightmap_dual.Release();
 	g_world_resources.pixel_shader_solid.Release();
+	g_world_resources.pixel_shader_flat.Release();
+	g_world_resources.pixel_shader_normals.Release();
 	g_world_resources.pixel_shader_dynamic_light.Release();
 	g_world_resources.pixel_shader_bump.Release();
 	g_world_resources.pixel_shader_volume_effect.Release();

@@ -3,6 +3,7 @@
 .ralph/
 .claude/
 build/
+bin/
 !engine/runtime/build/
 !engine/runtime/build/**
 cmake-build-*/
