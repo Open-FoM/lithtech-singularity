@@ -20,36 +20,18 @@ All commands below are registered in `tools/DEdit2/dedit2_concommand.cpp` and ca
 - `worlduvstats` -> `diligent_GetWorldUvStats`
 - `worldpipestats` -> `diligent_GetWorldPipelineStats`
 - `worldpipereset` -> `diligent_ResetWorldPipelineStats`
-- `worldshaderdump <0=textured|1=lightmap|2=lightmap_only|3=dual|4=lightmap_dual>` -> `diligent_DumpWorldShaderResources`
 - `worldtexdump [limit]` -> `diligent_DumpWorldTextureBindings`
-- `worldbinddump [section_index]` -> `diligent_RequestWorldBindDump` / `diligent_RequestWorldBindDumpForSection`
-- `worldsection <index>` -> `diligent_DumpWorldSectionInfo`
-- `worlddebugstate` -> `diligent_DumpWorldDebugState`
 - `worldshaderreset` -> `diligent_ResetWorldShaders`
-- `worldtexrefresh` -> `diligent_RefreshWorldTextures`
 
 ### World debug toggles
 - `worldforcewhite <0|1>` -> `diligent_SetForceWhiteVertexColor` + `diligent_InvalidateWorldGeometry`
 - `worlduvdebug <0|1>` -> `diligent_SetWorldUvDebug`
-- `worlduv1debug <0|1>` -> `diligent_SetWorldUv1Debug`
 - `worldtextureddebug <0|1>` -> alias of `worlduvdebug`
-- `worldbaseuv <0|1>` -> `diligent_SetWorldBaseUvDebug`
-- `worldfullbright <0|1>` -> `diligent_SetWorldFullbright`
-- `worldlightdebug <0|1|2|3>` -> `diligent_SetWorldLightDebugMode`
 - `worldtexdebug <0|1|2|3|4>` -> `diligent_SetWorldTexDebugMode`
 - `worldpsdebug <0|1|2>` -> `diligent_SetWorldPsDebug`
 - `worldtexeluv <0|1>` -> `diligent_SetWorldTexelUV`
-- `worldtexfx <0|1>` -> `diligent_SetWorldTexEffectsEnabled`
-- `worldimsamplers <0|1>` -> `diligent_SetWorldUseImmutableSamplers`
-- `worldcombsamplers <0|1>` -> `diligent_SetWorldUseCombinedSamplers`
 - `worldbasevertex <0|1>` -> `diligent_SetWorldUseBaseVertex`
-- `worldtexoverride <texture_name|off>` -> `diligent_SetWorldTextureOverride`
 - `worldforcetexture <0|1>` -> `diligent_SetForceTexturedWorld`
-- `worldforcewhitetex <0|1>` -> `diligent_SetWorldForceWhiteTexture`
-- `worldforcechecker <0|1>` -> `diligent_SetWorldForceCheckerTexture`
-- `worldforcelm <0|1>` -> `diligent_SetWorldForceNoLightmap`
-- `worldforcewhitelm <0|1>` -> `diligent_SetWorldForceWhiteLightmap`
-- `worldfallbackfullbright <0|1>` -> `diligent_SetWorldFallbackFullbright`
 
 ## Diligent Render Touchpoints
 These are the main areas in `engine/runtime/render_a/src/sys/diligent/diligent_render.cpp` where debug state touches the render path.
@@ -67,7 +49,6 @@ These are the main areas in `engine/runtime/render_a/src/sys/diligent/diligent_r
 - Per-section binding logic uses:
   - `g_diligent_world_force_white_texture`
   - `g_diligent_world_force_checker_texture`
-  - `g_diligent_world_texture_override`
   - `g_diligent_world_force_no_lightmap`
   - `g_diligent_world_force_white_lightmap`
   - `g_diligent_world_fallback_fullbright`
