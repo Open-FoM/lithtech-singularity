@@ -117,7 +117,6 @@ static bool g_diligent_shadow_mode = false;
 static ConVar<int> g_CV_ScreenGlow_DrawCanvases("ScreenGlow_DrawCanvases", 1);
 static ConVar<int> g_CV_ScreenGlowBlurMultiTap("ScreenGlowBlurMultiTap", 1);
 static ConVar<int> g_CV_ToneMapEnable("ToneMapEnable", 1);
-static int g_diligent_force_white_vertex_color = 0;
 static int g_diligent_force_textured_world = 0;
 static int g_diligent_world_uv_debug = 0;
 static DiligentWorldPipelineStats g_diligent_pipeline_stats{};
@@ -125,7 +124,6 @@ static int g_diligent_world_ps_debug = 0;
 static int g_diligent_world_tex_debug_mode = 0;
 static int g_diligent_world_texel_uv = 0;
 static int g_diligent_world_use_base_vertex = 1;
-static SharedTexture* g_diligent_world_texture_override = nullptr;
 
 struct DiligentSurface
 {
@@ -1779,7 +1777,24 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 		{
 			section.texture_effect = CTextureScriptMgr::GetSingleton().GetInstance(texture_effect);
 		}
+
+		// Filter out LightAnim placeholder sections - don't add to pipeline
+		if (texture_names[0][0] && strstr(texture_names[0], "LightAnim") != nullptr)
+		{
+			// Clean up texture ref counts
+			for (uint32 tex_index = 0; tex_index < DiligentRBSection::kNumTextures; ++tex_index)
+			{
+				if (section.textures[tex_index])
+				{
+					section.textures[tex_index]->SetRefCount(section.textures[tex_index]->GetRefCount() - 1);
+				}
+			}
+			sections.pop_back();
+		}
 	}
+
+	// Update section_count after filtering out LightAnim sections
+	section_count = static_cast<uint32>(sections.size());
 
 	uint32 vertex_count = 0;
 	*stream >> vertex_count;
@@ -2088,7 +2103,7 @@ bool DiligentRenderBlock::EnsureGpuBuffers()
 		dst.position[2] = src.position.z;
 
 		const uint32 color = src.color;
-		if (g_diligent_force_white_vertex_color)
+		if (g_CV_Fullbright)
 		{
 			dst.color[0] = 1.0f;
 			dst.color[1] = 1.0f;
@@ -4952,6 +4967,7 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			auto& section = *section_ptr;
+
 			Diligent::ITextureView* texture_view = nullptr;
 			Diligent::ITextureView* dual_texture_view = nullptr;
 			if (section.textures[0])
@@ -4962,11 +4978,6 @@ bool diligent_draw_render_blocks_with_constants(
 			{
 				dual_texture_view = diligent_get_texture_view(section.textures[1], false);
 			}
-			if (g_diligent_world_texture_override)
-			{
-				texture_view = diligent_get_texture_view(g_diligent_world_texture_override, false);
-			}
-
 			Diligent::ITextureView* lightmap_view = diligent_get_lightmap_view(section);
 			if (g_CV_LightMap.m_Val == 0)
 			{
@@ -4994,8 +5005,6 @@ bool diligent_draw_render_blocks_with_constants(
 					else if (lightmap_view)
 					{
 						// Skip: kPcShaderLightmapTexture expects a texture, but none is available.
-						// Rendering lightmap-only would overwrite properly textured sections.
-						// This handles LightAnim placeholder textures and any other missing textures.
 						mode = kWorldPipelineSkip;
 					}
 					else
@@ -15598,16 +15607,6 @@ bool diligent_GetWorldColorStats(DiligentWorldColorStats& out_stats)
 	return total > 0;
 }
 
-void diligent_SetForceWhiteVertexColor(int enabled)
-{
-	g_diligent_force_white_vertex_color = enabled ? 1 : 0;
-}
-
-int diligent_GetForceWhiteVertexColor()
-{
-	return g_diligent_force_white_vertex_color;
-}
-
 bool diligent_GetWorldTextureStats(DiligentWorldTextureStats& out_stats)
 {
 	out_stats = {};
@@ -15714,16 +15713,6 @@ void diligent_SetForceTexturedWorld(int enabled)
 int diligent_GetForceTexturedWorld()
 {
 	return g_diligent_force_textured_world;
-}
-
-void diligent_SetWorldTextureOverride(SharedTexture* texture)
-{
-	g_diligent_world_texture_override = texture;
-}
-
-SharedTexture* diligent_GetWorldTextureOverride()
-{
-	return g_diligent_world_texture_override;
 }
 
 void diligent_DumpWorldTextureBindings(uint32_t limit)

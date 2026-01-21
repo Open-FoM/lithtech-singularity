@@ -49,8 +49,6 @@ struct DiligentWorldColorStats
 };
 
 bool diligent_GetWorldColorStats(DiligentWorldColorStats& out_stats);
-void diligent_SetForceWhiteVertexColor(int enabled);
-int diligent_GetForceWhiteVertexColor();
 
 struct DiligentWorldTextureStats
 {
@@ -81,8 +79,6 @@ void diligent_SetFogRange(float near_z, float far_z);
 void diligent_InvalidateWorldGeometry();
 void diligent_SetForceTexturedWorld(int enabled);
 int diligent_GetForceTexturedWorld();
-void diligent_SetWorldTextureOverride(SharedTexture* texture);
-SharedTexture* diligent_GetWorldTextureOverride();
 void diligent_DumpWorldTextureBindings(uint32_t limit);
 
 struct DiligentWorldUvStats

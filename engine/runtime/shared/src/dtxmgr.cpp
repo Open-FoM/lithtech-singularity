@@ -3,10 +3,6 @@
 #include "dtxmgr.h"
 #include "render.h"
 
-#ifdef __D3D
-extern FormatMgr g_FormatMgr;
-#endif
-
 int g_dtxInMemSize = 0;
 
 //Texture groups, used to control offsetting of Mip Maps when they are loaded, thus allowing
@@ -236,148 +232,9 @@ LTRESULT dtx_Create(ILTStream *pStream, TextureData **ppOut, uint32& nBaseWidth,
 	uint32 nTexHeight = hdr.m_BaseHeight / (1 << nMipOffset);
 	uint32 nNumMips	  = hdr.m_nMipmaps - nMipOffset;
 
-	// Renderer-specific: convert to DD texture formats (sysmem copy in DD format for fast copy/minimal memory).
-#ifdef __D3D
-
-	PFormat DstFormat;
-
-	BPPIdent TexFormat = hdr.GetBPPIdent();
-
-	bool bConvertToDDFormat = true;
-
-	// Need to get the DD format (we're going to store it in memory in the DD format)...
-	if(!r_GetRenderStruct()->GetTextureDDFormat2(hdr.GetBPPIdent(),hdr.m_IFlags,&DstFormat))
-		RETURN_ERROR(1, dtx_Create, LT_INVALIDFILE); 
-
-	// If they're the same, just blip on out...
-	BPPIdent SrcBppIdent = hdr.GetBPPIdent();
-	if (DstFormat.GetType() == SrcBppIdent) 
-		bConvertToDDFormat = false;
-	if (hdr.m_IFlags & DTX_NOSYSCACHE) 
-		bConvertToDDFormat = false;
-	if (hdr.m_IFlags & DTX_32BITSYSCOPY) 
-		bConvertToDDFormat = false;
-
-	//determine what format we are going to be using
-	if(bConvertToDDFormat)
-		TexFormat = DstFormat.GetType();
-
-	pRet = dtx_Alloc(TexFormat, nTexWidth, nTexHeight, nNumMips, &allocSize, &textureDataSize,hdr.m_IFlags);
-	if (!pRet) 
-		RETURN_ERROR(1, dtx_Create, LT_OUTOFMEMORY); 
-
-
-	if (bConvertToDDFormat) 
-	{ 
-		pRet->m_PFormat = DstFormat; 
-	}
-	else 
-	{ 
-		dtx_SetupDTXFormat2(pRet->m_Header.GetBPPIdent(), &pRet->m_PFormat); 
-	}
-
-	pRet->m_pSharedTexture = LTNULL;
-	uint8 iBppBefore = pRet->m_Header.m_Extra[2];
-	memcpy(&pRet->m_Header, &hdr, sizeof(DtxHeader));
-	if (bConvertToDDFormat) 
-		pRet->m_Header.m_Extra[2] = iBppBefore;	// Restore the Bpps (because we might have asked for a different one)...
-
-	//restore the width, height, and mipmaps
-	pRet->m_Header.m_BaseWidth  = static_cast<uint16>(nTexWidth);
-	pRet->m_Header.m_BaseHeight = static_cast<uint16>(nTexHeight);
-	pRet->m_Header.m_nMipmaps	= static_cast<uint16>(nNumMips);
-
-	// Alloc a tmp buffer to read in the source image...
-	uint8* pTmpBuffer = NULL; 
-	TextureMipData *pMip = &pRet->m_Mips[0];
-
-	if (bConvertToDDFormat) 
-	{
-		uint32 size = CalcImageSize(hdr.GetBPPIdent(), pMip->m_Width, pMip->m_Height);
-		LT_MEM_TRACK_ALLOC(pTmpBuffer = new uint8[size],LT_MEM_TYPE_TEXTURE);
-		
-		if (!pTmpBuffer) 
-			return false; 
-	}
-
-	// Read in mipmap data....
-	uint32 iTexturesInRow = 1;
-	if (hdr.m_IFlags & DTX_CUBEMAP) 
-		iTexturesInRow = 6;
-
-	for (uint32 iTex = 0; iTex < iTexturesInRow; ++iTex) 
-	{
-		uint32 nWidth  = hdr.m_BaseWidth;
-		uint32 nHeight = hdr.m_BaseHeight;
-
-		for (uint32 iMipmap=0; iMipmap < hdr.m_nMipmaps; iMipmap++) 
-		{
-			//determine whether or not we want to read in this mip map or not
-			bool bSkipImageData = true;
-
-			uint8* pTmpBufferPtr = pTmpBuffer;
-			TextureMipData *pMip2 = NULL;
-			uint8* pMipData		 = NULL;
-
-			//see if we want to actually read in this mipmap
-			if(iMipmap >= nMipOffset)
-			{
-				pMip2			= &pRet->m_Mips[iMipmap - nMipOffset];
-				pMipData		= pMip2->m_Data;
-				bSkipImageData	= false;
-			}
-
-			pMipData += CalcImageSize(TexFormat, nWidth, nHeight) * iTex; 
-
-			uint32 size = CalcImageSize(hdr.GetBPPIdent(), nWidth, nHeight);
-			if (bConvertToDDFormat) 
-			{
-				dtx_ReadOrSkip(bSkipImageData, pStream, pTmpBuffer, size); 
-			}
-			else 
-			{
-				dtx_ReadOrSkip(bSkipImageData, pStream, pMipData, size); 
-			}
-
-			if (bConvertToDDFormat && !bSkipImageData) 
-			{
-				// Convert the mip to DD format...
-				PFormat SrcFormat; 
-				if (hdr.GetBPPIdent() == BPP_32) 
-				{ 
-					SrcFormat.Init(hdr.GetBPPIdent(),0xFF000000,0x00FF0000,0x0000FF00,0x000000FF); 
-				}
-				else 
-				{ 
-					SrcFormat.Init(hdr.GetBPPIdent(),0x0,0x0,0x0,0x0); 
-				}
-
-				r_GetRenderStruct()->ConvertTexDataToDD(pTmpBuffer, &SrcFormat, nWidth, nHeight,
-														pMipData,&DstFormat,hdr.GetBPPIdent(), hdr.m_IFlags, nWidth, nHeight);
-
-				pTmpBufferPtr = pTmpBuffer; 
-			} 
-
-			nWidth /= 2;
-			nHeight /= 2;
-		} 
-		if ((hdr.m_IFlags & DTX_CUBEMAP) && (iTex==0)) 
-		{
-			DtxSection DtxSectHeader;
-			pStream->Read(&DtxSectHeader, sizeof(SectionHeader)); 
-		} 
-	} 
-
-	if (pTmpBuffer) 
-	{ 
-		delete[] pTmpBuffer; 
-		pTmpBuffer = NULL; 
-	}
-#else
 	TextureMipData* pMip = nullptr;
 	uint32 y = 0;
 	uint32 size = 0;
-	bool bSkipImageData = false;
 
 	// Allocate it.
 	pRet = dtx_Alloc(hdr.GetBPPIdent(), nTexWidth, nTexHeight, nNumMips, &allocSize, &textureDataSize);
@@ -388,27 +245,48 @@ LTRESULT dtx_Create(ILTStream *pStream, TextureData **ppOut, uint32& nBaseWidth,
 	pRet->m_pSharedTexture = LTNULL;
 	memcpy(&pRet->m_Header, &hdr, sizeof(DtxHeader));
 
-	// Read in mipmap data (and convert it to our DDFormat).
-	for (uint32 iMipmap=0; iMipmap < hdr.m_nMipmaps; iMipmap++) 
+	// Restore dimensions to match allocated data
+	pRet->m_Header.m_BaseWidth = static_cast<uint16>(nTexWidth);
+	pRet->m_Header.m_BaseHeight = static_cast<uint16>(nTexHeight);
+	pRet->m_Header.m_nMipmaps = static_cast<uint16>(nNumMips);
+
+	// Read in mipmap data.
+	for (uint32 iMipmap = 0; iMipmap < hdr.m_nMipmaps; iMipmap++)
 	{
-		pMip = &pRet->m_Mips[iMipmap];
-		if (hdr.GetBPPIdent() == BPP_32) 
+		// Skip mipmaps before offset (but still read past them in stream)
+		bool bSkipImageData = (iMipmap < nMipOffset);
+
+		// Only access allocated mip data for mipmaps we're keeping
+		if (!bSkipImageData)
 		{
-			for (y=0; y < pMip->m_Height; y++) 
-			{
-				// Read the line.
-				dtx_ReadOrSkip(bSkipImageData, pStream,
-					&pMip->m_Data[y*pMip->m_Pitch],
-					pMip->m_Width * sizeof(uint32));
-			} 
+			pMip = &pRet->m_Mips[iMipmap - nMipOffset];
 		}
-		else 
+
+		// Calculate size based on original header dimensions at this mip level
+		uint32 mipWidth = hdr.m_BaseWidth >> iMipmap;
+		uint32 mipHeight = hdr.m_BaseHeight >> iMipmap;
+
+		if (hdr.GetBPPIdent() == BPP_32)
 		{
-			size = CalcImageSize(hdr.GetBPPIdent(), pMip->m_Width, pMip->m_Height);
-			dtx_ReadOrSkip(bSkipImageData, pStream, pMip->m_Data, size); 
-		} 
+			size = mipWidth * sizeof(uint32);
+			for (y = 0; y < mipHeight; y++)
+			{
+				if (bSkipImageData)
+				{
+					pStream->SeekTo(pStream->GetPos() + size);
+				}
+				else
+				{
+					pStream->Read(&pMip->m_Data[y * pMip->m_Pitch], size);
+				}
+			}
+		}
+		else
+		{
+			size = CalcImageSize(hdr.GetBPPIdent(), mipWidth, mipHeight);
+			dtx_ReadOrSkip(bSkipImageData, pStream, bSkipImageData ? nullptr : pMip->m_Data, size);
+		}
 	}
-#endif
 	
 	//don't bother loading in the sections
 	pRet->m_Header.m_nSections = 0;

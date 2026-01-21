@@ -229,6 +229,7 @@ RCONVAR(g_CV_Wireframe, "Wireframe", int, 0);
 RCONVAR(g_CV_WireframeModels, "WireframeModels", int, 0);
 RCONVAR(g_CV_LightMap, "LightMap", int, 1);
 RCONVAR(g_CV_DrawFlat, "DrawFlat", int, 0);
+RCONVAR(g_CV_Fullbright, "Fullbright", int, 0);
 RCONVAR(g_CV_LightmapsOnly, "LightmapsOnly", int, 0);
 RCONVAR(g_CV_DrawSorted, "DrawSorted", int, 1);
 RCONVAR(g_CV_ShowRenderedObjectCounts, "ShowRenderedObjectCounts", int, 0);
@@ -278,6 +279,18 @@ RCONVAR(g_CV_ScreenGlowFogEnable, "ScreenGlowFogEnable", int, 0);
 RCONVAR(g_CV_ScreenGlowFogNearZ, "ScreenGlowFogNearZ", float, 0.0f);
 RCONVAR(g_CV_ScreenGlowFogFarZ, "ScreenGlowFogFarZ", float, 2000.0f);
 RCONVAR(g_CV_ScreenGlowEnablePS, "ScreenGlowEnablePS", int, 1);
+
+//------------------------------
+// SSAO Settings
+RCONVAR(g_CV_SSAOEnable, "SSAOEnable", int, 0);
+RCONVAR(g_CV_SSAORadius, "SSAORadius", float, 60.0f);
+RCONVAR(g_CV_SSAOBias, "SSAOBias", float, 2.0f);
+RCONVAR(g_CV_SSAOIntensity, "SSAOIntensity", float, 1.0f);
+RCONVAR(g_CV_SSAOPower, "SSAOPower", float, 1.25f);
+RCONVAR(g_CV_SSAOSampleCount, "SSAOSampleCount", int, 8);
+RCONVAR(g_CV_SSAODownscale, "SSAODownscale", int, 2);
+RCONVAR(g_CV_SSAOBlurEnable, "SSAOBlurEnable", int, 1);
+RCONVAR(g_CV_SSAOBlurRadius, "SSAOBlurRadius", float, 1.0f);
 
 //------------------------------
 // Effect file settings

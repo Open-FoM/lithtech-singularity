@@ -447,119 +447,6 @@ struct LightColor
 	float b = 1.0f;
 };
 
-LightColor TemperatureToColor(float kelvin)
-{
-	const float temp = std::clamp(kelvin, 1000.0f, 20000.0f) / 100.0f;
-	float r = 0.0f;
-	float g = 0.0f;
-	float b = 0.0f;
-
-	if (temp <= 66.0f)
-	{
-		r = 255.0f;
-		g = 99.4708025861f * std::log(temp) - 161.1195681661f;
-		if (temp <= 19.0f)
-		{
-			b = 0.0f;
-		}
-		else
-		{
-			b = 138.5177312231f * std::log(temp - 10.0f) - 305.0447927307f;
-		}
-	}
-	else
-	{
-		r = 329.698727446f * std::pow(temp - 60.0f, -0.1332047592f);
-		g = 288.1221695283f * std::pow(temp - 60.0f, -0.0755148492f);
-		b = 255.0f;
-	}
-
-	r = std::clamp(r, 0.0f, 255.0f);
-	g = std::clamp(g, 0.0f, 255.0f);
-	b = std::clamp(b, 0.0f, 255.0f);
-
-	return LightColor{r / 255.0f, g / 255.0f, b / 255.0f};
-}
-
-void BuildExternalDynamicLights(
-	const ScenePanelState& scene_state,
-	const std::vector<TreeNode>& nodes,
-	const std::vector<NodeProperties>& props,
-	std::vector<DiligentExternalDynamicLight>& out_lights)
-{
-	out_lights.clear();
-	const size_t count = std::min(nodes.size(), props.size());
-
-	auto node_visible_for_render = [&](int node_id, const NodeProperties& node_props) -> bool
-	{
-		if (!node_props.visible)
-		{
-			return false;
-		}
-		if (scene_state.isolate_selected && scene_state.selected_id >= 0 && node_id != scene_state.selected_id)
-		{
-			return false;
-		}
-		if (!node_props.type.empty())
-		{
-			auto it = scene_state.type_visibility.find(node_props.type);
-			if (it != scene_state.type_visibility.end() && !it->second)
-			{
-				return false;
-			}
-		}
-		if (!node_props.class_name.empty())
-		{
-			auto it = scene_state.class_visibility.find(node_props.class_name);
-			if (it != scene_state.class_visibility.end() && !it->second)
-			{
-				return false;
-			}
-		}
-		return true;
-	};
-
-	out_lights.reserve(count);
-	for (size_t i = 0; i < count; ++i)
-	{
-		const TreeNode& node = nodes[i];
-		if (node.deleted || node.is_folder)
-		{
-			continue;
-		}
-		const NodeProperties& node_props = props[i];
-		if (!IsLightNode(node_props))
-		{
-			continue;
-		}
-		if (!node_visible_for_render(static_cast<int>(i), node_props))
-		{
-			continue;
-		}
-
-		const float radius = std::max(0.0f, node_props.range);
-		const float intensity = std::max(0.0f, node_props.intensity);
-		if (radius <= 0.01f || intensity <= 0.0f)
-		{
-			continue;
-		}
-
-		LightColor base_color{node_props.color[0], node_props.color[1], node_props.color[2]};
-		if (node_props.use_temperature)
-		{
-			base_color = TemperatureToColor(node_props.temperature);
-		}
-
-		DiligentExternalDynamicLight light;
-		light.position = LTVector(node_props.position[0], node_props.position[1], node_props.position[2]);
-		light.radius = radius;
-		light.color_r = std::clamp(base_color.r * intensity, 0.0f, 1.0f);
-		light.color_g = std::clamp(base_color.g * intensity, 0.0f, 1.0f);
-		light.color_b = std::clamp(base_color.b * intensity, 0.0f, 1.0f);
-		out_lights.push_back(light);
-	}
-}
-
 LTRGBColor MakeOverlayColor(uint8 r, uint8 g, uint8 b, uint8 a)
 {
 	LTRGBColor color{};
@@ -1001,6 +888,14 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_Wireframe = viewport_state.render_wireframe_world ? 1 : 0;
 	g_CV_WireframeModels = viewport_state.render_wireframe_models ? 1 : 0;
 	g_CV_DrawFlat = viewport_state.render_draw_flat ? 1 : 0;
+	{
+		const int new_fullbright = viewport_state.render_fullbright ? 1 : 0;
+		if (new_fullbright != g_CV_Fullbright.m_Val)
+		{
+			g_CV_Fullbright = new_fullbright;
+			diligent_InvalidateWorldGeometry();
+		}
+	}
 	g_CV_LightMap = (viewport_state.render_lightmap || viewport_state.render_lightmaps_only) ? 1 : 0;
 	g_CV_LightmapsOnly = viewport_state.render_lightmaps_only ? 1 : 0;
 	g_CV_DrawSorted = viewport_state.render_draw_sorted ? 1 : 0;
@@ -1033,6 +928,15 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_ScreenGlowUVScale = viewport_state.render_screen_glow_uv_scale;
 	g_CV_ScreenGlowTextureSize = viewport_state.render_screen_glow_texture_size;
 	g_CV_ScreenGlowFilterSize = viewport_state.render_screen_glow_filter_size;
+	g_CV_SSAOEnable = viewport_state.render_ssao_enable ? 1 : 0;
+	g_CV_SSAORadius = viewport_state.render_ssao_radius;
+	g_CV_SSAOBias = viewport_state.render_ssao_bias;
+	g_CV_SSAOIntensity = viewport_state.render_ssao_intensity;
+	g_CV_SSAOPower = viewport_state.render_ssao_power;
+	g_CV_SSAOSampleCount = viewport_state.render_ssao_sample_count;
+	g_CV_SSAODownscale = viewport_state.render_ssao_downscale;
+	g_CV_SSAOBlurEnable = viewport_state.render_ssao_blur_enable ? 1 : 0;
+	g_CV_SSAOBlurRadius = viewport_state.render_ssao_blur_radius;
 }
 
 std::string TrimLine(const std::string& value)
@@ -1922,6 +1826,7 @@ int main(int argc, char** argv)
 						ImGui::Checkbox("Wireframe World", &viewport_panel.render_wireframe_world);
 						ImGui::Checkbox("Wireframe Models", &viewport_panel.render_wireframe_models);
 						ImGui::Checkbox("Flat Shaded", &viewport_panel.render_draw_flat);
+						ImGui::Checkbox("Fullbright", &viewport_panel.render_fullbright);
 						ImGui::Checkbox("Lightmap", &viewport_panel.render_lightmap);
 						ImGui::Checkbox("Lightmaps Only", &viewport_panel.render_lightmaps_only);
 						ImGui::Checkbox("Draw Sorted", &viewport_panel.render_draw_sorted);
@@ -1979,6 +1884,18 @@ int main(int argc, char** argv)
 						ImGui::DragFloat("Glow UV Scale", &viewport_panel.render_screen_glow_uv_scale, 0.01f, 0.1f, 2.0f);
 						ImGui::DragInt("Glow Texture Size", &viewport_panel.render_screen_glow_texture_size, 1.0f, 64, 2048);
 						ImGui::DragInt("Glow Filter Size", &viewport_panel.render_screen_glow_filter_size, 1.0f, 4, 128);
+						ImGui::Separator();
+						ImGui::TextUnformatted("SSAO");
+						ImGui::Checkbox("Enable##SSAO", &viewport_panel.render_ssao_enable);
+						ImGui::DragFloat("Radius##SSAO", &viewport_panel.render_ssao_radius, 1.0f, 1.0f, 300.0f);
+						ImGui::DragFloat("Bias##SSAO", &viewport_panel.render_ssao_bias, 0.05f, 0.0f, 50.0f);
+						ImGui::DragFloat("Intensity##SSAO", &viewport_panel.render_ssao_intensity, 0.05f, 0.0f, 4.0f);
+						ImGui::DragFloat("Power##SSAO", &viewport_panel.render_ssao_power, 0.05f, 0.1f, 4.0f);
+						ImGui::DragInt("Samples##SSAO", &viewport_panel.render_ssao_sample_count, 1.0f, 4, 16);
+						ImGui::DragInt("Downscale##SSAO", &viewport_panel.render_ssao_downscale, 1.0f, 1, 4);
+						ImGui::Checkbox("Blur##SSAO", &viewport_panel.render_ssao_blur_enable);
+						ImGui::SameLine();
+						ImGui::DragFloat("Radius##SSAOBlur", &viewport_panel.render_ssao_blur_radius, 0.1f, 0.5f, 4.0f);
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Advanced"))
@@ -2397,11 +2314,6 @@ int main(int argc, char** argv)
 		UpdateWorldSettingsCache(*world_props, world_settings_cache);
 	}
 	ApplySceneVisibilityToRenderer(scene_panel, viewport_panel, scene_nodes, scene_props);
-	static std::vector<DiligentExternalDynamicLight> external_lights;
-	BuildExternalDynamicLights(scene_panel, scene_nodes, scene_props, external_lights);
-	diligent_SetExternalDynamicLights(
-		external_lights.empty() ? nullptr : external_lights.data(),
-		static_cast<uint32_t>(external_lights.size()));
 	RenderViewport(diligent, viewport_panel, world_props, overlay_state);
 
 		Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
