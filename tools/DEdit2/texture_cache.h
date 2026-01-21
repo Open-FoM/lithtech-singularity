@@ -59,5 +59,6 @@ private:
 
 	std::vector<std::string> roots_;
 	std::unordered_map<std::string, std::unique_ptr<TextureEntry>> by_name_;
+	std::unordered_map<std::string, TextureEntry*> by_alias_;
 	std::unordered_map<const SharedTexture*, TextureEntry*> by_ptr_;
 };

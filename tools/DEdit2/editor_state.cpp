@@ -1938,6 +1938,37 @@ int BuildSceneNodeRecursive(
 			ApplyPropertyList(node_props, tree_node, properties_node);
 		}
 	}
+	if (properties_node && properties_node->IsList())
+	{
+		if (const char* prop_class_name = GetChildAtomValue(properties_node, "name"))
+		{
+			if (prop_class_name[0] != '\0')
+			{
+				const std::string raw_type_lower = ToLower(raw_type);
+				const std::string class_lower = ToLower(node_props.class_name);
+				if (node_props.class_name.empty() || class_lower == raw_type_lower)
+				{
+					node_props.class_name = prop_class_name;
+				}
+			}
+		}
+	}
+	if (!is_root)
+	{
+		const std::string type_lower = ToLower(node_props.type);
+		if (type_lower == "object" || type_lower == "entity")
+		{
+			const std::string& source = node_props.class_name.empty() ? raw_type : node_props.class_name;
+			if (!source.empty())
+			{
+				const std::string mapped = MapBinaryObjectType(source);
+				if (!mapped.empty() && mapped != "World")
+				{
+					node_props.type = mapped;
+				}
+			}
+		}
+	}
 
 	float vec3[3] = {0.0f, 0.0f, 0.0f};
 	CLTANode* position = CLTAUtil::ShallowFindList(node, "position");

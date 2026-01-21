@@ -21,6 +21,7 @@
 #include "ImGuiImplSDL3.hpp"
 #include "diligent_render.h"
 #include "rendererconsolevars.h"
+#include "debuggeometry.h"
 #include "ltrotation.h"
 #include "ltvector.h"
 #include "renderstruct.h"
@@ -257,8 +258,6 @@ void ApplyWorldSettingsToRenderer(const NodeProperties& world_props)
 	g_CV_FogColorR = static_cast<int>(std::clamp(world_props.color[0], 0.0f, 1.0f) * 255.0f);
 	g_CV_FogColorG = static_cast<int>(std::clamp(world_props.color[1], 0.0f, 1.0f) * 255.0f);
 	g_CV_FogColorB = static_cast<int>(std::clamp(world_props.color[2], 0.0f, 1.0f) * 255.0f);
-
-	g_CV_DrawSky = 0;
 }
 
 struct WorldRenderSettingsCache
@@ -412,6 +411,280 @@ bool NodePickableByRender(const ViewportPanelState& viewport_state, const NodePr
 		return false;
 	}
 	return true;
+}
+
+bool IsLightNode(const NodeProperties& props)
+{
+	const std::string type = LowerCopy(props.type);
+	const std::string cls = LowerCopy(props.class_name);
+	auto is_light = [](const std::string& value) -> bool
+	{
+		return value == "light" ||
+			value == "dirlight" ||
+			value == "directionallight" ||
+			value == "spotlight" ||
+			value == "pointlight";
+	};
+	return is_light(type) || is_light(cls);
+}
+
+struct ViewportOverlayItem
+{
+	const NodeProperties* props = nullptr;
+	LTRGBColor color{};
+};
+
+struct ViewportOverlayState
+{
+	ViewportOverlayItem items[2];
+	int count = 0;
+};
+
+struct LightColor
+{
+	float r = 1.0f;
+	float g = 1.0f;
+	float b = 1.0f;
+};
+
+LightColor TemperatureToColor(float kelvin)
+{
+	const float temp = std::clamp(kelvin, 1000.0f, 20000.0f) / 100.0f;
+	float r = 0.0f;
+	float g = 0.0f;
+	float b = 0.0f;
+
+	if (temp <= 66.0f)
+	{
+		r = 255.0f;
+		g = 99.4708025861f * std::log(temp) - 161.1195681661f;
+		if (temp <= 19.0f)
+		{
+			b = 0.0f;
+		}
+		else
+		{
+			b = 138.5177312231f * std::log(temp - 10.0f) - 305.0447927307f;
+		}
+	}
+	else
+	{
+		r = 329.698727446f * std::pow(temp - 60.0f, -0.1332047592f);
+		g = 288.1221695283f * std::pow(temp - 60.0f, -0.0755148492f);
+		b = 255.0f;
+	}
+
+	r = std::clamp(r, 0.0f, 255.0f);
+	g = std::clamp(g, 0.0f, 255.0f);
+	b = std::clamp(b, 0.0f, 255.0f);
+
+	return LightColor{r / 255.0f, g / 255.0f, b / 255.0f};
+}
+
+void BuildExternalDynamicLights(
+	const ScenePanelState& scene_state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	std::vector<DiligentExternalDynamicLight>& out_lights)
+{
+	out_lights.clear();
+	const size_t count = std::min(nodes.size(), props.size());
+
+	auto node_visible_for_render = [&](int node_id, const NodeProperties& node_props) -> bool
+	{
+		if (!node_props.visible)
+		{
+			return false;
+		}
+		if (scene_state.isolate_selected && scene_state.selected_id >= 0 && node_id != scene_state.selected_id)
+		{
+			return false;
+		}
+		if (!node_props.type.empty())
+		{
+			auto it = scene_state.type_visibility.find(node_props.type);
+			if (it != scene_state.type_visibility.end() && !it->second)
+			{
+				return false;
+			}
+		}
+		if (!node_props.class_name.empty())
+		{
+			auto it = scene_state.class_visibility.find(node_props.class_name);
+			if (it != scene_state.class_visibility.end() && !it->second)
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	out_lights.reserve(count);
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		const NodeProperties& node_props = props[i];
+		if (!IsLightNode(node_props))
+		{
+			continue;
+		}
+		if (!node_visible_for_render(static_cast<int>(i), node_props))
+		{
+			continue;
+		}
+
+		const float radius = std::max(0.0f, node_props.range);
+		const float intensity = std::max(0.0f, node_props.intensity);
+		if (radius <= 0.01f || intensity <= 0.0f)
+		{
+			continue;
+		}
+
+		LightColor base_color{node_props.color[0], node_props.color[1], node_props.color[2]};
+		if (node_props.use_temperature)
+		{
+			base_color = TemperatureToColor(node_props.temperature);
+		}
+
+		DiligentExternalDynamicLight light;
+		light.position = LTVector(node_props.position[0], node_props.position[1], node_props.position[2]);
+		light.radius = radius;
+		light.color_r = std::clamp(base_color.r * intensity, 0.0f, 1.0f);
+		light.color_g = std::clamp(base_color.g * intensity, 0.0f, 1.0f);
+		light.color_b = std::clamp(base_color.b * intensity, 0.0f, 1.0f);
+		out_lights.push_back(light);
+	}
+}
+
+LTRGBColor MakeOverlayColor(uint8 r, uint8 g, uint8 b, uint8 a)
+{
+	LTRGBColor color{};
+	color.rgb.r = r;
+	color.rgb.g = g;
+	color.rgb.b = b;
+	color.rgb.a = a;
+	return color;
+}
+
+void AddDebugLine(const float a[3], const float b[3], const LTRGBColor& color)
+{
+	getDebugGeometry().addLine(
+		LTVector(a[0], a[1], a[2]),
+		LTVector(b[0], b[1], b[2]),
+		color,
+		false);
+}
+
+void AddDebugAABB(const float bounds_min[3], const float bounds_max[3], const LTRGBColor& color)
+{
+	const float x0 = bounds_min[0];
+	const float y0 = bounds_min[1];
+	const float z0 = bounds_min[2];
+	const float x1 = bounds_max[0];
+	const float y1 = bounds_max[1];
+	const float z1 = bounds_max[2];
+
+	const float corners[8][3] = {
+		{x0, y0, z0},
+		{x1, y0, z0},
+		{x1, y1, z0},
+		{x0, y1, z0},
+		{x0, y0, z1},
+		{x1, y0, z1},
+		{x1, y1, z1},
+		{x0, y1, z1}
+	};
+
+	static const int edges[12][2] = {
+		{0, 1}, {1, 2}, {2, 3}, {3, 0},
+		{4, 5}, {5, 6}, {6, 7}, {7, 4},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7}
+	};
+
+	for (const auto& edge : edges)
+	{
+		AddDebugLine(corners[edge[0]], corners[edge[1]], color);
+	}
+}
+
+void AddDebugBrushWire(const NodeProperties& props, const LTRGBColor& color)
+{
+	const size_t vertex_count = props.brush_vertices.size() / 3;
+	if (vertex_count == 0 || props.brush_indices.empty())
+	{
+		return;
+	}
+
+	for (size_t i = 0; i + 2 < props.brush_indices.size(); i += 3)
+	{
+		const uint32_t i0 = props.brush_indices[i];
+		const uint32_t i1 = props.brush_indices[i + 1];
+		const uint32_t i2 = props.brush_indices[i + 2];
+		if (i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count)
+		{
+			continue;
+		}
+		const float v0[3] = {
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i0) * 3 + 2]};
+		const float v1[3] = {
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i1) * 3 + 2]};
+		const float v2[3] = {
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 0],
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 1],
+			props.brush_vertices[static_cast<size_t>(i2) * 3 + 2]};
+
+		AddDebugLine(v0, v1, color);
+		AddDebugLine(v1, v2, color);
+		AddDebugLine(v2, v0, color);
+	}
+}
+
+void AddDebugOverlayForNode(const NodeProperties& props, const LTRGBColor& color)
+{
+	if (!props.brush_vertices.empty() && !props.brush_indices.empty())
+	{
+		AddDebugBrushWire(props, color);
+		return;
+	}
+
+	float bounds_min[3];
+	float bounds_max[3];
+	if (TryGetNodeBounds(props, bounds_min, bounds_max))
+	{
+		AddDebugAABB(bounds_min, bounds_max, color);
+	}
+}
+
+void RenderViewportOverlays(const ViewportOverlayState& state)
+{
+	CDebugGeometry& debug = getDebugGeometry();
+	debug.clear();
+	if (state.count <= 0)
+	{
+		return;
+	}
+	debug.setVisible(true);
+	debug.setWidth(1.0f);
+
+	for (int i = 0; i < state.count; ++i)
+	{
+		const ViewportOverlayItem& item = state.items[i];
+		if (!item.props)
+		{
+			continue;
+		}
+		AddDebugOverlayForNode(*item.props, item.color);
+	}
+
+	drawAllDebugGeometry();
 }
 
 void DrawAABBOverlay(
@@ -728,7 +1001,7 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_Wireframe = viewport_state.render_wireframe_world ? 1 : 0;
 	g_CV_WireframeModels = viewport_state.render_wireframe_models ? 1 : 0;
 	g_CV_DrawFlat = viewport_state.render_draw_flat ? 1 : 0;
-	g_CV_LightMap = viewport_state.render_lightmap ? 1 : 0;
+	g_CV_LightMap = (viewport_state.render_lightmap || viewport_state.render_lightmaps_only) ? 1 : 0;
 	g_CV_LightmapsOnly = viewport_state.render_lightmaps_only ? 1 : 0;
 	g_CV_DrawSorted = viewport_state.render_draw_sorted ? 1 : 0;
 	g_CV_DrawSolidModels = viewport_state.render_draw_solid_models ? 1 : 0;
@@ -738,6 +1011,11 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_ModelApplyAmbient = viewport_state.render_model_apply_ambient ? 1 : 0;
 	g_CV_ModelApplySun = viewport_state.render_model_apply_sun ? 1 : 0;
 	g_CV_ModelSaturation = viewport_state.render_model_saturation;
+	g_CV_Saturate = (std::fabs(viewport_state.render_model_saturation - 1.0f) > 0.001f) ? 1 : 0;
+	g_CV_DynamicLight = viewport_state.render_dynamic_lights ? 1 : 0;
+	g_CV_DynamicLightWorld = viewport_state.render_dynamic_lights_world ? 1 : 0;
+	g_CV_EnvMapPolyGrids = viewport_state.render_polygrid_env_map ? 1 : 0;
+	g_CV_BumpMapPolyGrids = viewport_state.render_polygrid_bump_map ? 1 : 0;
 	g_CV_ModelLODOffset = viewport_state.render_model_lod_offset;
 	g_CV_ModelDebug_DrawBoxes = viewport_state.render_model_debug_boxes ? 1 : 0;
 	g_CV_ModelDebug_DrawTouchingLights = viewport_state.render_model_debug_touching_lights ? 1 : 0;
@@ -986,7 +1264,11 @@ bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height
 	return true;
 }
 
-void RenderViewport(DiligentContext& ctx, const ViewportPanelState& viewport_state, const NodeProperties* world_props)
+void RenderViewport(
+	DiligentContext& ctx,
+	const ViewportPanelState& viewport_state,
+	const NodeProperties* world_props,
+	const ViewportOverlayState& overlay_state)
 {
 	if (!ctx.viewport_visible || !ctx.viewport.color_rtv || !ctx.viewport.depth_dsv || !ctx.engine.context)
 	{
@@ -1086,6 +1368,11 @@ void RenderViewport(DiligentContext& ctx, const ViewportPanelState& viewport_sta
 		ctx.engine.context->SetViewports(1, &vp, 0, 0);
 
 		DrawViewportGrid(ctx.engine.context, ctx.grid_renderer, viewport_state.show_grid, viewport_state.show_axes);
+	}
+
+	if (ctx.engine.render_struct && ctx.engine.render_struct->m_bInitted)
+	{
+		RenderViewportOverlays(overlay_state);
 	}
 
 	diligent_SetOutputTargets(nullptr, nullptr);
@@ -1296,6 +1583,8 @@ int main(int argc, char** argv)
 			SDL_Delay(10);
 			continue;
 		}
+
+		ViewportOverlayState overlay_state{};
 
 		const auto& sc_desc = diligent.engine.swapchain->GetDesc();
 		diligent.imgui->NewFrame(sc_desc.Width, sc_desc.Height, sc_desc.PreTransform);
@@ -1654,6 +1943,12 @@ int main(int argc, char** argv)
 						ImGui::Checkbox("Apply Ambient", &viewport_panel.render_model_apply_ambient);
 						ImGui::Checkbox("Apply Sun", &viewport_panel.render_model_apply_sun);
 						ImGui::SliderFloat("Saturation", &viewport_panel.render_model_saturation, 0.0f, 2.0f, "%.2f");
+						ImGui::Separator();
+						ImGui::TextUnformatted("World");
+						ImGui::Checkbox("Dynamic Lights", &viewport_panel.render_dynamic_lights);
+						ImGui::Checkbox("World Dynamic Lights", &viewport_panel.render_dynamic_lights_world);
+						ImGui::Checkbox("PolyGrid Env Map", &viewport_panel.render_polygrid_env_map);
+						ImGui::Checkbox("PolyGrid Bump Map", &viewport_panel.render_polygrid_bump_map);
 						ImGui::EndTabItem();
 					}
 
@@ -1684,6 +1979,92 @@ int main(int argc, char** argv)
 						ImGui::DragFloat("Glow UV Scale", &viewport_panel.render_screen_glow_uv_scale, 0.01f, 0.1f, 2.0f);
 						ImGui::DragInt("Glow Texture Size", &viewport_panel.render_screen_glow_texture_size, 1.0f, 64, 2048);
 						ImGui::DragInt("Glow Filter Size", &viewport_panel.render_screen_glow_filter_size, 1.0f, 4, 128);
+						ImGui::EndTabItem();
+					}
+					if (ImGui::BeginTabItem("Advanced"))
+					{
+						static char filter_text[128] = "";
+						ImGui::InputText("Filter", filter_text, sizeof(filter_text));
+						ImGui::SameLine();
+						if (ImGui::Button("Clear"))
+						{
+							filter_text[0] = '\0';
+						}
+
+						std::vector<BaseConVar*> vars;
+						for (BaseConVar* var = g_pConVars; var; var = var->m_pNext)
+						{
+							vars.push_back(var);
+						}
+						std::sort(vars.begin(), vars.end(), [](const BaseConVar* a, const BaseConVar* b)
+						{
+							return std::strcmp(a->m_pName, b->m_pName) < 0;
+						});
+
+						const std::string filter_lower = LowerCopy(filter_text);
+						constexpr ImGuiTableFlags kTableFlags =
+							ImGuiTableFlags_BordersInnerV |
+							ImGuiTableFlags_RowBg |
+							ImGuiTableFlags_ScrollY |
+							ImGuiTableFlags_SizingStretchProp;
+						if (ImGui::BeginTable("RenderCvars", 3, kTableFlags, ImVec2(0.0f, 240.0f)))
+						{
+							ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+							ImGui::TableSetupColumn("Value");
+							ImGui::TableSetupColumn("Default", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+							ImGui::TableHeadersRow();
+
+							for (BaseConVar* var : vars)
+							{
+								if (!var || !var->m_pName)
+								{
+									continue;
+								}
+								if (!filter_lower.empty())
+								{
+									const std::string name_lower = LowerCopy(var->m_pName);
+									if (name_lower.find(filter_lower) == std::string::npos)
+									{
+										continue;
+									}
+								}
+
+								ImGui::TableNextRow();
+								ImGui::TableSetColumnIndex(0);
+								ImGui::TextUnformatted(var->m_pName);
+
+								ImGui::TableSetColumnIndex(1);
+								const float current = var->GetFloat();
+								const bool is_bool =
+									(current == 0.0f || current == 1.0f) &&
+									(var->m_DefaultVal == 0.0f || var->m_DefaultVal == 1.0f);
+								if (is_bool)
+								{
+									bool enabled = (current != 0.0f);
+									if (ImGui::Checkbox(("##val_" + std::string(var->m_pName)).c_str(), &enabled))
+									{
+										var->SetFloat(enabled ? 1.0f : 0.0f);
+									}
+								}
+								else
+								{
+									float value = current;
+									if (ImGui::DragFloat(("##val_" + std::string(var->m_pName)).c_str(), &value, 0.1f))
+									{
+										var->SetFloat(value);
+									}
+								}
+
+								ImGui::TableSetColumnIndex(2);
+								if (ImGui::SmallButton(("Reset##" + std::string(var->m_pName)).c_str()))
+								{
+									var->SetFloat(var->m_DefaultVal);
+								}
+							}
+
+							ImGui::EndTable();
+						}
+
 						ImGui::EndTabItem();
 					}
 
@@ -1790,11 +2171,17 @@ int main(int argc, char** argv)
 			}
 			if (hovered && !scene_nodes.empty() && !scene_props.empty())
 			{
+				const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
+				const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
 				const ImVec2 mouse = ImGui::GetIO().MousePos;
 				const ImVec2 local(mouse.x - viewport_pos.x, mouse.y - viewport_pos.y);
 				const PickRay pick_ray = BuildPickRay(viewport_panel, avail, local);
 				float best_t = 1.0e30f;
 				int best_id = -1;
+				const float light_pick_radius = 9.0f;
+				const float light_pick_radius2 = light_pick_radius * light_pick_radius;
+				float best_light_dist2 = light_pick_radius2;
+				int best_light_id = -1;
 
 				const size_t count = std::min(scene_nodes.size(), scene_props.size());
 				for (size_t i = 0; i < count; ++i)
@@ -1816,6 +2203,25 @@ int main(int argc, char** argv)
 					{
 						continue;
 					}
+					if (IsLightNode(scene_props[i]))
+					{
+						float pick_pos[3] = {scene_props[i].position[0], scene_props[i].position[1], scene_props[i].position[2]};
+						TryGetNodePickPosition(scene_props[i], pick_pos);
+						ImVec2 screen_pos;
+						if (!ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
+						{
+							continue;
+						}
+						const float dx = screen_pos.x - local.x;
+						const float dy = screen_pos.y - local.y;
+						const float dist2 = dx * dx + dy * dy;
+						if (dist2 <= best_light_dist2)
+						{
+							best_light_dist2 = dist2;
+							best_light_id = static_cast<int>(i);
+						}
+						continue;
+					}
 					float hit_t = 0.0f;
 					if (!RaycastNode(scene_props[i], pick_ray, hit_t))
 					{
@@ -1828,7 +2234,17 @@ int main(int argc, char** argv)
 					}
 				}
 
-				if (best_id >= 0)
+				if (best_light_id >= 0)
+				{
+					hovered_scene_id = best_light_id;
+					const NodeProperties& props = scene_props[best_light_id];
+					hovered_hit_pos = Diligent::float3(
+						props.position[0],
+						props.position[1],
+						props.position[2]);
+					hovered_hit_valid = true;
+				}
+				else if (best_id >= 0)
 				{
 					hovered_scene_id = best_id;
 					hovered_hit_pos = Diligent::float3(
@@ -1859,21 +2275,20 @@ int main(int argc, char** argv)
 				const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
 				const size_t count = std::min(scene_nodes.size(), scene_props.size());
 				const int selected_id = scene_panel.selected_id;
+				overlay_state.count = 0;
 				if (selected_id >= 0 && static_cast<size_t>(selected_id) < count)
 				{
 					const TreeNode& node = scene_nodes[selected_id];
 					const NodeProperties& props = scene_props[selected_id];
 					if (!node.deleted && !node.is_folder &&
-						SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
+						SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props) &&
+						NodePickableByRender(viewport_panel, props))
 					{
-						DrawNodeOverlay(
-							props,
-							view_proj,
-							viewport_pos,
-							avail,
-							ImGui::GetWindowDrawList(),
-							IM_COL32(255, 200, 0, 210),
-							2.0f);
+						if (overlay_state.count < 2)
+						{
+							overlay_state.items[overlay_state.count++] =
+								ViewportOverlayItem{&props, MakeOverlayColor(255, 200, 0, 255)};
+						}
 					}
 				}
 
@@ -1882,17 +2297,69 @@ int main(int argc, char** argv)
 					const TreeNode& node = scene_nodes[hovered_scene_id];
 					const NodeProperties& props = scene_props[hovered_scene_id];
 					if (!node.deleted && !node.is_folder &&
-						SceneNodePassesFilters(scene_panel, hovered_scene_id, scene_nodes, scene_props))
+						SceneNodePassesFilters(scene_panel, hovered_scene_id, scene_nodes, scene_props) &&
+						NodePickableByRender(viewport_panel, props))
 					{
-						DrawNodeOverlay(
-							props,
-							view_proj,
-							viewport_pos,
-							avail,
-							ImGui::GetWindowDrawList(),
-							IM_COL32(255, 255, 255, 140),
-							1.0f);
+						if (overlay_state.count < 2)
+						{
+							overlay_state.items[overlay_state.count++] =
+								ViewportOverlayItem{&props, MakeOverlayColor(255, 255, 255, 180)};
+						}
 					}
+				}
+
+				ImDrawList* draw_list = ImGui::GetWindowDrawList();
+				for (size_t i = 0; i < count; ++i)
+				{
+					const TreeNode& node = scene_nodes[i];
+					const NodeProperties& props = scene_props[i];
+					if (node.deleted || node.is_folder || !props.visible)
+					{
+						continue;
+					}
+					if (!IsLightNode(props))
+					{
+						continue;
+					}
+					if (!SceneNodePassesFilters(
+							scene_panel,
+							static_cast<int>(i),
+							scene_nodes,
+							scene_props))
+					{
+						continue;
+					}
+					if (!NodePickableByRender(viewport_panel, props))
+					{
+						continue;
+					}
+
+					float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
+					TryGetNodePickPosition(props, pick_pos);
+					ImVec2 screen_pos;
+					if (!ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
+					{
+						continue;
+					}
+
+					const ImVec2 center(
+						viewport_pos.x + screen_pos.x,
+						viewport_pos.y + screen_pos.y);
+					const bool is_selected = static_cast<int>(i) == selected_id;
+					const bool is_hovered = static_cast<int>(i) == hovered_scene_id;
+					const float radius = is_selected ? 7.0f : (is_hovered ? 6.0f : 5.0f);
+					const ImU32 bulb_color = is_selected ? IM_COL32(255, 210, 120, 240)
+						: (is_hovered ? IM_COL32(255, 235, 160, 230) : IM_COL32(220, 200, 120, 210));
+					const ImU32 base_color = is_selected ? IM_COL32(120, 110, 90, 230)
+						: IM_COL32(90, 85, 70, 200);
+
+					draw_list->AddCircleFilled(center, radius, bulb_color, 20);
+					draw_list->AddCircle(center, radius, IM_COL32(30, 30, 30, 160), 20, 1.0f);
+					draw_list->AddRectFilled(
+						ImVec2(center.x - radius * 0.6f, center.y + radius * 0.4f),
+						ImVec2(center.x + radius * 0.6f, center.y + radius * 1.2f),
+						base_color,
+						2.0f);
 				}
 
 				if (hovered_scene_id >= 0)
@@ -1930,7 +2397,12 @@ int main(int argc, char** argv)
 		UpdateWorldSettingsCache(*world_props, world_settings_cache);
 	}
 	ApplySceneVisibilityToRenderer(scene_panel, viewport_panel, scene_nodes, scene_props);
-	RenderViewport(diligent, viewport_panel, world_props);
+	static std::vector<DiligentExternalDynamicLight> external_lights;
+	BuildExternalDynamicLights(scene_panel, scene_nodes, scene_props, external_lights);
+	diligent_SetExternalDynamicLights(
+		external_lights.empty() ? nullptr : external_lights.data(),
+		static_cast<uint32_t>(external_lights.size()));
+	RenderViewport(diligent, viewport_panel, world_props, overlay_state);
 
 		Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
 		Diligent::ITextureView* back_dsv = diligent.engine.swapchain->GetDepthBufferDSV();

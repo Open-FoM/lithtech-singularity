@@ -78,6 +78,10 @@ struct ViewportPanelState
 	bool render_model_apply_ambient = true;
 	bool render_model_apply_sun = true;
 	float render_model_saturation = 1.0f;
+	bool render_dynamic_lights = true;
+	bool render_dynamic_lights_world = true;
+	bool render_polygrid_env_map = true;
+	bool render_polygrid_bump_map = true;
 	int render_model_lod_offset = 0;
 	bool render_model_debug_boxes = false;
 	bool render_model_debug_touching_lights = false;

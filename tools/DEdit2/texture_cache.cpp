@@ -9,17 +9,71 @@
 #include <cstring>
 namespace
 {
+std::string TrimWhitespace(std::string name)
+{
+	auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
+	while (!name.empty() && is_space(static_cast<unsigned char>(name.front())))
+	{
+		name.erase(name.begin());
+	}
+	while (!name.empty() && is_space(static_cast<unsigned char>(name.back())))
+	{
+		name.pop_back();
+	}
+	return name;
+}
+
+std::string SanitizePath(std::string name)
+{
+	std::string out;
+	out.reserve(name.size());
+	bool last_was_sep = false;
+	for (unsigned char raw : name)
+	{
+		if (std::iscntrl(raw))
+		{
+			continue;
+		}
+		char c = static_cast<char>(raw);
+		if (c == '\\' || c == '/')
+		{
+			if (!last_was_sep)
+			{
+				out.push_back('/');
+				last_was_sep = true;
+			}
+			continue;
+		}
+		last_was_sep = false;
+		out.push_back(c);
+	}
+	return out;
+}
+
 std::string NormalizeKey(std::string name)
 {
-	std::replace(name.begin(), name.end(), '\\', '/');
+	name = TrimWhitespace(std::move(name));
+	name = SanitizePath(std::move(name));
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (name.size() > 4 && name.compare(name.size() - 4, 4, ".dtx") == 0)
+	{
+		name.resize(name.size() - 4);
+	}
+	return name;
+}
+
+std::string NormalizeKeyLegacy(std::string name)
+{
+	name = TrimWhitespace(std::move(name));
+	name = SanitizePath(std::move(name));
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	return name;
 }
 
 std::string NormalizePathSeparators(std::string name)
 {
-	std::replace(name.begin(), name.end(), '\\', '/');
-	return name;
+	name = TrimWhitespace(std::move(name));
+	return SanitizePath(std::move(name));
 }
 
 bool HasExtension(const std::string& value)
@@ -72,15 +126,35 @@ SharedTexture* TextureCache::GetSharedTexture(const char* name)
 		return nullptr;
 	}
 
-	const std::string key = NormalizeKey(name);
+	std::string trimmed = TrimWhitespace(name);
+	if (trimmed.empty())
+	{
+		return nullptr;
+	}
+
+	const std::string key = NormalizeKey(trimmed);
 	auto found = by_name_.find(key);
 	if (found != by_name_.end())
 	{
 		return found->second->texture.get();
 	}
+	const std::string legacy_key = NormalizeKeyLegacy(trimmed);
+	if (legacy_key != key)
+	{
+		found = by_name_.find(legacy_key);
+		if (found != by_name_.end())
+		{
+			return found->second->texture.get();
+		}
+		auto alias = by_alias_.find(legacy_key);
+		if (alias != by_alias_.end())
+		{
+			return alias->second ? alias->second->texture.get() : nullptr;
+		}
+	}
 
-	const std::string path = ResolveTexturePath(name);
-	TextureEntry* entry = CreateEntry(name, path);
+	const std::string path = ResolveTexturePath(trimmed);
+	TextureEntry* entry = CreateEntry(trimmed, path);
 	return entry ? entry->texture.get() : nullptr;
 }
 
@@ -125,13 +199,25 @@ bool TextureCache::GetTexturePath(const char* name, std::string& out_path) const
 
 	const std::string key = NormalizeKey(name);
 	auto found = by_name_.find(key);
-	if (found == by_name_.end() || !found->second)
+	if (found != by_name_.end() && found->second)
 	{
-		return false;
+		out_path = found->second->path;
+		return true;
 	}
-
-	out_path = found->second->path;
-	return true;
+	const std::string legacy_key = NormalizeKeyLegacy(name);
+	found = by_name_.find(legacy_key);
+	if (found != by_name_.end() && found->second)
+	{
+		out_path = found->second->path;
+		return true;
+	}
+	auto alias = by_alias_.find(legacy_key);
+	if (alias != by_alias_.end() && alias->second)
+	{
+		out_path = alias->second->path;
+		return true;
+	}
+	return false;
 }
 
 bool TextureCache::GetTextureDebugInfo(const char* name, TextureDebugInfo& out_info)
@@ -149,12 +235,35 @@ bool TextureCache::GetTextureDebugInfo(const char* name, TextureDebugInfo& out_i
 
 	const std::string key = NormalizeKey(name);
 	auto found = by_name_.find(key);
-	if (found == by_name_.end() || !found->second || !found->second->data)
+	const TextureEntry* entry_ptr = nullptr;
+	if (found != by_name_.end())
+	{
+		entry_ptr = found->second.get();
+	}
+	else
+	{
+		const std::string legacy_key = NormalizeKeyLegacy(name);
+		found = by_name_.find(legacy_key);
+		if (found != by_name_.end())
+		{
+			entry_ptr = found->second.get();
+		}
+		else
+		{
+			auto alias = by_alias_.find(legacy_key);
+			if (alias != by_alias_.end())
+			{
+				entry_ptr = alias->second;
+			}
+		}
+	}
+
+	if (!entry_ptr || !entry_ptr->data)
 	{
 		return false;
 	}
 
-	const auto& entry = *found->second;
+	const auto& entry = *entry_ptr;
 	const auto& header = entry.data->m_Header;
 	out_info.name = entry.name;
 	out_info.path = entry.path;
@@ -220,7 +329,14 @@ void TextureCache::FreeTexture(SharedTexture* texture)
 
 	if (found->second)
 	{
-		by_name_.erase(NormalizeKey(found->second->name));
+		const std::string key = NormalizeKey(found->second->name);
+		const std::string legacy_key = NormalizeKeyLegacy(found->second->name);
+		by_name_.erase(key);
+		if (legacy_key != key)
+		{
+			by_name_.erase(legacy_key);
+			by_alias_.erase(legacy_key);
+		}
 	}
 	by_ptr_.erase(found);
 }
@@ -229,6 +345,7 @@ void TextureCache::Clear()
 {
 	by_ptr_.clear();
 	by_name_.clear();
+	by_alias_.clear();
 }
 
 std::string TextureCache::ResolveTexturePath(const std::string& name) const
@@ -248,6 +365,23 @@ std::string TextureCache::ResolveResourcePath(const std::string& name, const cha
 
 TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, const std::string& path)
 {
+	const std::string canonical_name = NormalizePathSeparators(name);
+	const std::string key = NormalizeKey(canonical_name);
+	auto existing = by_name_.find(key);
+	if (existing != by_name_.end())
+	{
+		return existing->second.get();
+	}
+	const std::string legacy_key = NormalizeKeyLegacy(canonical_name);
+	if (legacy_key != key)
+	{
+		auto alias = by_alias_.find(legacy_key);
+		if (alias != by_alias_.end())
+		{
+			return alias->second;
+		}
+	}
+
 	std::string error;
 	std::unique_ptr<TextureData> data;
 	if (!path.empty())
@@ -255,10 +389,12 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 		ILTStream* stream = OpenFileStream(path);
 		if (!stream)
 		{
+			DEdit2_Log("[TEX] NOT FOUND via file mgr: '%s' -> '%s'", name.c_str(), path.c_str());
 			error = "Failed to open texture file.";
 		}
 		else
 		{
+			DEdit2_Log("[TEX] Loading: '%s' from '%s'", name.c_str(), path.c_str());
 			uint32 base_width = 0;
 			uint32 base_height = 0;
 			TextureData* out = nullptr;
@@ -267,9 +403,31 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 			if (result == LT_OK && out)
 			{
 				data.reset(out);
+				DEdit2_Log("[TEX] Loaded: %ux%u mips=%u bpp=%u size=%u",
+					base_width, base_height, out->m_Header.m_nMipmaps,
+					out->m_Header.GetBPPIdent(), out->m_bufSize);
+				// Check if data is non-zero with detailed count
+				uint32 non_zero_count = 0;
+				if (out->m_pDataBuffer && out->m_bufSize > 0)
+				{
+					const uint32 check_size = out->m_bufSize < 256 ? out->m_bufSize : 256;
+					for (uint32 i = 0; i < check_size; ++i)
+					{
+						if (out->m_pDataBuffer[i] != 0)
+						{
+							++non_zero_count;
+						}
+					}
+					DEdit2_Log("[TEX] First 256 bytes: %u non-zero", non_zero_count);
+				}
+				if (non_zero_count == 0)
+				{
+					DEdit2_Log("[TEX] WARNING: Buffer appears to be all zeros!");
+				}
 			}
 			else
 			{
+				DEdit2_Log("[TEX] dtx_Create FAILED: %s", error.empty() ? "unknown" : error.c_str());
 				error = "dtx_Create failed.";
 				if (out)
 				{
@@ -288,7 +446,7 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 	}
 	else
 	{
-		DEdit2_Log("Texture not found via file manager: %s (using fallback)", name.c_str());
+		DEdit2_Log("[TEX] Path empty, not found via file manager: %s (using fallback)", name.c_str());
 	}
 
 	if (!data)
@@ -302,7 +460,7 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 	}
 
 	auto entry = std::make_unique<TextureEntry>();
-	entry->name = name;
+	entry->name = canonical_name;
 	entry->path = path;
 	entry->data = std::move(data);
 	entry->texture = std::make_unique<SharedTexture>();
@@ -318,6 +476,10 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 
 	TextureEntry* entry_ptr = entry.get();
 	by_ptr_[entry_ptr->texture.get()] = entry_ptr;
-	by_name_.emplace(NormalizeKey(name), std::move(entry));
+	by_name_.emplace(key, std::move(entry));
+	if (legacy_key != key)
+	{
+		by_alias_[legacy_key] = entry_ptr;
+	}
 	return entry_ptr;
 }

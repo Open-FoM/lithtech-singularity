@@ -2,6 +2,7 @@
 
 #include "engine_render.h"
 #include "diligent_render.h"
+#include "rendererconsolevars.h"
 
 #include <algorithm>
 #include <cctype>
@@ -101,6 +102,16 @@ const char* BppToString(BPPIdent bpp)
 		default:
 			return "BPP_UNKNOWN";
 	}
+}
+
+bool IsLightClassName(const std::string& value)
+{
+	const std::string lower = ToLower(value);
+	return lower == "light" ||
+		lower == "dirlight" ||
+		lower == "directionallight" ||
+		lower == "spotlight" ||
+		lower == "pointlight";
 }
 
 std::vector<std::string> Tokenize(const char* command)
@@ -314,6 +325,26 @@ void CmdWorldForceWhite(int argc, const char* argv[])
 	DEdit2_Log("worldforcewhite = %d", diligent_GetForceWhiteVertexColor());
 }
 
+void CmdWorldZeroColorWhite(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldzerocolorwhite <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldzerocolorwhite <0|1>");
+		return;
+	}
+
+	diligent_SetWorldZeroVertexColorIsWhite(enabled != 0 ? 1 : 0);
+	diligent_InvalidateWorldGeometry();
+	DEdit2_Log("worldzerocolorwhite = %d", diligent_GetWorldZeroVertexColorIsWhite());
+}
+
 void CmdWorldTextureStats(int, const char*[])
 {
 	DiligentWorldTextureStats stats;
@@ -371,6 +402,25 @@ void CmdWorldUvDebug(int argc, const char* argv[])
 	DEdit2_Log("worlduvdebug = %d", diligent_GetWorldUvDebug());
 }
 
+void CmdWorldUv1Debug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worlduv1debug <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worlduv1debug <0|1>");
+		return;
+	}
+
+	diligent_SetWorldUv1Debug(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worlduv1debug = %d", diligent_GetWorldUv1Debug());
+}
+
 void CmdWorldTexturedDebug(int argc, const char* argv[])
 {
 	if (argc < 1)
@@ -425,18 +475,18 @@ void CmdWorldPsDebug(int argc, const char* argv[])
 {
 	if (argc < 1)
 	{
-		DEdit2_Log("Usage: worldpsdebug <0|1>");
+		DEdit2_Log("Usage: worldpsdebug <0|1|2>");
 		return;
 	}
 
 	int enabled = 0;
 	if (!ParseInt(argv[0], enabled))
 	{
-		DEdit2_Log("Usage: worldpsdebug <0|1>");
+		DEdit2_Log("Usage: worldpsdebug <0|1|2>");
 		return;
 	}
 
-	diligent_SetWorldPsDebug(enabled != 0 ? 1 : 0);
+	diligent_SetWorldPsDebug(enabled);
 	DEdit2_Log("worldpsdebug = %d", diligent_GetWorldPsDebug());
 }
 
@@ -459,15 +509,52 @@ void CmdWorldTexDebug(int argc, const char* argv[])
 	DEdit2_Log("worldtexdebug = %d", diligent_GetWorldTexDebugMode());
 }
 
+void CmdWorldLightDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldlightdebug <0|1|2|3>");
+		return;
+	}
+
+	int mode = 0;
+	if (!ParseInt(argv[0], mode))
+	{
+		DEdit2_Log("Usage: worldlightdebug <0|1|2|3>");
+		return;
+	}
+
+	diligent_SetWorldLightDebugMode(mode);
+	DEdit2_Log("worldlightdebug = %d", diligent_GetWorldLightDebugMode());
+}
+
+void CmdWorldShaderDump(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldshaderdump <0=textured|1=lightmap|2=lightmap_only|3=dual|4=lightmap_dual>");
+		return;
+	}
+
+	int shader_index = 0;
+	if (!ParseInt(argv[0], shader_index))
+	{
+		DEdit2_Log("Usage: worldshaderdump <0=textured|1=lightmap|2=lightmap_only|3=dual|4=lightmap_dual>");
+		return;
+	}
+
+	diligent_DumpWorldShaderResources(shader_index);
+}
+
 void CmdWorldTexelUV(int argc, const char* argv[])
 {
 	int enabled = diligent_GetWorldTexelUV();
 	if (argc >= 1)
 	{
 		int parsed = 0;
-		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		if (!ParseInt(argv[0], parsed) || (parsed < 0 || parsed > 2))
 		{
-			DEdit2_Log("Usage: worldtexeluv <0|1>");
+			DEdit2_Log("Usage: worldtexeluv <0|1|2>");
 			return;
 		}
 		enabled = parsed;
@@ -479,6 +566,339 @@ void CmdWorldTexelUV(int argc, const char* argv[])
 
 	diligent_SetWorldTexelUV(enabled);
 	DEdit2_Log("worldtexeluv = %d", enabled);
+}
+
+void CmdWorldTexFx(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldTexEffectsEnabled();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldtexfx <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldTexEffectsEnabled(enabled);
+	DEdit2_Log("worldtexfx = %d", enabled);
+}
+
+void CmdWorldBaseUv(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldBaseUvDebug();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldbaseuv <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldBaseUvDebug(enabled);
+	DEdit2_Log("worldbaseuv = %d", enabled);
+}
+
+void CmdWorldRawUv(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldRawUv();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldrawuv <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldRawUv(enabled);
+	DEdit2_Log("worldrawuv = %d", enabled);
+}
+
+void CmdWorldColorDebug(int argc, const char* argv[])
+{
+	int mode = diligent_GetWorldDebugOutputMode();
+	int enabled = (mode == 1) ? 1 : 0;
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldcolordebug <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldDebugOutputMode(enabled ? 1 : 0);
+	DEdit2_Log("worldcolordebug = %d", enabled);
+}
+
+void CmdWorldLmDebug(int argc, const char* argv[])
+{
+	int mode = diligent_GetWorldDebugOutputMode();
+	int enabled = (mode == 2) ? 1 : 0;
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldlmdebug <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldDebugOutputMode(enabled ? 2 : 0);
+	DEdit2_Log("worldlmdebug = %d", enabled);
+}
+
+void CmdWorldBaseUv1(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldForceBaseUv1();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldbaseuv1 <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldForceBaseUv1(enabled);
+	DEdit2_Log("worldbaseuv1 = %d", enabled);
+}
+
+void CmdWorldLegacyVerts(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldForceLegacyVertices();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldlegacyverts <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldForceLegacyVertices(enabled);
+	DEdit2_Log("worldlegacyverts = %d (reload world)", enabled);
+}
+
+void CmdWorldWrapUv(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldWrapUv();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldwrapuv <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldWrapUv(enabled);
+	DEdit2_Log("worldwrapuv = %d", enabled);
+}
+
+void CmdWorldFullbright(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldFullbright();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldfullbright <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldFullbright(enabled);
+	DEdit2_Log("worldfullbright = %d", enabled);
+}
+
+void CmdWorldSamplerDebug(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldsampdebug <0|1|2>");
+		return;
+	}
+
+	int mode = 0;
+	if (!ParseInt(argv[0], mode) || mode < 0 || mode > 2)
+	{
+		DEdit2_Log("Usage: worldsampdebug <0|1|2>");
+		return;
+	}
+
+	diligent_SetWorldSamplerDebugMode(mode);
+	DEdit2_Log("worldsampdebug = %d", diligent_GetWorldSamplerDebugMode());
+}
+
+void CmdWorldTexQuad(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldtexquad <texture_name|off|white|checker>");
+		return;
+	}
+
+	const std::string name = argv[0];
+	const std::string lower = ToLower(name);
+	if (lower == "off")
+	{
+		diligent_SetWorldDebugQuadMode(0);
+		DEdit2_Log("worldtexquad = off");
+		return;
+	}
+	if (lower == "white")
+	{
+		diligent_SetWorldDebugQuadMode(2);
+		DEdit2_Log("worldtexquad = white");
+		return;
+	}
+	if (lower == "checker")
+	{
+		diligent_SetWorldDebugQuadMode(3);
+		DEdit2_Log("worldtexquad = checker");
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		DEdit2_Log("Texture cache unavailable.");
+		return;
+	}
+
+	SharedTexture* texture = cache->GetSharedTexture(name.c_str());
+	if (!texture)
+	{
+		DEdit2_Log("Texture not found: %s", name.c_str());
+		return;
+	}
+
+	diligent_SetWorldDebugQuadTexture(texture);
+	DEdit2_Log("worldtexquad = %s", name.c_str());
+}
+
+void CmdWorldImmutSamplers(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldUseImmutableSamplers();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldimsamplers <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldUseImmutableSamplers(enabled);
+	DEdit2_Log("worldimsamplers = %d", enabled);
+}
+
+void CmdWorldCombinedSamplers(int argc, const char* argv[])
+{
+	int enabled = diligent_GetWorldUseCombinedSamplers();
+	if (argc >= 1)
+	{
+		int parsed = 0;
+		if (!ParseInt(argv[0], parsed) || (parsed != 0 && parsed != 1))
+		{
+			DEdit2_Log("Usage: worldcombsamplers <0|1>");
+			return;
+		}
+		enabled = parsed;
+	}
+	else
+	{
+		enabled = enabled ? 0 : 1;
+	}
+
+	diligent_SetWorldUseCombinedSamplers(enabled);
+	DEdit2_Log("worldcombsamplers = %d", enabled);
+}
+
+void CmdWorldDebugState(int, const char*[])
+{
+	diligent_DumpWorldDebugState();
+}
+
+void CmdWorldSection(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldsection <index>");
+		return;
+	}
+
+	int index = 0;
+	if (!ParseInt(argv[0], index) || index < 0)
+	{
+		DEdit2_Log("Usage: worldsection <index>");
+		return;
+	}
+
+	diligent_DumpWorldSectionInfo(static_cast<uint32_t>(index));
 }
 
 void CmdWorldTexOverride(int argc, const char* argv[])
@@ -526,6 +946,148 @@ void CmdWorldTexDump(int argc, const char* argv[])
 		}
 	}
 	diligent_DumpWorldTextureBindings(static_cast<uint32_t>(limit));
+}
+
+void CmdWorldBindDump(int argc, const char* argv[])
+{
+	if (argc >= 1)
+	{
+		int index = 0;
+		if (!ParseInt(argv[0], index) || index < 0)
+		{
+			DEdit2_Log("Usage: worldbinddump [section_index]");
+			return;
+		}
+		diligent_RequestWorldBindDumpForSection(index);
+		DEdit2_Log("worldbinddump requested for section %d.", index);
+		return;
+	}
+
+	diligent_RequestWorldBindDump();
+	DEdit2_Log("worldbinddump requested.");
+}
+
+void CmdWorldTexRefresh(int, const char*[])
+{
+	diligent_RefreshWorldTextures();
+}
+
+void CmdWorldForceWhiteTex(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcewhitetex <0|1>");
+		return;
+	}
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcewhitetex <0|1>");
+		return;
+	}
+
+	diligent_SetWorldForceWhiteTexture(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldforcewhitetex = %d", diligent_GetWorldForceWhiteTexture());
+}
+
+void CmdWorldForceNoLightmap(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcelm <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcelm <0|1>");
+		return;
+	}
+
+	diligent_SetWorldForceNoLightmap(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldforcelm = %d", diligent_GetWorldForceNoLightmap());
+}
+
+void CmdWorldForceWhiteLightmap(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcewhitelm <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcewhitelm <0|1>");
+		return;
+	}
+
+	diligent_SetWorldForceWhiteLightmap(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldforcewhitelm = %d", diligent_GetWorldForceWhiteLightmap());
+}
+
+void CmdWorldFallbackFullbright(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldfallbackfullbright <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldfallbackfullbright <0|1>");
+		return;
+	}
+
+	diligent_SetWorldFallbackFullbright(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldfallbackfullbright = %d", diligent_GetWorldFallbackFullbright());
+}
+
+void CmdWorldForceCheckerTex(int argc, const char* argv[])
+{
+	if (argc < 1)
+	{
+		DEdit2_Log("Usage: worldforcechecker <0|1>");
+		return;
+	}
+
+	int enabled = 0;
+	if (!ParseInt(argv[0], enabled))
+	{
+		DEdit2_Log("Usage: worldforcechecker <0|1>");
+		return;
+	}
+
+	diligent_SetWorldForceCheckerTexture(enabled != 0 ? 1 : 0);
+	DEdit2_Log("worldforcechecker = %d", diligent_GetWorldForceCheckerTexture());
+}
+
+void CmdWorldVertDump(int argc, const char* argv[])
+{
+	int count = 8;
+	int block = 0;
+	if (argc >= 1)
+	{
+		if (!ParseInt(argv[0], count) || count < 0)
+		{
+			DEdit2_Log("Usage: worldvertdump [count] [block]");
+			return;
+		}
+	}
+	if (argc >= 2)
+	{
+		if (!ParseInt(argv[1], block) || block < 0)
+		{
+			DEdit2_Log("Usage: worldvertdump [count] [block]");
+			return;
+		}
+	}
+
+	diligent_DumpWorldVertices(static_cast<uint32>(count), static_cast<uint32>(block));
 }
 
 void CmdWorldBaseVertex(int argc, const char* argv[])
@@ -804,7 +1366,45 @@ void CmdTexView(int argc, const char* argv[])
 	g_TexView.width = info.width;
 	g_TexView.height = info.height;
 
-	DEdit2_Log("texview = %s (%ux%u)", g_TexView.name.c_str(), g_TexView.width, g_TexView.height);
+	TextureData* texture_data = cache->GetTexture(texture);
+	uint32 cpu_pixel = 0;
+	bool has_cpu_pixel = false;
+	BPPIdent cpu_bpp = BPP_32;
+	const void* mip_data = nullptr;
+	uint32 mip_size = 0;
+	uint32 buf_size = 0;
+	uint32 mip_w = 0;
+	uint32 mip_h = 0;
+	if (texture_data)
+	{
+		cpu_bpp = texture_data->m_Header.GetBPPIdent();
+		buf_size = static_cast<uint32>(texture_data->m_bufSize);
+		mip_data = texture_data->m_Mips[0].m_Data;
+		mip_size = static_cast<uint32>(texture_data->m_Mips[0].m_dataSize);
+		mip_w = static_cast<uint32>(texture_data->m_Mips[0].m_Width);
+		mip_h = static_cast<uint32>(texture_data->m_Mips[0].m_Height);
+		if (cpu_bpp == BPP_32 && texture_data->m_Mips[0].m_Data)
+		{
+			std::memcpy(&cpu_pixel, texture_data->m_Mips[0].m_Data, sizeof(uint32));
+			has_cpu_pixel = true;
+		}
+	}
+
+	DEdit2_Log("texview = %s (%ux%u) view=%p tex=%p engine=%p render=%p cpu_bpp=%u cpu_pixel=0x%08X buf=%u mip0=%ux%u data=%p size=%u",
+		g_TexView.name.c_str(),
+		g_TexView.width,
+		g_TexView.height,
+		static_cast<void*>(view),
+		static_cast<void*>(texture),
+		texture ? texture->m_pEngineData : nullptr,
+		texture ? texture->m_pRenderData : nullptr,
+		static_cast<unsigned>(cpu_bpp),
+		has_cpu_pixel ? cpu_pixel : 0u,
+		buf_size,
+		mip_w,
+		mip_h,
+		mip_data,
+		mip_size);
 }
 
 void CmdListNodes(int argc, const char* argv[])
@@ -866,6 +1466,44 @@ void CmdShaders(int argc, const char* argv[])
 
 	diligent_SetShadersEnabled(enabled);
 	DEdit2_Log("Shaders %s.", enabled ? "enabled" : "disabled");
+}
+
+void CmdLightStats(int argc, const char* argv[])
+{
+	static_cast<void>(argc);
+	static_cast<void>(argv);
+
+	size_t scene_lights = 0;
+	size_t scene_visible = 0;
+	if (g_Bindings.scene_nodes && g_Bindings.scene_props)
+	{
+		const auto& nodes = *g_Bindings.scene_nodes;
+		const auto& props = *g_Bindings.scene_props;
+		const size_t count = std::min(nodes.size(), props.size());
+		for (size_t i = 0; i < count; ++i)
+		{
+			const TreeNode& node = nodes[i];
+			if (node.deleted || node.is_folder)
+			{
+				continue;
+			}
+			const NodeProperties& node_props = props[i];
+			if (IsLightClassName(node_props.type) || IsLightClassName(node_props.class_name))
+			{
+				++scene_lights;
+				if (node_props.visible)
+				{
+					++scene_visible;
+				}
+			}
+		}
+	}
+
+	DEdit2_Log("DynamicLight=%d DynamicLightWorld=%d", g_CV_DynamicLight.m_Val, g_CV_DynamicLightWorld.m_Val);
+	DEdit2_Log("Scene lights: total=%zu visible=%zu", scene_lights, scene_visible);
+	DEdit2_Log("Renderer lights: external=%u world(last)=%u",
+		diligent_GetExternalDynamicLightCount(),
+		diligent_GetWorldDynamicLightCount());
 }
 
 void CmdListTextures(int argc, const char* argv[])
@@ -989,6 +1627,7 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("freetextures", CmdFreeTextures);
 	AddCommand("replacetex", CmdReplaceTex);
 	AddCommand("shaders", CmdShaders);
+	AddCommand("lightstats", CmdLightStats);
 	AddCommand("listtextures", CmdListTextures);
 	AddCommand("listtexturepaths", CmdListTexturePaths);
 	AddCommand("texinfo", CmdTexInfo);
@@ -996,17 +1635,44 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("texview", CmdTexView);
 	AddCommand("worldcolorstats", CmdWorldColorStats);
 	AddCommand("worldforcewhite", CmdWorldForceWhite);
+	AddCommand("worldzerocolorwhite", CmdWorldZeroColorWhite);
 	AddCommand("worldtexstats", CmdWorldTextureStats);
 	AddCommand("worlduvstats", CmdWorldUvStats);
 	AddCommand("worlduvdebug", CmdWorldUvDebug);
+	AddCommand("worlduv1debug", CmdWorldUv1Debug);
 	AddCommand("worldtextureddebug", CmdWorldTexturedDebug);
 	AddCommand("worldpipestats", CmdWorldPipelineStats);
 	AddCommand("worldpipereset", CmdWorldPipelineReset);
 	AddCommand("worldpsdebug", CmdWorldPsDebug);
 	AddCommand("worldtexdebug", CmdWorldTexDebug);
+	AddCommand("worldlightdebug", CmdWorldLightDebug);
+	AddCommand("worldshaderdump", CmdWorldShaderDump);
 	AddCommand("worldtexeluv", CmdWorldTexelUV);
+	AddCommand("worldtexfx", CmdWorldTexFx);
+	AddCommand("worldbaseuv", CmdWorldBaseUv);
+	AddCommand("worldrawuv", CmdWorldRawUv);
+	AddCommand("worldcolordebug", CmdWorldColorDebug);
+	AddCommand("worldlmdebug", CmdWorldLmDebug);
+	AddCommand("worldbaseuv1", CmdWorldBaseUv1);
+	AddCommand("worldlegacyverts", CmdWorldLegacyVerts);
+	AddCommand("worldwrapuv", CmdWorldWrapUv);
+	AddCommand("worldfullbright", CmdWorldFullbright);
+	AddCommand("worldsampdebug", CmdWorldSamplerDebug);
+	AddCommand("worldtexquad", CmdWorldTexQuad);
+	AddCommand("worldimsamplers", CmdWorldImmutSamplers);
+	AddCommand("worldcombsamplers", CmdWorldCombinedSamplers);
+	AddCommand("worlddebugstate", CmdWorldDebugState);
+	AddCommand("worldsection", CmdWorldSection);
 	AddCommand("worldtexoverride", CmdWorldTexOverride);
 	AddCommand("worldtexdump", CmdWorldTexDump);
+	AddCommand("worldbinddump", CmdWorldBindDump);
+	AddCommand("worldtexrefresh", CmdWorldTexRefresh);
+	AddCommand("worldforcewhitetex", CmdWorldForceWhiteTex);
+	AddCommand("worldforcelm", CmdWorldForceNoLightmap);
+	AddCommand("worldforcewhitelm", CmdWorldForceWhiteLightmap);
+	AddCommand("worldfallbackfullbright", CmdWorldFallbackFullbright);
+	AddCommand("worldforcechecker", CmdWorldForceCheckerTex);
+	AddCommand("worldvertdump", CmdWorldVertDump);
 	AddCommand("worldbasevertex", CmdWorldBaseVertex);
 	AddCommand("worldshaderreset", CmdWorldShaderReset);
 	AddCommand("shaders", CmdShaders);

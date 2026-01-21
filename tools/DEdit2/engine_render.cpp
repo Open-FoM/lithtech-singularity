@@ -164,6 +164,9 @@ bool InitEngineRenderer(SDL_Window* window, void* native_handle, EngineRenderCon
 		return false;
 	}
 
+	diligent_SetWorldTexEffectsEnabled(0);
+	diligent_SetWorldUseImmutableSamplers(1);
+
 	ctx.render_struct->m_bInitted = true;
 	ctx.render_struct->m_bLoaded = true;
 	ctx.render_struct->m_Width = init.m_Mode.m_Width;
@@ -225,6 +228,11 @@ std::vector<std::string> BuildFileMgrTrees(const std::string& project_root, cons
 		roots.push_back((root / "Worlds").string());
 		roots.push_back((root / "Resources" / "Rez").string());
 		roots.push_back((root / "Resources" / "Worlds").string());
+		// Texture directories (common LithTech game structure)
+		roots.push_back((root / "tex").string());
+		roots.push_back((root / "Tex").string());
+		roots.push_back((root / "textures").string());
+		roots.push_back((root / "Textures").string());
 	}
 
 	if (!world_path.empty())
