@@ -1,0 +1,124 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 4
+  },
+  "configurePresets": [
+    {
+      "name": "base-ninja",
+      "hidden": true,
+      "generator": "Ninja"
+    },
+    {
+      "name": "engine",
+      "displayName": "Engine (Ninja, RelWithDebInfo)",
+      "description": "Configure main engine in build/engine",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/engine",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "engine-debug",
+      "displayName": "Engine (Ninja, Debug)",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/engine-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "engine-release",
+      "displayName": "Engine (Ninja, Release)",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/engine-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "dedit2",
+      "displayName": "DEdit2 (Ninja, RelWithDebInfo)",
+      "description": "Configure DEdit2 in build/dedit2",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/dedit2",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "LTJS_BUILD_DEDIT2": "ON"
+      }
+    },
+    {
+      "name": "dedit2-debug",
+      "displayName": "DEdit2 (Ninja, Debug)",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/dedit2-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LTJS_BUILD_DEDIT2": "ON"
+      }
+    },
+    {
+      "name": "dedit2-release",
+      "displayName": "DEdit2 (Ninja, Release)",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/dedit2-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "LTJS_BUILD_DEDIT2": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "engine",
+      "displayName": "Build Engine",
+      "configurePreset": "engine",
+      "targets": [
+        "ltjs_lith_tech"
+      ]
+    },
+    {
+      "name": "engine-debug",
+      "displayName": "Build Engine (Debug)",
+      "configurePreset": "engine-debug",
+      "targets": [
+        "ltjs_lith_tech"
+      ]
+    },
+    {
+      "name": "engine-release",
+      "displayName": "Build Engine (Release)",
+      "configurePreset": "engine-release",
+      "targets": [
+        "ltjs_lith_tech"
+      ]
+    },
+    {
+      "name": "dedit2",
+      "displayName": "Build DEdit2",
+      "configurePreset": "dedit2",
+      "targets": [
+        "ltjs_dedit2"
+      ]
+    },
+    {
+      "name": "dedit2-debug",
+      "displayName": "Build DEdit2 (Debug)",
+      "configurePreset": "dedit2-debug",
+      "targets": [
+        "ltjs_dedit2"
+      ]
+    },
+    {
+      "name": "dedit2-release",
+      "displayName": "Build DEdit2 (Release)",
+      "configurePreset": "dedit2-release",
+      "targets": [
+        "ltjs_dedit2"
+      ]
+    }
+  ]
+}

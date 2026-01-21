@@ -1,6 +1,9 @@
 cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
 project (ltjs VERSION 0.0.1 LANGUAGES CXX)
 
+# Standardize runtime output to a top-level bin directory.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+
 if (NOT WIN32 AND NOT APPLE)
 	message (FATAL_ERROR "WIN32 or APPLE only")
 endif ()
