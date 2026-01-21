@@ -164,7 +164,7 @@ bool InitEngineRenderer(SDL_Window* window, void* native_handle, EngineRenderCon
 		return false;
 	}
 
-	diligent_SetWorldTexEffectsEnabled(0);
+	diligent_SetWorldTexEffectsEnabled(1);
 	diligent_SetWorldUseImmutableSamplers(1);
 
 	ctx.render_struct->m_bInitted = true;
