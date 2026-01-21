@@ -12,6 +12,24 @@
 static IClientFileMgr* g_pIClientFileMgr;
 define_holder(IClientFileMgr, g_pIClientFileMgr);
 
+namespace
+{
+inline void NormalizeSlashes(char* path)
+{
+	if (!path)
+	{
+		return;
+	}
+	for (; *path; ++path)
+	{
+		if (*path == '\\')
+		{
+			*path = '/';
+		}
+	}
+}
+} // namespace
+
 //defines
 #define TEXTURE_SCRIPT_GROUP_VERSION		1
 
@@ -97,6 +115,7 @@ CTextureScriptInstance* CTextureScriptMgr::GetInstance(const char* pszGroupName)
 	char pszFileName[MAX_PATH + 1];
 	LTStrCpy(pszFileName, "TextureEffectGroups\\", sizeof(pszFileName));
 	LTStrCat(pszFileName, pszGroupName, sizeof(pszFileName));
+	NormalizeSlashes(pszFileName);
 
 	//no match, so we now need to load in the new instance
 	FileRef Ref; 
@@ -112,6 +131,7 @@ CTextureScriptInstance* CTextureScriptMgr::GetInstance(const char* pszGroupName)
 	//see if the stream was successfully opened
 	if (!pStream)
 	{
+		dsi_ConsolePrint("Texture script manager: failed to open '%s'.", pszFileName);
 		delete pInst;
 		return NULL;
 	}

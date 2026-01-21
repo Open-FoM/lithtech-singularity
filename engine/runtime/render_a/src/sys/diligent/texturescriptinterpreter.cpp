@@ -14,6 +14,24 @@
 static IClientFileMgr* g_pIClientFileMgr;
 define_holder(IClientFileMgr, g_pIClientFileMgr);
 
+namespace
+{
+inline void NormalizeSlashes(char* path)
+{
+	if (!path)
+	{
+		return;
+	}
+	for (; *path; ++path)
+	{
+		if (*path == '\\')
+		{
+			*path = '/';
+		}
+	}
+}
+} // namespace
+
 //Interface for the client for accessing the world offset
 #include "iltclient.h"		
 static ILTClient* g_pILTClient;
@@ -150,7 +168,18 @@ bool CTextureScriptInterpreter::LoadScript(const char* pszFilename)
 	//now we need to open up the new file
 	FileRef Ref; 
 	Ref.m_FileType			= TYPECODE_UNKNOWN;
-	Ref.m_pFilename			= pszFilename;
+	char normalized[MAX_PATH + 1];
+	if (pszFilename)
+	{
+		LTStrCpy(normalized, pszFilename, sizeof(normalized));
+		NormalizeSlashes(normalized);
+		Ref.m_pFilename = normalized;
+	}
+	else
+	{
+		normalized[0] = '\0';
+		Ref.m_pFilename = normalized;
+	}
 	FileIdentifier* pIdent	= g_pIClientFileMgr->GetFileIdentifier(&Ref, TYPECODE_UNKNOWN);
 
     static_cast<void>(pIdent);
@@ -159,7 +188,10 @@ bool CTextureScriptInterpreter::LoadScript(const char* pszFilename)
 	ILTStream* pStream = g_pIClientFileMgr->OpenFile(&Ref);
 
 	if(!pStream)
+	{
+		dsi_ConsolePrint("Texture script interpreter: failed to open '%s'.", Ref.m_pFilename ? Ref.m_pFilename : "");
 		return false;
+	}
 
 	//read in the version
 	uint16 nVersion;
