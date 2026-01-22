@@ -10,6 +10,7 @@ ltjs_add_defaults (${PROJECT_NAME})
 target_sources (
 	${PROJECT_NAME}
 	PRIVATE
+		lteulerangles.cpp
 		ltmodule.cpp
 		lterror.cpp
 		ltobjref.cpp

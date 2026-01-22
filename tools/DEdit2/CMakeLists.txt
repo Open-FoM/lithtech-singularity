@@ -124,6 +124,7 @@ target_sources (
 		app_main.cpp
 		bsp_view.cpp
 		dedit2_concommand.cpp
+		editor_model_mgr.cpp
 		editor_state.cpp
 		editor_transfer.cpp
 		engine_console_stub.cpp

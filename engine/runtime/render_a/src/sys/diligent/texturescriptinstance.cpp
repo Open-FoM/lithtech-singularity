@@ -3,22 +3,18 @@
 #include "texturescriptinstance.h"
 #include "renderstruct.h"
 #include "viewparams.h"
+#include "diligent_state.h"
 
 #include <cstdarg>
 #include <cstring>
-
-extern RenderStruct* g_render_struct;
-extern SceneDesc* g_diligent_scene_desc;
-extern uint32 g_diligent_object_frame_code;
-extern ViewParams g_ViewParams;
 
 namespace
 {
 float diligent_get_frame_time()
 {
-	if (g_diligent_scene_desc)
+	if (g_diligent_state.scene_desc)
 	{
-		return g_diligent_scene_desc->m_FrameTime;
+		return g_diligent_state.scene_desc->m_FrameTime;
 	}
 
 	return 0.0f;
@@ -26,12 +22,12 @@ float diligent_get_frame_time()
 
 uint32 diligent_get_frame_code()
 {
-	if (g_render_struct && g_render_struct->GetObjectFrameCode)
+	if (g_diligent_state.render_struct && g_diligent_state.render_struct->GetObjectFrameCode)
 	{
-		return g_render_struct->GetObjectFrameCode();
+		return g_diligent_state.render_struct->GetObjectFrameCode();
 	}
 
-	return g_diligent_object_frame_code;
+	return g_diligent_state.object_frame_code;
 }
 } // namespace
 
@@ -160,16 +156,16 @@ bool CTextureScriptInstance::Evaluate(bool bForce)
 			if(pStage->m_pEvaluator->GetInputType() == ITextureScriptEvaluator::INPUT_POS)
 			{
 				//do a full matrix multiply
-				pStage->m_mTransform = pStage->m_mTransform * g_ViewParams.m_mInvView;
+				pStage->m_mTransform = pStage->m_mTransform * g_diligent_state.view_params.m_mInvView;
 			}
 			else
 			{
 				//since we are not doing the position we only want to do an orientation
 				//transform
 				LTMatrix mTrans;
-				mTrans.Init(	g_ViewParams.m_Right.x, g_ViewParams.m_Up.x, g_ViewParams.m_Forward.x, 0.0f,
-								g_ViewParams.m_Right.y, g_ViewParams.m_Up.y, g_ViewParams.m_Forward.y, 0.0f,
-								g_ViewParams.m_Right.z, g_ViewParams.m_Up.z, g_ViewParams.m_Forward.z, 0.0f,
+				mTrans.Init(	g_diligent_state.view_params.m_Right.x, g_diligent_state.view_params.m_Up.x, g_diligent_state.view_params.m_Forward.x, 0.0f,
+								g_diligent_state.view_params.m_Right.y, g_diligent_state.view_params.m_Up.y, g_diligent_state.view_params.m_Forward.y, 0.0f,
+								g_diligent_state.view_params.m_Right.z, g_diligent_state.view_params.m_Up.z, g_diligent_state.view_params.m_Forward.z, 0.0f,
 								0.0f, 0.0f, 0.0f, 1.0f);
 				pStage->m_mTransform = pStage->m_mTransform * mTrans;
 			}

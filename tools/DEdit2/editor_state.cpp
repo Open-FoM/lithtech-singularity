@@ -2516,7 +2516,20 @@ std::vector<TreeNode> BuildSceneTreeFromBsp(
 			object_props.rotation[0] = object.rotation[0];
 			object_props.rotation[1] = object.rotation[1];
 			object_props.rotation[2] = object.rotation[2];
+			object_props.scale[0] = object.scale[0];
+			object_props.scale[1] = object.scale[1];
+			object_props.scale[2] = object.scale[2];
+			// Copy model filename from BspObjectView
+			if (!object.filename.empty())
+			{
+				object_props.resource = object.filename;
+			}
 			object_props.raw_properties.emplace_back("object_id", std::to_string(object.id));
+			// Also add string properties for debugging/inspection
+			for (const auto& prop : object.string_props)
+			{
+				object_props.raw_properties.emplace_back(prop.first, prop.second);
+			}
 		}
 	}
 

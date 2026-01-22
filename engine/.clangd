@@ -1,0 +1,7 @@
+# Engine-specific configuration
+CompileFlags:
+  CompilationDatabase: ../build/engine
+
+Diagnostics:
+  Suppress:
+    - "pp_file_not_found"

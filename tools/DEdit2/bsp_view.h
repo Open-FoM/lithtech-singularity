@@ -38,6 +38,9 @@ struct BspObjectView
 	std::string name;
 	float position[3] = {0.0f, 0.0f, 0.0f};
 	float rotation[3] = {0.0f, 0.0f, 0.0f};
+	float scale[3] = {1.0f, 1.0f, 1.0f};
+	std::string filename;  // Model/texture path from Filename, Model, ModelName properties
+	std::vector<std::pair<std::string, std::string>> string_props;  // All string properties for inspection
 };
 
 struct BspWorldView

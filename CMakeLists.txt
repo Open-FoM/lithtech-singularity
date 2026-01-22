@@ -83,6 +83,19 @@ if (APPLE)
 	endif ()
 endif ()
 
+# Break cyclic link interface between ShaderTools and HLSL2GLSL to avoid duplicate libs in link line.
+if (TARGET Diligent-HLSL2GLSLConverterLib)
+	get_target_property (_ltjs_hlsl2glsl_iface Diligent-HLSL2GLSLConverterLib INTERFACE_LINK_LIBRARIES)
+	if (_ltjs_hlsl2glsl_iface)
+		list (REMOVE_ITEM _ltjs_hlsl2glsl_iface Diligent-ShaderTools)
+		set_target_properties (
+			Diligent-HLSL2GLSLConverterLib
+			PROPERTIES INTERFACE_LINK_LIBRARIES "${_ltjs_hlsl2glsl_iface}"
+		)
+	endif ()
+	unset (_ltjs_hlsl2glsl_iface)
+endif ()
+
 add_subdirectory (libs/bibendovsky_spul_lib)
 add_subdirectory (libs/ffmpeg)
 add_subdirectory (libs/ltjs)

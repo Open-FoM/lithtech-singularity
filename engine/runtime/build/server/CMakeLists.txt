@@ -411,7 +411,7 @@ if (WIN32)
 			../../kernel/src/sys/win/stringmgr.h
 			../../kernel/src/sys/win/timemgr.h
 			../../kernel/src/sys/win/version_resource.h
-			../../shared/src/sys/win/renderstruct.h
+			../../shared/src/renderstruct.h
 			../../kernel/io/src/sys/win/de_file.cpp
 			../../kernel/mem/src/sys/win/de_memory.cpp
 			../../kernel/src/sys/win/bindmgr.cpp
@@ -442,6 +442,7 @@ else ()
 			../../kernel/src/sys/linux/streamsim.cpp
 			../../kernel/src/sys/linux/systeminfo.cpp
 			../../kernel/src/sys/linux/timemgr.cpp
+			../../kernel/net/src/sys/win/udpdriver.cpp
 			../../kernel/toport/src/bindmgr.cpp
 			../../kernel/toport/src/dutil.cpp
 			../../kernel/toport/src/load_pcx.cpp

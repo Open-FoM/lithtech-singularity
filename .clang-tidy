@@ -1,10 +1,13 @@
 Checks: >
   -*,
+  bugprone-*,
+  performance-*,
   clang-diagnostic-*,
   clang-analyzer-*,
   modernize-use-override,
   modernize-use-nullptr,
   readability-implicit-bool-conversion,
-  readability-redundant-parentheses
-HeaderFilterRegex: '^(engine|libs/(ltjs|ltmem|lith|stdlith|rezmgr))/'
-WarningsAsErrors: ''
+  readability-redundant-parentheses,
+  -modernize-use-trailing-return-type
+HeaderFilterRegex: "^(engine|libs/(ltjs|ltmem|lith|stdlith|rezmgr)|tools/DEdit2)/"
+WarningsAsErrors: ""

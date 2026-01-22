@@ -1,0 +1,17 @@
+# Default: DEdit2 configuration
+CompileFlags:
+  CompilationDatabase: build/dedit2
+
+Diagnostics:
+  Suppress:
+    - "pp_file_not_found"
+
+---
+If:
+  PathMatch: "libs/(diligent|freetype|sdl_ttf|imgui|sdl)/.*"
+
+CompileFlags:
+  Add: []
+
+Diagnostics:
+  Suppress: ["*"]

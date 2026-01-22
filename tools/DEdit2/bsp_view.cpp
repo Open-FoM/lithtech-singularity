@@ -575,6 +575,21 @@ bool GetBspWorldView(const std::string& world_path, BspWorldView& out_view, std:
 						obj.name = value;
 					}
 				}
+				// Capture model filename properties
+				else if (key == "Filename" || key == "filename" ||
+				         key == "Model" || key == "model" ||
+				         key == "ModelName" || key == "modelname")
+				{
+					if (!value.empty())
+					{
+						obj.filename = value;
+					}
+				}
+				// Store all string properties for debugging/inspection
+				if (!value.empty())
+				{
+					obj.string_props.emplace_back(key, value);
+				}
 			}
 			else if (prop_code == PT_VECTOR || prop_code == PT_COLOR)
 			{
@@ -589,6 +604,12 @@ bool GetBspWorldView(const std::string& world_path, BspWorldView& out_view, std:
 					obj.position[0] = vec[0];
 					obj.position[1] = vec[1];
 					obj.position[2] = vec[2];
+				}
+				else if (key == "Scale" || key == "scale")
+				{
+					obj.scale[0] = vec[0];
+					obj.scale[1] = vec[1];
+					obj.scale[2] = vec[2];
 				}
 			}
 			else if (prop_code == PT_ROTATION)

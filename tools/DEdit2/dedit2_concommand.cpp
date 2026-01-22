@@ -1,7 +1,9 @@
 #include "dedit2_concommand.h"
 
 #include "engine_render.h"
+#include "diligent_drawprim_api.h"
 #include "diligent_render.h"
+#include "diligent_render_debug.h"
 #include "rendererconsolevars.h"
 
 #include <algorithm>
@@ -358,8 +360,8 @@ void CmdWorldUvDebug(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetWorldUvDebug(enabled != 0 ? 1 : 0);
-	DEdit2_Log("worlduvdebug = %d", diligent_GetWorldUvDebug());
+	g_CV_WorldUvDebug.m_Val = enabled != 0 ? 1 : 0;
+	DEdit2_Log("worlduvdebug = %d", g_CV_WorldUvDebug.m_Val);
 }
 
 void CmdWorldTexturedDebug(int argc, const char* argv[])
@@ -377,8 +379,8 @@ void CmdWorldTexturedDebug(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetWorldUvDebug(enabled != 0 ? 1 : 0);
-	DEdit2_Log("worldtextureddebug = %d", diligent_GetWorldUvDebug());
+	g_CV_WorldUvDebug.m_Val = enabled != 0 ? 1 : 0;
+	DEdit2_Log("worldtextureddebug = %d", g_CV_WorldUvDebug.m_Val);
 }
 
 void CmdWorldPipelineStats(int, const char*[])
@@ -429,8 +431,8 @@ void CmdWorldPsDebug(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetWorldPsDebug(enabled);
-	DEdit2_Log("worldpsdebug = %d", diligent_GetWorldPsDebug());
+	g_CV_WorldPsDebug.m_Val = enabled;
+	DEdit2_Log("worldpsdebug = %d", g_CV_WorldPsDebug.m_Val);
 }
 
 void CmdWorldTexDebug(int argc, const char* argv[])
@@ -448,13 +450,13 @@ void CmdWorldTexDebug(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetWorldTexDebugMode(mode);
-	DEdit2_Log("worldtexdebug = %d", diligent_GetWorldTexDebugMode());
+	g_CV_WorldTexDebugMode.m_Val = std::clamp(mode, 0, 4);
+	DEdit2_Log("worldtexdebug = %d", g_CV_WorldTexDebugMode.m_Val);
 }
 
 void CmdWorldTexelUV(int argc, const char* argv[])
 {
-	int enabled = diligent_GetWorldTexelUV();
+	int enabled = g_CV_WorldTexelUV.m_Val;
 	if (argc >= 1)
 	{
 		int parsed = 0;
@@ -470,7 +472,7 @@ void CmdWorldTexelUV(int argc, const char* argv[])
 		enabled = enabled ? 0 : 1;
 	}
 
-	diligent_SetWorldTexelUV(enabled);
+	g_CV_WorldTexelUV.m_Val = enabled;
 	DEdit2_Log("worldtexeluv = %d", enabled);
 }
 
@@ -490,7 +492,7 @@ void CmdWorldTexDump(int argc, const char* argv[])
 
 void CmdWorldBaseVertex(int argc, const char* argv[])
 {
-	int enabled = diligent_GetWorldUseBaseVertex();
+	int enabled = g_CV_WorldUseBaseVertex.m_Val;
 	if (argc >= 1)
 	{
 		int parsed = 0;
@@ -506,7 +508,7 @@ void CmdWorldBaseVertex(int argc, const char* argv[])
 		enabled = enabled ? 0 : 1;
 	}
 
-	diligent_SetWorldUseBaseVertex(enabled);
+	g_CV_WorldUseBaseVertex.m_Val = enabled;
 	DEdit2_Log("worldbasevertex = %d", enabled);
 }
 
@@ -518,20 +520,13 @@ void CmdWorldShaderReset(int, const char*[])
 
 void CmdFogDebug(int, const char*[])
 {
-	DiligentFogDebugInfo info;
-	if (!diligent_GetFogDebugInfo(info))
-	{
-		DEdit2_Log("Fog info unavailable.");
-		return;
-	}
-
 	DEdit2_Log("Fog: enabled=%d near=%.2f far=%.2f color=(%d,%d,%d)",
-		info.enabled,
-		info.near_z,
-		info.far_z,
-		info.color_r,
-		info.color_g,
-		info.color_b);
+		g_CV_FogEnable.m_Val != 0 ? 1 : 0,
+		g_CV_FogNearZ.m_Val,
+		g_CV_FogFarZ.m_Val,
+		g_CV_FogColorR.m_Val,
+		g_CV_FogColorG.m_Val,
+		g_CV_FogColorB.m_Val);
 }
 
 void CmdFogEnable(int argc, const char* argv[])
@@ -549,8 +544,8 @@ void CmdFogEnable(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetFogEnabled(enabled != 0 ? 1 : 0);
-	DEdit2_Log("fogenable = %d", enabled != 0 ? 1 : 0);
+	g_CV_FogEnable.m_Val = enabled != 0 ? 1 : 0;
+	DEdit2_Log("fogenable = %d", g_CV_FogEnable.m_Val != 0 ? 1 : 0);
 }
 
 void CmdFogRange(int argc, const char* argv[])
@@ -569,7 +564,8 @@ void CmdFogRange(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetFogRange(near_z, far_z);
+	g_CV_FogNearZ.m_Val = near_z;
+	g_CV_FogFarZ.m_Val = far_z;
 	DEdit2_Log("fogrange = %.2f %.2f", near_z, far_z);
 }
 
@@ -588,8 +584,8 @@ void CmdWorldForceTextured(int argc, const char* argv[])
 		return;
 	}
 
-	diligent_SetForceTexturedWorld(enabled != 0 ? 1 : 0);
-	DEdit2_Log("worldforcetexture = %d", diligent_GetForceTexturedWorld());
+	g_CV_WorldForceTexture.m_Val = enabled != 0 ? 1 : 0;
+	DEdit2_Log("worldforcetexture = %d", g_CV_WorldForceTexture.m_Val);
 }
 
 bool ParseInt(const char* text, int& out)
@@ -846,7 +842,7 @@ void CmdReplaceTex(int argc, const char* argv[])
 
 void CmdShaders(int argc, const char* argv[])
 {
-	int enabled = diligent_GetShadersEnabled();
+	int enabled = g_CV_ShadersEnabled.m_Val;
 	if (argc >= 1)
 	{
 		int value = 0;
@@ -862,7 +858,7 @@ void CmdShaders(int argc, const char* argv[])
 		enabled = enabled ? 0 : 1;
 	}
 
-	diligent_SetShadersEnabled(enabled);
+	g_CV_ShadersEnabled.m_Val = enabled;
 	DEdit2_Log("Shaders %s.", enabled ? "enabled" : "disabled");
 }
 

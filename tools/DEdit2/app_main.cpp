@@ -1,4 +1,6 @@
 #include "dedit2_concommand.h"
+#include "de_objects.h"
+#include "editor_model_mgr.h"
 #include "editor_state.h"
 #include "editor_transfer.h"
 #include "platform_macos.h"
@@ -20,6 +22,7 @@
 
 #include "ImGuiImplSDL3.hpp"
 #include "diligent_render.h"
+#include "diligent_render_debug.h"
 #include "rendererconsolevars.h"
 #include "debuggeometry.h"
 #include "ltrotation.h"
@@ -1221,7 +1224,6 @@ void RenderViewport(
 		ComputeCameraBasis(viewport_state, cam_pos, cam_forward, cam_right, cam_up);
 
 		SceneDesc scene{};
-		scene.m_DrawMode = DRAWMODE_NORMAL;
 		scene.m_FrameTime = ImGui::GetIO().DeltaTime;
 		scene.m_fActualFrameTime = scene.m_FrameTime;
 		scene.m_GlobalLightScale.Init(1.0f, 1.0f, 1.0f);
@@ -1239,8 +1241,26 @@ void RenderViewport(
 			LTVector(cam_up.x, cam_up.y, cam_up.z));
 		scene.m_SkyObjects = nullptr;
 		scene.m_nSkyObjects = 0;
-		scene.m_pObjectList = nullptr;
-		scene.m_ObjectListSize = 0;
+
+		// Collect model instances for rendering if models are enabled
+		std::vector<LTObject*> object_list;
+		if (viewport_state.render_draw_models)
+		{
+			object_list = GetEditorModelManager().CollectObjectList();
+		}
+
+		if (!object_list.empty())
+		{
+			scene.m_DrawMode = DRAWMODE_OBJECTLIST;
+			scene.m_pObjectList = object_list.data();
+			scene.m_ObjectListSize = static_cast<int>(object_list.size());
+		}
+		else
+		{
+			scene.m_DrawMode = DRAWMODE_NORMAL;
+			scene.m_pObjectList = nullptr;
+			scene.m_ObjectListSize = 0;
+		}
 
 		if (ctx.engine.render_struct->Start3D)
 		{
@@ -1445,6 +1465,9 @@ int main(int argc, char** argv)
 				std::fprintf(stderr, "World render load failed: %s\n", render_error.c_str());
 			}
 		}
+
+		// Sync model instances with the scene tree for rendering
+		SyncModelsWithSceneTree(scene_nodes, scene_props);
 	};
 
 	if (!world_file.empty())

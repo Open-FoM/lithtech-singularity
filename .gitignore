@@ -2,6 +2,7 @@
 .vs/
 .ralph/
 .claude/
+.sisyphus/
 build/
 bin/
 !engine/runtime/build/

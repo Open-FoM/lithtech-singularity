@@ -268,7 +268,7 @@ target_sources (
 		../../shared/src/stacktrace.h
 		../../shared/src/staticfifo.h
 		../../shared/src/stdlterror.h
-		../../shared/src/sys/win/renderstruct.h
+		../../shared/src/renderstruct.h
 		../../shared/src/sysddstructs.h
 		../../shared/src/version_info.h
 		../../sound/src/iltsound.h

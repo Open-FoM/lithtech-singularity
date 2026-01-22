@@ -1,7 +1,9 @@
 #include "bdefs.h"
 #include "diligentdrawprim.h"
 
+#include "diligent_drawprim_api.h"
 #include "diligent_render.h"
+#include "diligent_state.h"
 #include "render.h"
 #include "rendererconsolevars.h"
 #include "de_objects.h"
@@ -31,7 +33,6 @@ define_holder(ILTTexInterface, pTexInterface);
 
 extern int32 g_ScreenWidth;
 extern int32 g_ScreenHeight;
-extern ViewParams g_ViewParams;
 
 namespace
 {
@@ -733,8 +734,8 @@ bool CDiligentDrawPrim::UpdateTransformMatrix()
 			&draw_params,
 			camera->m_xFov,
 			camera->m_yFov,
-			g_ViewParams.m_NearZ,
-			g_ViewParams.m_FarZ,
+			g_diligent_state.view_params.m_NearZ,
+			g_diligent_state.view_params.m_FarZ,
 			camera->m_Left,
 			camera->m_Top,
 			camera->m_Right,

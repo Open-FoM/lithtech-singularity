@@ -123,7 +123,6 @@ set (ltjs_render_lib ltjs_lib_diligent_render)
 target_link_libraries (
 	${PROJECT_NAME}
 	PRIVATE
-		bibendovsky_spul_lib
 		ltjs::audio
 		${ltjs_render_lib}
 		$<$<PLATFORM_ID:Darwin>:SDL3_ttf::SDL3_ttf>
@@ -682,7 +681,7 @@ if (WIN32)
 			../../kernel/src/sys/win/videomgr.h
 			../../kernel/src/sys/win/winbind.h
 			../../shared/src/sys/win/dstreamopenqueuemgr.h
-			../../shared/src/sys/win/renderstruct.h
+			../../shared/src/renderstruct.h
 			../../shared/src/sys/win/winstdlterror.h
 			../../shared/src/sys/win/winsync.h
 			../../client/src/sys/win/winconsole_impl.cpp
@@ -721,17 +720,26 @@ else ()
 	target_sources (
 		${PROJECT_NAME}
 		PRIVATE
+			../../client/src/sys/win/winconsole_impl.cpp
 			../../kernel/io/src/sys/linux/linuxfile.cpp
 			../../kernel/mem/src/sys/linux/de_memory.cpp
 			../../kernel/src/sys/linux/counter.cpp
+			../../kernel/src/sys/win/client.cpp
 			../../kernel/src/sys/linux/linuxdsys.cpp
 			../../kernel/src/sys/linux/lthread.cpp
 			../../kernel/src/sys/linux/ltlibraryloader.cpp
 			../../kernel/src/sys/linux/ltthread.cpp
 			../../kernel/src/sys/linux/musicdriver.cpp
+			../../kernel/src/sys/win/ltjs_ffmpeg_video_mgr_impl.cpp
+			../../kernel/src/sys/win/ltjs_fmv_player.cpp
+			../../kernel/src/sys/win/render.cpp
+			../../kernel/src/sys/win/sdl_input.cpp
+			../../kernel/src/sys/win/sdl_lt_cursor_impl.cpp
 			../../kernel/src/sys/linux/streamsim.cpp
 			../../kernel/src/sys/linux/systeminfo.cpp
 			../../kernel/src/sys/linux/timemgr.cpp
+			../../kernel/src/sys/win/videomgr.cpp
+			../../kernel/net/src/sys/win/udpdriver.cpp
 			../../kernel/toport/src/bindmgr.cpp
 			../../kernel/toport/src/dutil.cpp
 			../../kernel/toport/src/load_pcx.cpp
@@ -744,7 +752,6 @@ endif ()
 target_sources (
 	${PROJECT_NAME}
 	PRIVATE
-		${diligent_shader_generated_cpp}
 		${diligent_shader_generated_h}
 		${diligent_shader_files}
 )

@@ -483,7 +483,7 @@ target_sources (
 		../../shared/src/stdlterror.h
 		../../shared/src/strtools.h
 		../../shared/src/sys/win/dstreamopenqueuemgr.h
-		../../shared/src/sys/win/renderstruct.h
+		../../shared/src/renderstruct.h
 		../../shared/src/sys/win/winstdlterror.h
 		../../shared/src/sys/win/winsync.h
 		../../shared/src/sysddstructs.h

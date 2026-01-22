@@ -128,6 +128,28 @@ add_custom_command (
 		${PROJECT_NAME}
 		PRIVATE
 			diligent_render.cpp
+			diligent_render_entry.cpp
+			diligent_2d_draw.cpp
+			diligent_debug_draw.cpp
+			diligent_object_draw.cpp
+			diligent_postfx.cpp
+			diligent_scene_collect.cpp
+			diligent_shadow_draw.cpp
+			diligent_render_api.cpp
+			diligent_renderer_lifecycle.cpp
+			diligent_world_api.cpp
+			diligent_output_targets.cpp
+			diligent_scene_render.cpp
+			diligent_buffers.cpp
+			diligent_device.cpp
+			diligent_mesh_layout.cpp
+			diligent_model_draw.cpp
+			diligent_pipeline_cache.cpp
+			diligent_state.cpp
+			diligent_texture_cache.cpp
+			diligent_utils.cpp
+			diligent_world_data.cpp
+			diligent_world_draw.cpp
 			texturescriptmgr.cpp
 			texturescriptinstance.cpp
 			texturescriptinterpreter.cpp

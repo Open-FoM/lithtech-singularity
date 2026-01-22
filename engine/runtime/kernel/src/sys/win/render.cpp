@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "render.h"
 #include "consolecommands.h"
-#include "dsys_interface.h"
+#include "dsys.h"
 #include "clientmgr.h"
 #include "sysclientde_impl.h"
 #include "varsetter.h"
@@ -808,4 +808,3 @@ void r_UnbindTexture(SharedTexture *pSharedTexture, bool bUnLoad_EngineData)
 		pSharedTexture->m_pEngineData = LTNULL; 
 	}
 }
-

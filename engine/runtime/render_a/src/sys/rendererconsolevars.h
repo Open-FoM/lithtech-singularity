@@ -103,10 +103,17 @@ RCONVAR(g_CV_DebugRBOldOccludeeShape, "DebugRBOldOccludeeShape", int, 0);
 RCONVAR(g_CV_DebugRBFindSlivers, "DebugRBFindSlivers", int, 0);
 //RCONVAR(g_CV_LockPVS, "LockPVS", int, 0);
 RCONVAR(g_CV_DisableRenderObjectGroups, "DisableRenderObjectGroups", int, 0);
+RCONVAR(g_CV_WorldForceTexture, "WorldForceTexture", int, 0);
+RCONVAR(g_CV_WorldUvDebug, "WorldUvDebug", int, 0);
+RCONVAR(g_CV_WorldPsDebug, "WorldPsDebug", int, 0);
+RCONVAR(g_CV_WorldTexDebugMode, "WorldTexDebugMode", int, 0);
+RCONVAR(g_CV_WorldTexelUV, "WorldTexelUV", int, 0);
+RCONVAR(g_CV_WorldUseBaseVertex, "WorldUseBaseVertex", int, 1);
 
 //------------------------------
 // Renderer Settings
 RCONVAR(g_CV_VSyncOnFlip, "VSyncOnFlip", int, 1);
+RCONVAR(g_CV_ShadersEnabled, "ShadersEnabled", int, 1);
 RCONVAR(g_CV_MipMapBias, "MipMapBias", float, 0.0f);
 RCONVAR(g_CV_Trilinear, "Trilinear", int, 0);
 RCONVAR(g_CV_Anisotropic, "Anisotropic", int, 0);
@@ -264,6 +271,7 @@ RCONVAR(g_CV_DynamicLightSprites, "DynamicLightSprites", int, 1);
 //------------------------------
 // Glow Settings
 RCONVAR(g_CV_ScreenGlowEnable, "ScreenGlowEnable", int, 0);
+RCONVAR(g_CV_ScreenGlow_DrawCanvases, "ScreenGlow_DrawCanvases", int, 1);
 RCONVAR(g_CV_ScreenGlowShowTexture, "ScreenGlowShowTexture", int, 0);
 RCONVAR(g_CV_ScreenGlowShowTextureScale, "ScreenGlowShowTextureScale", float, 0.5f);
 RCONVAR(g_CV_ScreenGlowTextureSize, "ScreenGlowTextureSize", int, 256);
@@ -274,6 +282,7 @@ RCONVAR(g_CV_ScreenGlowGaussRadius0, "ScreenGlowGaussRadius0", float, 0.18f);
 RCONVAR(g_CV_ScreenGlowGaussAmp1, "ScreenGlowGaussAmp1", float, 0.11f);
 RCONVAR(g_CV_ScreenGlowGaussRadius1, "ScreenGlowGaussRadius1", float, 4.5f);
 RCONVAR(g_CV_ScreenGlowPixelShift, "ScreenGlowPixelShift", float, -0.1f);
+RCONVAR(g_CV_ScreenGlowBlurMultiTap, "ScreenGlowBlurMultiTap", int, 1);
 RCONVAR(g_CV_ScreenGlowShowFilter, "ScreenGlowShowFilter", int, 0);
 RCONVAR(g_CV_ScreenGlowShowFilterScale, "ScreenGlowShowFilterScale", float, 0.25f);
 RCONVAR(g_CV_ScreenGlowShowFilterRange, "ScreenGlowShowFilterRange", float, 0.2f);
@@ -281,6 +290,10 @@ RCONVAR(g_CV_ScreenGlowFogEnable, "ScreenGlowFogEnable", int, 0);
 RCONVAR(g_CV_ScreenGlowFogNearZ, "ScreenGlowFogNearZ", float, 0.0f);
 RCONVAR(g_CV_ScreenGlowFogFarZ, "ScreenGlowFogFarZ", float, 2000.0f);
 RCONVAR(g_CV_ScreenGlowEnablePS, "ScreenGlowEnablePS", int, 1);
+
+//------------------------------
+// PostFX Settings
+RCONVAR(g_CV_ToneMapEnable, "ToneMapEnable", int, 1);
 
 //------------------------------
 // SSAO Settings

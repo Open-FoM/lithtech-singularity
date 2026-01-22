@@ -1,6 +1,10 @@
 #include "ui_properties.h"
 
 #include "ui_shared.h"
+#include "engine_render.h"
+#include "diligent_drawprim_api.h"
+#include "diligent_render.h"
+#include "diligent_render_debug.h"
 
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
@@ -10,6 +14,59 @@ namespace
 bool IsType(const NodeProperties& props, const char* type)
 {
 	return props.type == type;
+}
+
+void DrawTexturePreview(const char* texture_name, float max_size = 256.0f)
+{
+	if (!texture_name || texture_name[0] == '\0')
+	{
+		return;
+	}
+
+	TextureCache* cache = GetEngineTextureCache();
+	if (!cache)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Texture cache unavailable");
+		return;
+	}
+
+	SharedTexture* texture = cache->GetSharedTexture(texture_name);
+	if (!texture)
+	{
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Texture not loaded: %s", texture_name);
+		return;
+	}
+
+	Diligent::ITextureView* view = diligent_get_drawprim_texture_view(texture, false);
+	if (!view)
+	{
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Texture view unavailable");
+		return;
+	}
+
+	DiligentTextureDebugInfo info;
+	if (!diligent_GetTextureDebugInfo(texture, info))
+	{
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Texture info unavailable");
+		return;
+	}
+
+	if (info.width == 0 || info.height == 0)
+	{
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Invalid texture dimensions");
+		return;
+	}
+
+	const float aspect = static_cast<float>(info.height) / static_cast<float>(info.width);
+	ImVec2 size(max_size, max_size * aspect);
+	if (size.y > max_size)
+	{
+		size.y = max_size;
+		size.x = size.y / aspect;
+	}
+
+	ImGui::Image(reinterpret_cast<ImTextureID>(view), size);
+	ImGui::Text("%s (%ux%u)", texture_name, info.width, info.height);
 }
 
 void DrawTextureProperties(NodeProperties& props)
@@ -58,6 +115,10 @@ void DrawWorldProperties(NodeProperties& props)
 	{
 		ImGui::Checkbox("Sky Pan Enabled", &props.sky_pan_enabled);
 		ImGui::InputText("Sky Pan Texture", &props.sky_pan_texture);
+		if (!props.sky_pan_texture.empty())
+		{
+			DrawTexturePreview(props.sky_pan_texture.c_str());
+		}
 		ImGui::DragFloat2("Sky Pan Scale", props.sky_pan_scale, 0.01f, 0.0f, 1000.0f);
 		ImGui::DragFloat2("Sky Pan AutoPan", props.sky_pan_auto_pan, 0.01f, -1000.0f, 1000.0f);
 	}
@@ -229,6 +290,12 @@ void DrawSceneProperties(
 	else if (IsType(node_props, "Entity"))
 	{
 		DrawEntityProperties(node_props);
+	}
+	else if (IsType(node_props, "Surface"))
+	{
+		ImGui::TextUnformatted("Material");
+		ImGui::TextWrapped("%s", node_props.resource.c_str());
+		DrawTexturePreview(node_props.resource.c_str());
 	}
 
 	if (ImGui::CollapsingHeader("Raw Properties"))
