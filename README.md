@@ -1,9 +1,9 @@
-# LTJS (LithTech Jupiter System)
+# LithTech Singularity
 
-A source port of [LithTech](https://wikipedia.org/wiki/LithTech) Jupiter engine.
+A community-driven revamp of the LithTech Jupiter Engine.
 
-### WARNING This is a work-in-progress project!
+## New Additions
 
-
-Currently supported games:  
-- No One Lives Forever 2 (v1.3)
+- New renderer supporting Vulkan, DirectX 12 and Metal
+- Cross-platform (Windows, Linux and Mac)
+- New DEdit2 Editor

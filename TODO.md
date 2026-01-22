@@ -143,20 +143,20 @@
   - [ ] Bink D3D9 usage remains (disabled in Diligent).
 
 ## Phase 8 — Cleanup & Removal
-- [ ] Remove DX9 headers, libs, and CMake targets for D3D.
+- [x] Remove DX9 headers, libs, and CMake targets for D3D.
   - [x] Drop d3d9/d3dx9 link libs from lithtech target.
   - [x] Remove D3D header entries from lithtech target_sources.
-  - [ ] Remove remaining D3D build targets/files (render_a/src/sys/d3d).
-- [ ] Delete `sys/d3d` source trees after Diligent renderer is functional.
-- [ ] Purge D3D-specific renderstruct fields, helpers, and wrappers.
-- [ ] Rename any d3d_ prefixed structure
+  - [x] Remove remaining D3D build targets/files (render_a/src/sys/d3d).
+- [x] Delete `sys/d3d` source trees after Diligent renderer is functional.
+- [x] Purge D3D-specific renderstruct fields, helpers, and wrappers.
+- [x] Rename any d3d_ prefixed structure
 
 ## Phase 9 — Validation & Stabilization
-- [ ] Render a minimal scene (triangle) using Diligent.
-- [ ] Render a full world + models with lighting and textures.
+- [x] Render a minimal scene (triangle) using Diligent.
+- [x] Render a full world + models with lighting and textures.
 - [ ] Validate UI overlay and video playback.
 - [ ] Verify performance and memory usage regressions.
-- [ ] Run Vulkan validation layers (Win/Linux) and Metal API validation (macOS) during bring-up; triage GPU validation errors.
+- [x] Run Vulkan validation layers (Win/Linux) and Metal API validation (macOS) during bring-up; triage GPU validation errors.
 - [ ] Tune `EnvBumpMapScale` for polygrid env-bump response in Diligent.
 - [ ] Refine Diligent polygrid bump shader response after visual validation.
 - [ ] Tune the static-light cap/selection logic to better match your content.

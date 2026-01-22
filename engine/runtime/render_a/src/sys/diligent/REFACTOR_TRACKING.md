@@ -11,12 +11,12 @@
 - [x] done
 
 ### Phases
-- [~] Phase 0: Scaffolding (tracking file, internal headers, render state stub)
+- [x] Phase 0: Scaffolding (tracking file, internal headers, render state stub)
 - [x] Phase 1: Core utils + device/swapchain/buffers
-- [~] Phase 2: Pipeline/cache + texture cache/conversion
-- [~] Phase 3: World data/load + world draw paths
-- [~] Phase 4: Models + object renderers + shadows/glow
-- [ ] Phase 5: API entry points + wiring cleanup
+- [x] Phase 2: Pipeline/cache + texture cache/conversion
+- [x] Phase 3: World data/load + world draw paths
+- [x] Phase 4: Models + object renderers + shadows/glow
+- [x] Phase 5: API entry points + wiring cleanup
 
 ### Move Ledger
 | Symbol / Area | From | To | Status |
