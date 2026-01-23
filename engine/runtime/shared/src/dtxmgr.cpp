@@ -34,6 +34,7 @@ TextureMipData::TextureMipData()
 TextureData::TextureData()
 {
 	m_pSharedTexture	= NULL;
+	m_pSections			= NULL;
 	m_pDataBuffer		= NULL;
     m_bufSize			= 0;
 }
@@ -41,6 +42,15 @@ TextureData::TextureData()
 
 TextureData::~TextureData()
 {
+	DtxSection *pCur = m_pSections;
+	while (pCur)
+	{
+		DtxSection *pNext = pCur->m_pNext;
+		dfree(pCur);
+		pCur = pNext;
+	}
+	m_pSections = NULL;
+
 	if(m_Header.m_IFlags & DTX_MIPSALLOCED)
 	{
 		for(uint32 i=0; i < m_Header.m_nMipmaps; i++)
@@ -288,8 +298,37 @@ LTRESULT dtx_Create(ILTStream *pStream, TextureData **ppOut, uint32& nBaseWidth,
 		}
 	}
 	
-	//don't bother loading in the sections
-	pRet->m_Header.m_nSections = 0;
+	// Read in the sections if present.
+	if ((hdr.m_IFlags & DTX_SECTIONSFIXED) != 0)
+	{
+		for (uint32 i = 0; i < hdr.m_nSections; ++i)
+		{
+			SectionHeader section_header{};
+			pStream->Read(&section_header, sizeof(section_header));
+
+			DtxSection* section = (DtxSection*)dalloc(
+				(unsigned long)((sizeof(DtxSection) - 1) + section_header.m_DataLen));
+			if (!section)
+			{
+				dtx_Destroy(pRet);
+				RETURN_ERROR(1, dtx_Create, LT_OUTOFMEMORY);
+			}
+
+			memcpy(&section->m_Header, &section_header, sizeof(section_header));
+			if (section_header.m_DataLen > 0)
+			{
+				pStream->Read(section->m_Data, section_header.m_DataLen);
+			}
+			section->m_pNext = pRet->m_pSections;
+			pRet->m_pSections = section;
+		}
+	}
+	else
+	{
+		// Ensure flag consistency if the file didn't mark sections.
+		pRet->m_Header.m_IFlags |= DTX_SECTIONSFIXED;
+		pRet->m_Header.m_nSections = 0;
+	}
 
 	// Check the error status.
 	if (pStream->ErrorStatus() != LT_OK) 

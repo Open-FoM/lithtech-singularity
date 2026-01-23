@@ -89,6 +89,33 @@ clang-format -i <file>
 find engine libs/ltjs tools -name '*.cpp' -o -name '*.h' | xargs clang-format -i
 ```
 
+## Documentation Standards
+
+- **Public APIs**: Use Doxygen `///` or `/** */` with a brief summary, details where non-obvious, and **usage examples** for non-trivial functions.
+- **Module headers**: Each renderer header (`engine/runtime/render_a/src/sys/diligent/*.h`) should start with a short Doxygen “module essay” describing purpose, responsibilities, and ownership boundaries.
+- **Internal helpers**: Document intent (why), not just mechanics (what). Avoid restating the function name.
+- **No docstrings on pure forward declarations**: Document at the primary declaration site instead.
+
+## Engineering Patterns & File Size
+
+- **Single Responsibility Principle (SRP)**: Each file/module should own one concern (e.g., postfx, model draw, world draw, debug draw).
+- **Avoid god‑files**: If a file grows beyond ~600–800 lines or spans multiple concerns, split it.
+- **State isolation**: Separate “state/ownership” from “operations” wherever practical.
+- **API simplification**: Prefer narrowing APIs and pushing details behind module boundaries over adding new global access points.
+
+## Include & API Hygiene
+
+- **Public headers**: Keep minimal and stable; avoid including internal headers unless necessary.
+- **IWYU**: Include what you use; minimize transitive dependency reliance.
+- **No function forward declarations**: Define before use or include header (per existing rule).
+
+## Refactor Quality Checklist
+
+- **Build proof**: Run the relevant preset build(s) for touched targets when feasible.
+- **Coupling**: Reduce cross‑module entanglement; avoid new globals.
+- **Readability**: Prefer smaller units with clear names and minimal side effects.
+- **Docs**: Update or add docs for any changes to public API behavior.
+
 ## Static Analysis
 
 Enabled checks in `.clang-tidy`:

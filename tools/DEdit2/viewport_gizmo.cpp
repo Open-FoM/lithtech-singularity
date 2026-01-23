@@ -189,7 +189,8 @@ bool ProjectWorldToScreen(
 	ImVec2& out_screen)
 {
 	const Diligent::float4 world(position[0], position[1], position[2], 1.0f);
-	const Diligent::float4 clip = view_proj * world;
+	// Diligent math is row-vector based; keep CPU projection consistent with shader math.
+	const Diligent::float4 clip = world * view_proj;
 	if (clip.w <= 0.0001f)
 	{
 		return false;

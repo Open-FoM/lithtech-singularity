@@ -194,6 +194,7 @@ public:
     PFormat             m_PFormat;
     LTLink              m_Link;         // For DirectEngine, NOT a render DLL.
     uint32              m_AllocSize;    // Allocation size,
+    DtxSection          *m_pSections = nullptr; // All the sections.
 
     // Stuff the DTX loader doesn't touch (doesn't even intialize).
     SharedTexture       *m_pSharedTexture;  // From whence it came..
@@ -222,4 +223,3 @@ void dtx_Destroy(TextureData *pTextureData);
 void dtx_SetupDTXFormat2(BPPIdent bpp, PFormat *pFormat);
 
 #endif  // __DTXMGR_H__
-

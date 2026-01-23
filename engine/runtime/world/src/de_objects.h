@@ -395,6 +395,7 @@ public:
 // Vars.
 public:
     float       m_LightRadius;
+	float       m_Intensity;
 };
 
 // ------------------------------------------------------------------------
