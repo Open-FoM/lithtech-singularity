@@ -8,6 +8,8 @@ cbuffer WorldConstants
     float4 g_FogParams;
     float4 g_DynamicLightPos;
     float4 g_DynamicLightColor;
+    float4 g_SunDir;
+    float4 g_SunColor;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];

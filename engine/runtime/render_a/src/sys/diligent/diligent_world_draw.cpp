@@ -19,6 +19,8 @@
 #include "texturescriptvarmgr.h"
 #include "viewparams.h"
 
+#include <algorithm>
+
 #include "diligent_shaders_generated.h"
 #include "ltrenderstyle.h"
 
@@ -546,6 +548,10 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		if (!depth_enabled)
 		{
 			pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_ALWAYS;
+		}
+		else if (blend_mode == kWorldBlendMultiply)
+		{
+			pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_EQUAL;
 		}
 		diligent_fill_world_blend_desc(blend_mode, pipeline_info.GraphicsPipeline.BlendDesc.RenderTargets[0]);
 	}
@@ -1229,6 +1235,30 @@ void diligent_fill_world_constants(
 	constants.fog_params[0] = fog_far;
 	constants.fog_params[1] = diligent_get_tonemap_enabled();
 	constants.fog_params[2] = diligent_get_swapchain_output_is_srgb();
+	if (g_diligent_state.render_struct)
+	{
+		const LTVector& dir = g_diligent_state.render_struct->m_GlobalLightDir;
+		const LTVector& color = g_diligent_state.render_struct->m_GlobalLightColor;
+		constants.sun_dir[0] = dir.x;
+		constants.sun_dir[1] = dir.y;
+		constants.sun_dir[2] = dir.z;
+		constants.sun_dir[3] = 0.0f;
+		constants.sun_color[0] = std::max(0.0f, color.x);
+		constants.sun_color[1] = std::max(0.0f, color.y);
+		constants.sun_color[2] = std::max(0.0f, color.z);
+		constants.sun_color[3] = 1.0f;
+	}
+	else
+	{
+		constants.sun_dir[0] = 0.0f;
+		constants.sun_dir[1] = 0.0f;
+		constants.sun_dir[2] = 1.0f;
+		constants.sun_dir[3] = 0.0f;
+		constants.sun_color[0] = 0.0f;
+		constants.sun_color[1] = 0.0f;
+		constants.sun_color[2] = 0.0f;
+		constants.sun_color[3] = 0.0f;
+	}
 	const int tex_debug_mode = diligent_get_world_tex_debug_mode();
 	if (tex_debug_mode != 0)
 	{
@@ -1244,7 +1274,8 @@ bool diligent_draw_render_blocks_with_constants(
 	const std::vector<DiligentRenderBlock*>& blocks,
 	const DiligentWorldConstants& base_constants,
 	DiligentWorldBlendMode blend_mode,
-	DiligentWorldDepthMode depth_mode)
+	DiligentWorldDepthMode depth_mode,
+	DiligentWorldSectionFilter section_filter)
 {
 	if (blocks.empty())
 	{
@@ -1301,6 +1332,14 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			auto& section = *section_ptr;
+			if (section_filter == DiligentWorldSectionFilter::Normal && section.light_anim)
+			{
+				continue;
+			}
+			if (section_filter == DiligentWorldSectionFilter::LightAnim && !section.light_anim)
+			{
+				continue;
+			}
 
 			Diligent::ITextureView* texture_view = nullptr;
 			Diligent::ITextureView* dual_texture_view = nullptr;
@@ -1319,82 +1358,89 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			uint8 mode = kWorldPipelineSkip;
-			switch (static_cast<DiligentPCShaderType>(section.shader_code))
+			if (section.light_anim)
 			{
-				case kPcShaderGouraud:
-					mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
-					break;
-				case kPcShaderLightmap:
-					mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
-					break;
-				case kPcShaderLightmapTexture:
-					if (texture_view && lightmap_view)
-					{
-						mode = kWorldPipelineLightmap;
-					}
-					else if (texture_view)
-					{
-						mode = kWorldPipelineTextured;
-					}
-					else if (lightmap_view)
-					{
-						// Skip: kPcShaderLightmapTexture expects a texture, but none is available.
+				mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
+			}
+			else
+			{
+				switch (static_cast<DiligentPCShaderType>(section.shader_code))
+				{
+					case kPcShaderGouraud:
+						mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
+						break;
+					case kPcShaderLightmap:
+						mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
+						break;
+					case kPcShaderLightmapTexture:
+						if (texture_view && lightmap_view)
+						{
+							mode = kWorldPipelineLightmap;
+						}
+						else if (texture_view)
+						{
+							mode = kWorldPipelineTextured;
+						}
+						else if (lightmap_view)
+						{
+							// Skip: kPcShaderLightmapTexture expects a texture, but none is available.
+							mode = kWorldPipelineSkip;
+						}
+						else
+						{
+							mode = kWorldPipelineSolid;
+						}
+						break;
+					case kPcShaderDualTexture:
+						if (texture_view && dual_texture_view)
+						{
+							mode = kWorldPipelineDualTexture;
+						}
+						else if (texture_view)
+						{
+							mode = kWorldPipelineTextured;
+						}
+						else
+						{
+							mode = kWorldPipelineSolid;
+						}
+						break;
+					case kPcShaderLightmapDualTexture:
+						if (texture_view && lightmap_view && dual_texture_view)
+						{
+							mode = kWorldPipelineLightmapDual;
+						}
+						else if (texture_view && dual_texture_view)
+						{
+							mode = kWorldPipelineDualTexture;
+						}
+						else if (texture_view && lightmap_view)
+						{
+							mode = kWorldPipelineLightmap;
+						}
+						else if (texture_view)
+						{
+							mode = kWorldPipelineTextured;
+						}
+						else if (lightmap_view)
+						{
+							// Skip: kPcShaderLightmapDualTexture expects textures, but none available.
+							mode = kWorldPipelineSkip;
+						}
+						else
+						{
+							mode = kWorldPipelineSolid;
+						}
+						break;
+					case kPcShaderSkypan:
+					case kPcShaderSkyPortal:
+					case kPcShaderOccluder:
+					case kPcShaderNone:
+					case kPcShaderUnknown:
+					default:
 						mode = kWorldPipelineSkip;
-					}
-					else
-					{
-						mode = kWorldPipelineSolid;
-					}
-					break;
-				case kPcShaderDualTexture:
-					if (texture_view && dual_texture_view)
-					{
-						mode = kWorldPipelineDualTexture;
-					}
-					else if (texture_view)
-					{
-						mode = kWorldPipelineTextured;
-					}
-					else
-					{
-						mode = kWorldPipelineSolid;
-					}
-					break;
-				case kPcShaderLightmapDualTexture:
-					if (texture_view && lightmap_view && dual_texture_view)
-					{
-						mode = kWorldPipelineLightmapDual;
-					}
-					else if (texture_view && dual_texture_view)
-					{
-						mode = kWorldPipelineDualTexture;
-					}
-					else if (texture_view && lightmap_view)
-					{
-						mode = kWorldPipelineLightmap;
-					}
-					else if (texture_view)
-					{
-						mode = kWorldPipelineTextured;
-					}
-					else if (lightmap_view)
-					{
-						// Skip: kPcShaderLightmapDualTexture expects textures, but none available.
-						mode = kWorldPipelineSkip;
-					}
-					else
-					{
-						mode = kWorldPipelineSolid;
-					}
-					break;
-				case kPcShaderSkypan:
-				case kPcShaderSkyPortal:
-				case kPcShaderOccluder:
-				case kPcShaderNone:
-				case kPcShaderUnknown:
-				default:
-					mode = kWorldPipelineSkip;
-					break;
+						break;
+				}
 			}
 
 			if (diligent_get_force_textured_world())
@@ -1407,7 +1453,7 @@ bool diligent_draw_render_blocks_with_constants(
 				mode = kWorldPipelineSolid;
 			}
 
-			if (g_CV_LightmapsOnly.m_Val != 0)
+			if (!section.light_anim && g_CV_LightmapsOnly.m_Val != 0)
 			{
 				mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
 			}
@@ -1570,7 +1616,8 @@ bool diligent_draw_render_blocks_with_constants(
 		}
 	}
 
-	if (shading_mode == kWorldShadingTextured && g_diligent_num_world_dynamic_lights > 0)
+	if (section_filter == DiligentWorldSectionFilter::Normal &&
+		shading_mode == kWorldShadingTextured && g_diligent_num_world_dynamic_lights > 0)
 	{
 		auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, kWorldBlendSolid, kWorldDepthEnabled, g_CV_Wireframe.m_Val != 0);
 		if (light_pipeline && light_pipeline->pipeline_state && light_pipeline->srb)
@@ -1591,7 +1638,7 @@ bool diligent_draw_render_blocks_with_constants(
 				light_constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
 				light_constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
 				light_constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
-				light_constants.dynamic_light_color[3] = 1.0f;
+				light_constants.dynamic_light_color[3] = light->m_Intensity;
 
 				void* light_mapped_constants = nullptr;
 				g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, light_mapped_constants);
@@ -1826,14 +1873,32 @@ bool diligent_draw_world_blocks()
 		constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
 		constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
 		constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
-		constants.dynamic_light_color[3] = 1.0f;
+		constants.dynamic_light_color[3] = light->m_Intensity;
 	}
 
-	return diligent_draw_render_blocks_with_constants(
-		g_visible_render_blocks,
-		constants,
-		kWorldBlendSolid,
-		kWorldDepthEnabled);
+	if (!diligent_draw_render_blocks_with_constants(
+			g_visible_render_blocks,
+			constants,
+			kWorldBlendSolid,
+			kWorldDepthEnabled,
+			DiligentWorldSectionFilter::Normal))
+	{
+		return false;
+	}
+
+	if (g_CV_LightMap.m_Val != 0 && diligent_get_world_shading_mode() == kWorldShadingTextured)
+	{
+		const DiligentWorldBlendMode light_anim_blend =
+			(g_CV_LightmapsOnly.m_Val != 0) ? kWorldBlendSolid : kWorldBlendMultiply;
+		diligent_draw_render_blocks_with_constants(
+			g_visible_render_blocks,
+			constants,
+			light_anim_blend,
+			kWorldDepthEnabled,
+			DiligentWorldSectionFilter::LightAnim);
+	}
+
+	return true;
 }
 bool diligent_draw_world_model_list_with_view(
 	const std::vector<WorldModelInstance*>& models,
@@ -1918,10 +1983,15 @@ bool diligent_draw_world_model_list_with_view(
 			constants.dynamic_light_color[0] = static_cast<float>(light->m_ColorR) / 255.0f;
 			constants.dynamic_light_color[1] = static_cast<float>(light->m_ColorG) / 255.0f;
 			constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
-			constants.dynamic_light_color[3] = 1.0f;
+			constants.dynamic_light_color[3] = light->m_Intensity;
 		}
 
-		if (!diligent_draw_render_blocks_with_constants(blocks, constants, instance_blend, depth_mode))
+		if (!diligent_draw_render_blocks_with_constants(
+				blocks,
+				constants,
+				instance_blend,
+				depth_mode,
+				DiligentWorldSectionFilter::Normal))
 		{
 			return false;
 		}

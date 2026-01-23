@@ -1,3 +1,11 @@
+/**
+ * diligent_model_draw.h
+ *
+ * This header defines the Model Draw portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef LTJS_DILIGENT_MODEL_DRAW_H
 #define LTJS_DILIGENT_MODEL_DRAW_H
 
@@ -22,6 +30,7 @@ struct ModelHookData;
 class ILTStream;
 struct LTB_Header;
 
+/// Rigid mesh implementation backed by Diligent vertex/index buffers.
 class DiligentRigidMesh : public CDIRigidMesh
 {
 public:
@@ -57,6 +66,7 @@ private:
 	DiligentMeshLayout m_layout;
 };
 
+/// Subset of bones affecting a vertex range for skinned rendering.
 struct DiligentBoneSet
 {
 	uint16 first_vert_index = 0;
@@ -65,12 +75,14 @@ struct DiligentBoneSet
 	uint32 index_into_index_buffer = 0;
 };
 
+/// Maps duplicated vertices back to source indices.
 struct DiligentDupMap
 {
 	uint16 src_vert = 0;
 	uint16 dst_vert = 0;
 };
 
+/// Skinned mesh implementation backed by Diligent buffers.
 class DiligentSkelMesh : public CDISkelMesh
 {
 public:
@@ -133,6 +145,7 @@ private:
 	std::vector<LTMatrix> m_bone_transforms;
 };
 
+/// Vertex-animated mesh implementation backed by Diligent buffers.
 class DiligentVAMesh : public CDIVAMesh
 {
 public:
@@ -178,10 +191,20 @@ private:
 	std::array<bool, 4> m_dynamic_streams{};
 };
 
+/// \brief Draws a model instance using its default render styles.
+/// \details This is the standard model rendering path used by scene rendering.
+/// \code
+/// if (!diligent_draw_model_instance(instance)) { /* handle error */ }
+/// \endcode
 bool diligent_draw_model_instance(ModelInstance* instance);
+/// \brief Draws a model instance using an explicit render-style map.
+/// \details Used by glow passes or editor overrides to remap render styles.
 bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map);
+/// \brief Retrieves model hook data and invokes hook callbacks if present.
 bool diligent_get_model_hook_data(ModelInstance* instance, ModelHookData& hook_data);
 
+/// \brief Draws a model instance and its attachments into a shadow pass.
+/// \details This is used for projected shadows onto world geometry.
 bool diligent_draw_model_shadow_with_attachments(
 	ModelInstance* instance,
 	const RenderPassOp& pass,
@@ -192,8 +215,11 @@ bool diligent_draw_model_shadow_with_attachments(
 	uint8 shadow_g,
 	uint8 shadow_b);
 
+/// \brief Returns true if model debug visualization is enabled.
 bool diligent_model_debug_enabled();
+/// \brief Adds debug visualization for a model instance to the debug draw list.
 void diligent_debug_add_model_info(ModelInstance* instance);
+/// \brief Releases cached model GPU resources.
 void diligent_release_model_resources();
 
 #endif

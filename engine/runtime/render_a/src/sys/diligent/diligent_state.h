@@ -1,3 +1,11 @@
+/**
+ * diligent_state.h
+ *
+ * This header defines the State portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef LTJS_DILIGENT_STATE_H
 #define LTJS_DILIGENT_STATE_H
 
@@ -37,7 +45,7 @@ class IWorldSharedBSP;
 struct SDL_Window;
 #endif
 
-// Render state container; fields will be added incrementally during refactor.
+/// Render state container for the Diligent backend.
 struct DiligentRenderState
 {
 	RenderStruct* render_struct = nullptr;
@@ -68,6 +76,7 @@ struct DiligentRenderState
 	bool glow_mode = false;
 };
 
+/// Global renderer state for the Diligent backend.
 extern DiligentRenderState g_diligent_state;
 
 #endif

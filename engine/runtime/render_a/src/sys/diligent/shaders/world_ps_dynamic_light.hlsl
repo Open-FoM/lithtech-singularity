@@ -8,6 +8,8 @@ cbuffer WorldConstants
     float4 g_FogParams;
     float4 g_DynamicLightPos;
     float4 g_DynamicLightColor;
+    float4 g_SunDir;
+    float4 g_SunColor;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];
@@ -109,10 +111,11 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 light_pos = g_DynamicLightPos.xyz;
     float radius = g_DynamicLightPos.w;
     float dist = distance(input.world_pos, light_pos);
-    float intensity = saturate(1.0f - dist / max(radius, 0.0001f));
+    float atten = saturate(1.0f - dist / max(radius, 0.0001f));
+    float light_strength = max(g_DynamicLightColor.w, 0.0f);
 
-    float3 light_linear = ToLinear(g_DynamicLightColor.xyz) * intensity;
-    float3 color_linear = light_linear * ToLinear(input.color.rgb);
+    float3 light_linear = ToLinear(g_DynamicLightColor.xyz) * light_strength * atten;
+    float3 color_linear = light_linear * input.color.rgb;
     float4 fogged = ApplyFogLinear(float4(color_linear, input.color.a), input.world_pos);
 
     float3 color = EncodeOutput(fogged.rgb);

@@ -1302,9 +1302,11 @@ bool diligent_draw_volume_effect_instance(
 					}
 
 					const float atten = LTCLAMP(1.0f - (dist / radius), 0.0f, 1.0f);
-					light.acc.x += static_cast<float>(dynamic->m_ColorR) * atten;
-					light.acc.y += static_cast<float>(dynamic->m_ColorG) * atten;
-					light.acc.z += static_cast<float>(dynamic->m_ColorB) * atten;
+					const float intensity = LTMAX(dynamic->m_Intensity, 0.0f);
+					const float scale = atten * intensity;
+					light.acc.x += static_cast<float>(dynamic->m_ColorR) * scale;
+					light.acc.y += static_cast<float>(dynamic->m_ColorG) * scale;
+					light.acc.z += static_cast<float>(dynamic->m_ColorB) * scale;
 				}
 
 				for (const auto& static_light : static_lights)

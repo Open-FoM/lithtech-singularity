@@ -1,3 +1,11 @@
+/**
+ * diligent_mesh_layout.h
+ *
+ * This header defines the Mesh Layout portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef LTJS_DILIGENT_MESH_LAYOUT_H
 #define LTJS_DILIGENT_MESH_LAYOUT_H
 
@@ -10,6 +18,7 @@
 #include <string>
 #include <vector>
 
+/// Describes a mesh input layout and attribute indices.
 struct DiligentMeshLayout
 {
 	std::vector<Diligent::LayoutElement> elements;
@@ -23,6 +32,7 @@ struct DiligentMeshLayout
 	uint32 hash = 0;
 };
 
+/// Resolved stream/offset info for a specific vertex attribute.
 struct DiligentVertexElementRef
 {
 	uint32 stream_index = 0;
@@ -31,13 +41,17 @@ struct DiligentVertexElementRef
 	bool valid = false;
 };
 
+/// Returns the number of blend weights for a given blend type.
 uint32 diligent_get_blend_weight_count(VERTEX_BLEND_TYPE blend_type);
+/// Builds a Diligent input layout from engine vertex flags.
 bool diligent_build_mesh_layout(
 	const uint32* vert_flags,
 	VERTEX_BLEND_TYPE blend_type,
 	DiligentMeshLayout& layout,
 	bool& non_fixed_pipe_data);
+/// Resolves stream/offset/stride for a layout attribute index.
 bool diligent_get_layout_element_ref(const DiligentMeshLayout& layout, int32 attrib, DiligentVertexElementRef& ref);
+/// Builds a HLSL vertex shader string matching the input layout.
 std::string diligent_build_model_vertex_shader_source(const DiligentMeshLayout& layout);
 
 #endif

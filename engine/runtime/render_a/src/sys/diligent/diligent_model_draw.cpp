@@ -6,7 +6,6 @@
 #include "diligent_internal.h"
 #include "diligent_pipeline_cache.h"
 #include "diligent_postfx.h"
-#include "diligent_render.h"
 #include "diligent_texture_cache.h"
 #include "diligent_utils.h"
 #include "diligent_world_draw.h"

@@ -2,6 +2,7 @@
 
 #include "bdefs.h"
 #include "diligent_device.h"
+#include "diligent_postfx.h"
 #include "diligent_state.h"
 #include "diligent_model_draw.h"
 #include "diligent_texture_cache.h"
@@ -26,6 +27,8 @@ void diligent_Clear(LTRect*, uint32, LTRGBColor& clear_color)
 	{
 		return;
 	}
+
+	diligent_ssao_set_clear_color(clear_color);
 
 	const float clear_rgba[4] = {
 		static_cast<float>(clear_color.rgb.r) / 255.0f,

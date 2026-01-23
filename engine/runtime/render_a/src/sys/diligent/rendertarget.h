@@ -1,3 +1,11 @@
+/**
+ * rendertarget.h
+ *
+ * This header defines the Rendertarget portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef _RENDERTARGET_H_
 #define _RENDERTARGET_H_
 

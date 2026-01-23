@@ -6,6 +6,7 @@
 #include "diligent_internal.h"
 #include "diligent_model_draw.h"
 #include "diligent_object_draw.h"
+#include "diligent_render.h"
 #include "diligent_scene_collect.h"
 #include "diligent_utils.h"
 #include "diligent_world_data.h"
@@ -49,6 +50,14 @@ struct DiligentGlowBlurPipeline
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
 };
 
+struct DiligentSsaoPipeline
+{
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> pipeline_state;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+	Diligent::TEXTURE_FORMAT rtv_format = Diligent::TEX_FORMAT_UNKNOWN;
+	Diligent::TEXTURE_FORMAT dsv_format = Diligent::TEX_FORMAT_UNKNOWN;
+};
+
 namespace
 {
 constexpr uint32 kDiligentGlowMinTextureSize = 16;
@@ -56,6 +65,9 @@ constexpr uint32 kDiligentGlowMaxTextureSize = 512;
 constexpr uint32 kDiligentGlowMaxFilterSize = 64;
 constexpr float kDiligentGlowMinElementWeight = 0.01f;
 static_assert(kDiligentGlowBlurBatchSize == 8, "Update glow blur shader tap count.");
+constexpr uint32 kDiligentSsaoKernelSize = 16;
+constexpr float kDiligentSsaoGoldenAngle = 2.39996323f;
+constexpr Diligent::TEXTURE_FORMAT kDiligentSsaoAoFormat = Diligent::TEX_FORMAT_R16_FLOAT;
 
 struct DiligentGlowElement
 {
@@ -88,6 +100,83 @@ struct DiligentGlowBlurResources
 DiligentGlowBlurResources g_diligent_glow_blur_resources;
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_debug_white_texture;
 Diligent::RefCntAutoPtr<Diligent::ITextureView> g_debug_white_texture_srv;
+
+struct DiligentSsaoConstants
+{
+	float inv_target_size[2] = {0.0f, 0.0f};
+	float proj_scale[2] = {0.0f, 0.0f};
+	float radius = 0.0f;
+	float bias = 0.0f;
+	float power = 1.0f;
+	float near_z = 1.0f;
+	float far_z = 10000.0f;
+	int sample_count = 1;
+	float pad0 = 0.0f;
+	float samples[kDiligentSsaoKernelSize][4]{};
+};
+
+struct DiligentSsaoBlurConstants
+{
+	float texel_size[2] = {0.0f, 0.0f};
+	float direction[2] = {1.0f, 0.0f};
+	float radius = 1.0f;
+	float pad0 = 0.0f;
+};
+
+struct DiligentSsaoCompositeConstants
+{
+	float intensity = 1.0f;
+	float pad0 = 0.0f;
+	float pad1[2] = {0.0f, 0.0f};
+};
+
+struct DiligentSsaoResources
+{
+	Diligent::RefCntAutoPtr<Diligent::IShader> vertex_shader;
+	Diligent::RefCntAutoPtr<Diligent::IShader> ssao_pixel_shader;
+	Diligent::RefCntAutoPtr<Diligent::IShader> blur_pixel_shader;
+	Diligent::RefCntAutoPtr<Diligent::IShader> composite_pixel_shader;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> ssao_constants;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> blur_constants;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> composite_constants;
+	DiligentSsaoPipeline ssao_pipeline;
+	DiligentSsaoPipeline blur_pipeline;
+	DiligentSsaoPipeline composite_pipeline;
+	std::array<std::array<float, 4>, kDiligentSsaoKernelSize> kernel{};
+	bool kernel_ready = false;
+};
+
+struct DiligentSsaoTargets
+{
+	uint32 scene_width = 0;
+	uint32 scene_height = 0;
+	uint32 ao_width = 0;
+	uint32 ao_height = 0;
+	uint32 downscale = 0;
+	Diligent::TEXTURE_FORMAT color_format = Diligent::TEX_FORMAT_UNKNOWN;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> scene_color;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_color_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_color_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> scene_depth;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_depth_dsv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_depth_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> ao_texture;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> ao_blur_texture;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_blur_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_blur_srv;
+};
+
+struct DiligentSsaoState
+{
+	DiligentSsaoResources resources;
+	DiligentSsaoTargets targets;
+	float clear_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+	bool clear_color_set = false;
+};
+
+DiligentSsaoState g_diligent_ssao_state;
 
 struct DiligentSceneDescScope
 {
@@ -209,11 +298,805 @@ bool diligent_ensure_glow_blur_resources()
 		g_diligent_glow_blur_resources.constant_buffer;
 }
 
+void diligent_ssao_build_kernel()
+{
+	if (g_diligent_ssao_state.resources.kernel_ready)
+	{
+		return;
+	}
+
+	for (uint32 index = 0; index < kDiligentSsaoKernelSize; ++index)
+	{
+		const float t = (static_cast<float>(index) + 0.5f) / static_cast<float>(kDiligentSsaoKernelSize);
+		const float radius = t * t;
+		const float angle = kDiligentSsaoGoldenAngle * static_cast<float>(index);
+		g_diligent_ssao_state.resources.kernel[index] = {
+			std::cos(angle) * radius,
+			std::sin(angle) * radius,
+			0.0f,
+			0.0f};
+	}
+	g_diligent_ssao_state.resources.kernel_ready = true;
+}
+
+bool diligent_ensure_ssao_resources()
+{
+	if (!g_diligent_state.render_device)
+	{
+		return false;
+	}
+
+	diligent_ssao_build_kernel();
+
+	Diligent::ShaderCreateInfo shader_info;
+	shader_info.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_HLSL;
+
+	if (!g_diligent_ssao_state.resources.vertex_shader)
+	{
+		Diligent::ShaderDesc vertex_desc;
+		vertex_desc.Name = "ltjs_ssao_vs";
+		vertex_desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+		shader_info.Desc = vertex_desc;
+		shader_info.EntryPoint = "VSMain";
+		shader_info.Source = diligent_get_optimized_2d_vertex_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.vertex_shader);
+	}
+
+	if (!g_diligent_ssao_state.resources.ssao_pixel_shader)
+	{
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.Name = "ltjs_ssao_ps";
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		shader_info.Desc = pixel_desc;
+		shader_info.EntryPoint = "PSMain";
+		shader_info.Source = diligent_get_ssao_pixel_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.ssao_pixel_shader);
+	}
+
+	if (!g_diligent_ssao_state.resources.blur_pixel_shader)
+	{
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.Name = "ltjs_ssao_blur_ps";
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		shader_info.Desc = pixel_desc;
+		shader_info.EntryPoint = "PSMain";
+		shader_info.Source = diligent_get_ssao_blur_pixel_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.blur_pixel_shader);
+	}
+
+	if (!g_diligent_ssao_state.resources.composite_pixel_shader)
+	{
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.Name = "ltjs_ssao_composite_ps";
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		shader_info.Desc = pixel_desc;
+		shader_info.EntryPoint = "PSMain";
+		shader_info.Source = diligent_get_ssao_composite_pixel_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.composite_pixel_shader);
+	}
+
+	if (!g_diligent_ssao_state.resources.ssao_constants)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_ssao_constants";
+		desc.Size = sizeof(DiligentSsaoConstants);
+		desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		g_diligent_state.render_device->CreateBuffer(desc, nullptr, &g_diligent_ssao_state.resources.ssao_constants);
+	}
+
+	if (!g_diligent_ssao_state.resources.blur_constants)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_ssao_blur_constants";
+		desc.Size = sizeof(DiligentSsaoBlurConstants);
+		desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		g_diligent_state.render_device->CreateBuffer(desc, nullptr, &g_diligent_ssao_state.resources.blur_constants);
+	}
+
+	if (!g_diligent_ssao_state.resources.composite_constants)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_ssao_composite_constants";
+		desc.Size = sizeof(DiligentSsaoCompositeConstants);
+		desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		g_diligent_state.render_device->CreateBuffer(desc, nullptr, &g_diligent_ssao_state.resources.composite_constants);
+	}
+
+	return g_diligent_ssao_state.resources.vertex_shader && g_diligent_ssao_state.resources.ssao_pixel_shader &&
+		g_diligent_ssao_state.resources.blur_pixel_shader && g_diligent_ssao_state.resources.composite_pixel_shader &&
+		g_diligent_ssao_state.resources.ssao_constants && g_diligent_ssao_state.resources.blur_constants &&
+		g_diligent_ssao_state.resources.composite_constants;
+}
+
+void diligent_release_ssao_targets()
+{
+	g_diligent_ssao_state.targets = {};
+}
+
+bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale, Diligent::TEXTURE_FORMAT color_format)
+{
+	if (!g_diligent_state.render_device || width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	downscale = std::max(1u, downscale);
+	const uint32 ao_width = std::max(1u, (width + downscale - 1) / downscale);
+	const uint32 ao_height = std::max(1u, (height + downscale - 1) / downscale);
+
+	auto& targets = g_diligent_ssao_state.targets;
+	if (targets.scene_color && targets.scene_depth && targets.ao_texture && targets.ao_blur_texture &&
+		targets.scene_width == width && targets.scene_height == height &&
+		targets.ao_width == ao_width && targets.ao_height == ao_height &&
+		targets.downscale == downscale && targets.color_format == color_format)
+	{
+		return true;
+	}
+
+	diligent_release_ssao_targets();
+
+	Diligent::TextureDesc scene_desc;
+	scene_desc.Name = "ltjs_ssao_scene_color";
+	scene_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	scene_desc.Width = width;
+	scene_desc.Height = height;
+	scene_desc.MipLevels = 1;
+	scene_desc.Format = color_format;
+	scene_desc.Usage = Diligent::USAGE_DEFAULT;
+	scene_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+	g_diligent_state.render_device->CreateTexture(scene_desc, nullptr, &targets.scene_color);
+	if (!targets.scene_color)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.scene_color_rtv = targets.scene_color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.scene_color_srv = targets.scene_color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.scene_color_rtv || !targets.scene_color_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	Diligent::TextureDesc depth_desc;
+	depth_desc.Name = "ltjs_ssao_scene_depth";
+	depth_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	depth_desc.Width = width;
+	depth_desc.Height = height;
+	depth_desc.MipLevels = 1;
+	depth_desc.Format = Diligent::TEX_FORMAT_D32_FLOAT;
+	depth_desc.Usage = Diligent::USAGE_DEFAULT;
+	depth_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
+	g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.scene_depth);
+	if (!targets.scene_depth)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.scene_depth_dsv = targets.scene_depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	targets.scene_depth_srv = targets.scene_depth->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.scene_depth_dsv || !targets.scene_depth_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	Diligent::TextureDesc ao_desc;
+	ao_desc.Name = "ltjs_ssao_ao";
+	ao_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	ao_desc.Width = ao_width;
+	ao_desc.Height = ao_height;
+	ao_desc.MipLevels = 1;
+	ao_desc.Format = kDiligentSsaoAoFormat;
+	ao_desc.Usage = Diligent::USAGE_DEFAULT;
+	ao_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+	g_diligent_state.render_device->CreateTexture(ao_desc, nullptr, &targets.ao_texture);
+	if (!targets.ao_texture)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.ao_rtv = targets.ao_texture->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.ao_srv = targets.ao_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.ao_rtv || !targets.ao_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	ao_desc.Name = "ltjs_ssao_ao_blur";
+	g_diligent_state.render_device->CreateTexture(ao_desc, nullptr, &targets.ao_blur_texture);
+	if (!targets.ao_blur_texture)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.ao_blur_rtv = targets.ao_blur_texture->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.ao_blur_srv = targets.ao_blur_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.ao_blur_rtv || !targets.ao_blur_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.scene_width = width;
+	targets.scene_height = height;
+	targets.ao_width = ao_width;
+	targets.ao_height = ao_height;
+	targets.downscale = downscale;
+	targets.color_format = color_format;
+	return true;
+}
+
+DiligentSsaoPipeline* diligent_get_ssao_pipeline(
+	DiligentSsaoPipeline& pipeline,
+	const char* name,
+	Diligent::IShader* pixel_shader,
+	Diligent::IBuffer* constants,
+	const char* constants_name,
+	const Diligent::ShaderResourceVariableDesc* vars,
+	uint32 vars_count,
+	const Diligent::ImmutableSamplerDesc& sampler_desc,
+	Diligent::TEXTURE_FORMAT rtv_format,
+	Diligent::TEXTURE_FORMAT dsv_format)
+{
+	if (!diligent_ensure_ssao_resources())
+	{
+		return nullptr;
+	}
+
+	if (pipeline.pipeline_state && pipeline.srb && pipeline.rtv_format == rtv_format && pipeline.dsv_format == dsv_format)
+	{
+		return &pipeline;
+	}
+
+	pipeline.pipeline_state.Release();
+	pipeline.srb.Release();
+	pipeline.rtv_format = Diligent::TEX_FORMAT_UNKNOWN;
+	pipeline.dsv_format = Diligent::TEX_FORMAT_UNKNOWN;
+
+	Diligent::GraphicsPipelineStateCreateInfo pipeline_info;
+	pipeline_info.PSODesc.Name = name;
+	pipeline_info.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pipeline_info.GraphicsPipeline.NumRenderTargets = 1;
+	pipeline_info.GraphicsPipeline.RTVFormats[0] = rtv_format;
+	pipeline_info.GraphicsPipeline.DSVFormat = dsv_format;
+	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+	Diligent::LayoutElement layout_elements[] =
+	{
+		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false}
+	};
+
+	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
+	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
+	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+
+	pipeline_info.pVS = g_diligent_ssao_state.resources.vertex_shader;
+	pipeline_info.pPS = pixel_shader;
+
+	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	pipeline_info.PSODesc.ResourceLayout.Variables = vars;
+	pipeline_info.PSODesc.ResourceLayout.NumVariables = vars_count;
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+
+	g_diligent_state.render_device->CreateGraphicsPipelineState(pipeline_info, &pipeline.pipeline_state);
+	if (!pipeline.pipeline_state)
+	{
+		return nullptr;
+	}
+
+	if (constants && constants_name)
+	{
+		auto* ps_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, constants_name);
+		if (ps_constants)
+		{
+			ps_constants->Set(constants);
+		}
+	}
+
+	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
+	if (!pipeline.srb)
+	{
+		return nullptr;
+	}
+
+	pipeline.rtv_format = rtv_format;
+	pipeline.dsv_format = dsv_format;
+	return &pipeline;
+}
+
+bool diligent_update_ssao_constants(const DiligentSsaoConstants& constants)
+{
+	if (!g_diligent_state.immediate_context || !g_diligent_ssao_state.resources.ssao_constants)
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_diligent_state.immediate_context->MapBuffer(
+		g_diligent_ssao_state.resources.ssao_constants,
+		Diligent::MAP_WRITE,
+		Diligent::MAP_FLAG_DISCARD,
+		mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_diligent_state.immediate_context->UnmapBuffer(g_diligent_ssao_state.resources.ssao_constants, Diligent::MAP_WRITE);
+	return true;
+}
+
+bool diligent_update_ssao_blur_constants(const DiligentSsaoBlurConstants& constants)
+{
+	if (!g_diligent_state.immediate_context || !g_diligent_ssao_state.resources.blur_constants)
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_diligent_state.immediate_context->MapBuffer(
+		g_diligent_ssao_state.resources.blur_constants,
+		Diligent::MAP_WRITE,
+		Diligent::MAP_FLAG_DISCARD,
+		mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_diligent_state.immediate_context->UnmapBuffer(g_diligent_ssao_state.resources.blur_constants, Diligent::MAP_WRITE);
+	return true;
+}
+
+bool diligent_update_ssao_composite_constants(const DiligentSsaoCompositeConstants& constants)
+{
+	if (!g_diligent_state.immediate_context || !g_diligent_ssao_state.resources.composite_constants)
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_diligent_state.immediate_context->MapBuffer(
+		g_diligent_ssao_state.resources.composite_constants,
+		Diligent::MAP_WRITE,
+		Diligent::MAP_FLAG_DISCARD,
+		mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_diligent_state.immediate_context->UnmapBuffer(g_diligent_ssao_state.resources.composite_constants, Diligent::MAP_WRITE);
+	return true;
+}
+
+bool diligent_draw_ssao_quad(
+	DiligentSsaoPipeline* pipeline,
+	const char* texture_var_name,
+	Diligent::ITextureView* texture_view,
+	Diligent::ITextureView* render_target,
+	Diligent::ITextureView* depth_target)
+{
+	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb || !texture_view || !render_target || !texture_var_name)
+	{
+		return false;
+	}
+
+	constexpr uint32 kVertexCount = 4;
+	DiligentOptimized2DVertex vertices[kVertexCount];
+	vertices[0] = {{-1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}};
+	vertices[1] = {{1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}};
+	vertices[2] = {{-1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}};
+	vertices[3] = {{1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}};
+	Diligent::IBuffer* vertex_buffer = nullptr;
+	if (!diligent_upload_optimized_2d_vertices(vertices, kVertexCount, vertex_buffer))
+	{
+		return false;
+	}
+
+	auto* texture_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, texture_var_name);
+	if (texture_var)
+	{
+		texture_var->Set(texture_view);
+	}
+
+	g_diligent_state.immediate_context->SetRenderTargets(
+		1,
+		&render_target,
+		depth_target,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->SetPipelineState(pipeline->pipeline_state);
+
+	Diligent::IBuffer* buffers[] = {vertex_buffer};
+	Diligent::Uint64 offsets[] = {0};
+	g_diligent_state.immediate_context->SetVertexBuffers(
+		0,
+		1,
+		buffers,
+		offsets,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+
+	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::DrawAttribs draw_attribs;
+	draw_attribs.NumVertices = kVertexCount;
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_diligent_state.immediate_context->Draw(draw_attribs);
+	return true;
+}
+
 } // namespace
 
 float diligent_get_tonemap_enabled()
 {
 	return g_CV_ToneMapEnable.m_Val != 0 ? 1.0f : 0.0f;
+}
+
+/// \brief Begins the SSAO capture pass by redirecting output to SSAO targets.
+/// \details Initializes or resizes SSAO targets as needed and clears them using
+///          the last renderer clear color. On success, the caller should render
+///          the scene, then call diligent_apply_ssao and diligent_end_ssao.
+bool diligent_begin_ssao(SceneDesc* desc, DiligentSsaoContext& ctx)
+{
+	ctx = {};
+
+	if (!desc || !g_diligent_state.immediate_context || g_CV_SSAOEnable.m_Val == 0)
+	{
+		return false;
+	}
+
+	const uint32 width = desc->m_Rect.right - desc->m_Rect.left;
+	const uint32 height = desc->m_Rect.bottom - desc->m_Rect.top;
+	if (width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	auto* active_rtv = diligent_get_active_render_target();
+	if (!active_rtv || !active_rtv->GetTexture())
+	{
+		return false;
+	}
+
+	const auto color_format = active_rtv->GetTexture()->GetDesc().Format;
+	const uint32 downscale = static_cast<uint32>(std::max(1, g_CV_SSAODownscale.m_Val));
+	if (!diligent_ensure_ssao_resources() || !diligent_ensure_ssao_targets(width, height, downscale, color_format))
+	{
+		return false;
+	}
+
+	ctx.active = true;
+	ctx.prev_render_target = g_diligent_state.output_render_target_override;
+	ctx.prev_depth_target = g_diligent_state.output_depth_target_override;
+	ctx.final_render_target = active_rtv;
+	ctx.final_depth_target = diligent_get_active_depth_target();
+
+	diligent_SetOutputTargets(
+		g_diligent_ssao_state.targets.scene_color_rtv,
+		g_diligent_ssao_state.targets.scene_depth_dsv);
+
+	if (g_diligent_ssao_state.targets.scene_color_rtv)
+	{
+		g_diligent_state.immediate_context->ClearRenderTarget(
+			g_diligent_ssao_state.targets.scene_color_rtv,
+			g_diligent_ssao_state.clear_color,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
+	if (g_diligent_ssao_state.targets.scene_depth_dsv)
+	{
+		g_diligent_state.immediate_context->ClearDepthStencil(
+			g_diligent_ssao_state.targets.scene_depth_dsv,
+			Diligent::CLEAR_DEPTH_FLAG,
+			1.0f,
+			0,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
+	return true;
+}
+
+/// \brief Applies SSAO passes (AO, optional blur, composite).
+/// \details Reads from the captured scene depth and color targets, writes the
+///          AO texture, optionally blurs it, and composites into the final target.
+bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
+{
+	if (!ctx.active || !g_diligent_state.immediate_context)
+	{
+		return true;
+	}
+
+	auto& targets = g_diligent_ssao_state.targets;
+	if (!targets.scene_color_srv || !targets.scene_depth_srv || !targets.ao_rtv || !targets.ao_srv ||
+		!targets.ao_blur_rtv || !targets.ao_blur_srv)
+	{
+		return false;
+	}
+
+	const float proj_scale_x = std::fabs(g_diligent_state.view_params.m_mProjection.m[0][0]);
+	const float proj_scale_y = std::fabs(g_diligent_state.view_params.m_mProjection.m[1][1]);
+	const int sample_count = std::clamp(g_CV_SSAOSampleCount.m_Val, 1, static_cast<int>(kDiligentSsaoKernelSize));
+
+	DiligentSsaoConstants ssao_constants{};
+	ssao_constants.inv_target_size[0] = targets.ao_width > 0 ? 1.0f / static_cast<float>(targets.ao_width) : 0.0f;
+	ssao_constants.inv_target_size[1] = targets.ao_height > 0 ? 1.0f / static_cast<float>(targets.ao_height) : 0.0f;
+	ssao_constants.proj_scale[0] = proj_scale_x;
+	ssao_constants.proj_scale[1] = proj_scale_y;
+	ssao_constants.radius = std::max(0.01f, g_CV_SSAORadius.m_Val);
+	ssao_constants.bias = std::max(0.0f, g_CV_SSAOBias.m_Val);
+	ssao_constants.power = std::max(0.1f, g_CV_SSAOPower.m_Val);
+	ssao_constants.near_z = g_diligent_state.view_params.m_NearZ;
+	ssao_constants.far_z = g_diligent_state.view_params.m_FarZ;
+	ssao_constants.sample_count = sample_count;
+	for (int i = 0; i < sample_count; ++i)
+	{
+		const auto& sample = g_diligent_ssao_state.resources.kernel[static_cast<size_t>(i)];
+		ssao_constants.samples[i][0] = sample[0];
+		ssao_constants.samples[i][1] = sample[1];
+		ssao_constants.samples[i][2] = sample[2];
+		ssao_constants.samples[i][3] = sample[3];
+	}
+
+	if (!diligent_update_ssao_constants(ssao_constants))
+	{
+		return false;
+	}
+
+	Diligent::ShaderResourceVariableDesc ssao_vars[] = {
+		{Diligent::SHADER_TYPE_PIXEL, "g_DepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+
+	Diligent::ImmutableSamplerDesc ssao_sampler;
+	ssao_sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	ssao_sampler.Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_sampler.Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_sampler.Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_sampler.SamplerOrTextureName = "g_DepthSampler";
+
+	auto* ssao_pipeline = diligent_get_ssao_pipeline(
+		g_diligent_ssao_state.resources.ssao_pipeline,
+		"ltjs_ssao",
+		g_diligent_ssao_state.resources.ssao_pixel_shader,
+		g_diligent_ssao_state.resources.ssao_constants,
+		"SsaoConstants",
+		ssao_vars,
+		static_cast<uint32>(std::size(ssao_vars)),
+		ssao_sampler,
+		kDiligentSsaoAoFormat,
+		Diligent::TEX_FORMAT_UNKNOWN);
+	if (!ssao_pipeline)
+	{
+		return false;
+	}
+
+	diligent_set_viewport(static_cast<float>(targets.ao_width), static_cast<float>(targets.ao_height));
+	if (!diligent_draw_ssao_quad(ssao_pipeline, "g_DepthTex", targets.scene_depth_srv, targets.ao_rtv, nullptr))
+	{
+		return false;
+	}
+
+	Diligent::ITextureView* ao_source_srv = targets.ao_srv;
+	Diligent::ITextureView* ao_dest_rtv = targets.ao_blur_rtv;
+	Diligent::ITextureView* ao_final_srv = targets.ao_srv;
+
+	if (g_CV_SSAOBlurEnable.m_Val != 0)
+	{
+		DiligentSsaoBlurConstants blur_constants{};
+		blur_constants.texel_size[0] = targets.ao_width > 0 ? 1.0f / static_cast<float>(targets.ao_width) : 0.0f;
+		blur_constants.texel_size[1] = targets.ao_height > 0 ? 1.0f / static_cast<float>(targets.ao_height) : 0.0f;
+		blur_constants.radius = std::max(0.1f, g_CV_SSAOBlurRadius.m_Val);
+
+		Diligent::ShaderResourceVariableDesc blur_vars[] = {
+			{Diligent::SHADER_TYPE_PIXEL, "g_AOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+		};
+
+		Diligent::ImmutableSamplerDesc blur_sampler;
+		blur_sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+		blur_sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_sampler.SamplerOrTextureName = "g_AOSampler";
+
+		auto* blur_pipeline = diligent_get_ssao_pipeline(
+			g_diligent_ssao_state.resources.blur_pipeline,
+			"ltjs_ssao_blur",
+			g_diligent_ssao_state.resources.blur_pixel_shader,
+			g_diligent_ssao_state.resources.blur_constants,
+			"SsaoBlurConstants",
+			blur_vars,
+			static_cast<uint32>(std::size(blur_vars)),
+			blur_sampler,
+			kDiligentSsaoAoFormat,
+			Diligent::TEX_FORMAT_UNKNOWN);
+		if (!blur_pipeline)
+		{
+			return false;
+		}
+
+		blur_constants.direction[0] = 1.0f;
+		blur_constants.direction[1] = 0.0f;
+		if (!diligent_update_ssao_blur_constants(blur_constants))
+		{
+			return false;
+		}
+
+		if (!diligent_draw_ssao_quad(blur_pipeline, "g_AOTex", ao_source_srv, ao_dest_rtv, nullptr))
+		{
+			return false;
+		}
+
+		blur_constants.direction[0] = 0.0f;
+		blur_constants.direction[1] = 1.0f;
+		if (!diligent_update_ssao_blur_constants(blur_constants))
+		{
+			return false;
+		}
+
+		if (!diligent_draw_ssao_quad(blur_pipeline, "g_AOTex", targets.ao_blur_srv, targets.ao_rtv, nullptr))
+		{
+			return false;
+		}
+
+		ao_final_srv = targets.ao_srv;
+	}
+
+	Diligent::ShaderResourceVariableDesc composite_vars[] = {
+		{Diligent::SHADER_TYPE_PIXEL, "g_ColorTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+		{Diligent::SHADER_TYPE_PIXEL, "g_AOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+
+	Diligent::ImmutableSamplerDesc composite_sampler;
+	composite_sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	composite_sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+	composite_sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+	composite_sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	composite_sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	composite_sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	composite_sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	composite_sampler.SamplerOrTextureName = "g_Sampler";
+
+	Diligent::TEXTURE_FORMAT final_format = Diligent::TEX_FORMAT_UNKNOWN;
+	if (ctx.final_render_target && ctx.final_render_target->GetTexture())
+	{
+		final_format = ctx.final_render_target->GetTexture()->GetDesc().Format;
+	}
+	if (final_format == Diligent::TEX_FORMAT_UNKNOWN)
+	{
+		return false;
+	}
+
+	Diligent::TEXTURE_FORMAT final_depth_format = Diligent::TEX_FORMAT_UNKNOWN;
+	if (ctx.final_depth_target && ctx.final_depth_target->GetTexture())
+	{
+		final_depth_format = ctx.final_depth_target->GetTexture()->GetDesc().Format;
+	}
+
+	auto* composite_pipeline = diligent_get_ssao_pipeline(
+		g_diligent_ssao_state.resources.composite_pipeline,
+		"ltjs_ssao_composite",
+		g_diligent_ssao_state.resources.composite_pixel_shader,
+		g_diligent_ssao_state.resources.composite_constants,
+		"SsaoCompositeConstants",
+		composite_vars,
+		static_cast<uint32>(std::size(composite_vars)),
+		composite_sampler,
+		final_format,
+		final_depth_format);
+	if (!composite_pipeline)
+	{
+		return false;
+	}
+
+	DiligentSsaoCompositeConstants composite_constants{};
+	composite_constants.intensity = std::max(0.0f, g_CV_SSAOIntensity.m_Val);
+	if (!diligent_update_ssao_composite_constants(composite_constants))
+	{
+		return false;
+	}
+
+	auto* color_var = composite_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_ColorTex");
+	if (color_var)
+	{
+		color_var->Set(targets.scene_color_srv);
+	}
+	auto* ao_var = composite_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_AOTex");
+	if (ao_var)
+	{
+		ao_var->Set(ao_final_srv);
+	}
+
+	const float rect_left = static_cast<float>(g_diligent_state.view_params.m_Rect.left);
+	const float rect_top = static_cast<float>(g_diligent_state.view_params.m_Rect.top);
+	const float rect_width = static_cast<float>(g_diligent_state.view_params.m_Rect.right - g_diligent_state.view_params.m_Rect.left);
+	const float rect_height = static_cast<float>(g_diligent_state.view_params.m_Rect.bottom - g_diligent_state.view_params.m_Rect.top);
+	diligent_set_viewport_rect(rect_left, rect_top, rect_width, rect_height);
+
+	if (!ctx.final_render_target)
+	{
+		return false;
+	}
+
+	auto* final_rtv = ctx.final_render_target;
+	auto* final_dsv = ctx.final_depth_target;
+	g_diligent_state.immediate_context->SetRenderTargets(
+		1,
+		&final_rtv,
+		final_dsv,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->SetPipelineState(composite_pipeline->pipeline_state);
+
+	constexpr uint32 kVertexCount = 4;
+	DiligentOptimized2DVertex vertices[kVertexCount];
+	vertices[0] = {{-1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}};
+	vertices[1] = {{1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}};
+	vertices[2] = {{-1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}};
+	vertices[3] = {{1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}};
+	Diligent::IBuffer* vertex_buffer = nullptr;
+	if (!diligent_upload_optimized_2d_vertices(vertices, kVertexCount, vertex_buffer))
+	{
+		return false;
+	}
+
+	Diligent::IBuffer* buffers[] = {vertex_buffer};
+	Diligent::Uint64 offsets[] = {0};
+	g_diligent_state.immediate_context->SetVertexBuffers(
+		0,
+		1,
+		buffers,
+		offsets,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	g_diligent_state.immediate_context->CommitShaderResources(composite_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::DrawAttribs draw_attribs;
+	draw_attribs.NumVertices = kVertexCount;
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_diligent_state.immediate_context->Draw(draw_attribs);
+	return true;
+}
+
+/// \brief Restores render targets after SSAO capture/composite.
+void diligent_end_ssao(const DiligentSsaoContext& ctx)
+{
+	if (!ctx.active)
+	{
+		return;
+	}
+
+	diligent_SetOutputTargets(ctx.prev_render_target, ctx.prev_depth_target);
+}
+
+void diligent_ssao_set_clear_color(const LTRGBColor& clear_color)
+{
+	g_diligent_ssao_state.clear_color[0] = static_cast<float>(clear_color.rgb.r) / 255.0f;
+	g_diligent_ssao_state.clear_color[1] = static_cast<float>(clear_color.rgb.g) / 255.0f;
+	g_diligent_ssao_state.clear_color[2] = static_cast<float>(clear_color.rgb.b) / 255.0f;
+	g_diligent_ssao_state.clear_color[3] = static_cast<float>(clear_color.rgb.a) / 255.0f;
+	g_diligent_ssao_state.clear_color_set = true;
 }
 
 DiligentGlowBlurPipeline* diligent_get_glow_blur_pipeline(LTSurfaceBlend blend)
@@ -1178,4 +2061,18 @@ void diligent_postfx_term()
 	g_diligent_glow_blur_resources.pipeline_solid.pipeline_state.Release();
 	g_diligent_glow_blur_resources.pipeline_add.srb.Release();
 	g_diligent_glow_blur_resources.pipeline_add.pipeline_state.Release();
+	diligent_release_ssao_targets();
+	g_diligent_ssao_state.resources.vertex_shader.Release();
+	g_diligent_ssao_state.resources.ssao_pixel_shader.Release();
+	g_diligent_ssao_state.resources.blur_pixel_shader.Release();
+	g_diligent_ssao_state.resources.composite_pixel_shader.Release();
+	g_diligent_ssao_state.resources.ssao_constants.Release();
+	g_diligent_ssao_state.resources.blur_constants.Release();
+	g_diligent_ssao_state.resources.composite_constants.Release();
+	g_diligent_ssao_state.resources.ssao_pipeline.srb.Release();
+	g_diligent_ssao_state.resources.ssao_pipeline.pipeline_state.Release();
+	g_diligent_ssao_state.resources.blur_pipeline.srb.Release();
+	g_diligent_ssao_state.resources.blur_pipeline.pipeline_state.Release();
+	g_diligent_ssao_state.resources.composite_pipeline.srb.Release();
+	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
 }

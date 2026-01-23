@@ -16,6 +16,9 @@
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
 
+/// \brief Main per-frame renderer entry point for scene rendering.
+/// \details Performs view setup, visibility collection, world/model draws,
+///          and post effects (e.g., SSAO, glow). Returns a RENDER_* status.
 int diligent_RenderScene(SceneDesc* desc)
 {
 	if (!desc)
@@ -69,6 +72,9 @@ int diligent_RenderScene(SceneDesc* desc)
 		viewport.MaxDepth = 1.0f;
 		g_diligent_state.immediate_context->SetViewports(1, &viewport, 0, 0);
 	}
+
+	DiligentSsaoContext ssao_ctx{};
+	const bool ssao_active = diligent_begin_ssao(desc, ssao_ctx);
 
 	diligent_collect_visible_render_blocks(g_diligent_state.view_params);
 
@@ -235,6 +241,16 @@ int diligent_RenderScene(SceneDesc* desc)
 		{
 			return RENDER_ERROR;
 		}
+	}
+
+	if (ssao_active)
+	{
+		if (!diligent_apply_ssao(ssao_ctx))
+		{
+			diligent_end_ssao(ssao_ctx);
+			return RENDER_ERROR;
+		}
+		diligent_end_ssao(ssao_ctx);
 	}
 
 	diligent_render_screen_glow(desc);

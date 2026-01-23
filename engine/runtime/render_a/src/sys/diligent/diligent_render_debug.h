@@ -1,3 +1,11 @@
+/**
+ * diligent_render_debug.h
+ *
+ * This header defines the Render Debug portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef LTJS_DILIGENT_RENDER_DEBUG_H
 #define LTJS_DILIGENT_RENDER_DEBUG_H
 
@@ -5,6 +13,7 @@
 
 class SharedTexture;
 
+/// \brief Texture inspection data for editor/debug UI.
 struct DiligentTextureDebugInfo
 {
 	bool has_render_texture = false;
@@ -16,8 +25,16 @@ struct DiligentTextureDebugInfo
 	uint32_t first_pixel = 0;
 };
 
+/// \brief Retrieves debug data for a SharedTexture.
+/// \details The returned info includes dimensions, format, and a small CPU-side
+///          sample if available to aid debugging.
+/// \code
+/// DiligentTextureDebugInfo info{};
+/// if (diligent_GetTextureDebugInfo(texture, info)) { /* inspect info */ }
+/// \endcode
 bool diligent_GetTextureDebugInfo(SharedTexture* texture, DiligentTextureDebugInfo& out_info);
 
+/// \brief Aggregate statistics about world vertex colors.
 struct DiligentWorldColorStats
 {
 	uint64_t vertex_count = 0;
@@ -32,8 +49,10 @@ struct DiligentWorldColorStats
 	uint32_t max_a = 0;
 };
 
+/// \brief Gathers color statistics for currently loaded world geometry.
 bool diligent_GetWorldColorStats(DiligentWorldColorStats& out_stats);
 
+/// \brief Aggregate statistics about world texture usage and binding status.
 struct DiligentWorldTextureStats
 {
 	uint64_t section_count = 0;
@@ -45,11 +64,15 @@ struct DiligentWorldTextureStats
 	uint64_t lightmap_view = 0;
 };
 
+/// \brief Gathers texture binding stats for currently loaded world geometry.
 bool diligent_GetWorldTextureStats(DiligentWorldTextureStats& out_stats);
 
+/// \brief Marks world geometry as dirty so it will be rebuilt on next render.
 void diligent_InvalidateWorldGeometry();
+/// \brief Dumps up to \p limit world texture bindings to the log.
 void diligent_DumpWorldTextureBindings(uint32_t limit);
 
+/// \brief Aggregate statistics about world UV coordinates (ranges and NaNs).
 struct DiligentWorldUvStats
 {
 	uint64_t vertex_count = 0;
@@ -66,8 +89,10 @@ struct DiligentWorldUvStats
 	bool has_range = false;
 };
 
+/// \brief Gathers UV statistics for currently loaded world geometry.
 bool diligent_GetWorldUvStats(DiligentWorldUvStats& out_stats);
 
+/// \brief Pipeline usage counters for world rendering.
 struct DiligentWorldPipelineStats
 {
 	uint64_t total_sections = 0;
@@ -87,8 +112,11 @@ struct DiligentWorldPipelineStats
 	uint64_t mode_normals = 0;
 };
 
+/// \brief Resets pipeline usage counters.
 void diligent_ResetWorldPipelineStats();
+/// \brief Retrieves current pipeline usage counters.
 bool diligent_GetWorldPipelineStats(DiligentWorldPipelineStats& out_stats);
 
+/// \brief Drops cached world shader pipelines so they are rebuilt next frame.
 void diligent_ResetWorldShaders();
 #endif

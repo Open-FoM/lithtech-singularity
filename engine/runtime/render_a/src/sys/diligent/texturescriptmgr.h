@@ -1,3 +1,11 @@
+/**
+ * texturescriptmgr.h
+ *
+ * This header defines the Texturescriptmgr portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef __TEXTURESCRIPTMGR_H__
 #define __TEXTURESCRIPTMGR_H__
 

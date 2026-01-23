@@ -1,3 +1,11 @@
+/**
+ * diligent_world_data.h
+ *
+ * This header defines the World Data portion of the Diligent renderer.
+ * It declares the primary types and functions used by other renderer units
+ * and documents the responsibilities and expectations at this interface.
+ * Implementations live in the corresponding .cpp unless noted otherwise.
+ */
 #ifndef LTJS_DILIGENT_WORLD_DATA_H
 #define LTJS_DILIGENT_WORLD_DATA_H
 
@@ -20,6 +28,7 @@ class SharedTexture;
 class CTextureScriptInstance;
 class ILTStream;
 
+/// Render block section containing material data and lightmap resources.
 struct DiligentRBSection
 {
 	enum { kNumTextures = 2 };
@@ -34,6 +43,7 @@ struct DiligentRBSection
 	CTextureScriptInstance* texture_effect;
 	uint8 shader_code;
 	bool fullbright = false;
+	bool light_anim = false;
 	uint32 start_index;
 	uint32 tri_count;
 	uint32 start_vertex;
@@ -46,6 +56,7 @@ struct DiligentRBSection
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> lightmap_srv;
 };
 
+/// CPU-side world vertex used for baking render blocks.
 struct DiligentRBVertex
 {
 	LTVector position;
@@ -74,6 +85,7 @@ struct DiligentRBVertexLegacy
 };
 #endif
 
+/// Polygon geometry used for sky portals and occluders.
 struct DiligentRBGeometryPoly
 {
 	using TVertList = std::vector<LTVector>;
@@ -84,12 +96,14 @@ struct DiligentRBGeometryPoly
 	LTVector max;
 };
 
+/// Occluder polygon used for visibility optimization.
 struct DiligentRBOccluder : public DiligentRBGeometryPoly
 {
 	uint32 id = 0;
 	bool enabled = true;
 };
 
+/// Light group data and per-section lightmaps.
 struct DiligentRBLightGroup
 {
 	struct SubLightmap
@@ -113,6 +127,7 @@ struct DiligentRBLightGroup
 
 struct DiligentRenderWorld;
 
+/// World render block containing geometry, sections, and child links.
 struct DiligentRenderBlock
 {
 	enum { kNumChildren = 2 };
@@ -143,6 +158,7 @@ struct DiligentRenderBlock
 	DiligentRenderBlock* GetChild(uint32 index) const;
 };
 
+/// Root world render data and sub-world models.
 struct DiligentRenderWorld
 {
 	std::vector<std::unique_ptr<DiligentRenderBlock>> render_blocks;
@@ -153,6 +169,7 @@ struct DiligentRenderWorld
 	DiligentRenderBlock* GetRenderBlock(uint32 index) const;
 };
 
+/// GPU vertex layout for world rendering.
 struct DiligentWorldVertex
 {
 	float position[3];
@@ -162,6 +179,7 @@ struct DiligentWorldVertex
 	float normal[3];
 };
 
+/// GPU vertex layout for debug line rendering.
 struct DiligentDebugLineVertex
 {
 	float position[3];
@@ -170,6 +188,7 @@ struct DiligentDebugLineVertex
 	float uv1[2];
 };
 
+/// Constants buffer for world rendering shaders.
 struct DiligentWorldConstants
 {
 	std::array<float, 16> mvp{};
@@ -180,13 +199,17 @@ struct DiligentWorldConstants
 	float fog_params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float dynamic_light_pos[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float dynamic_light_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float sun_dir[4] = {0.0f, 0.0f, 1.0f, 0.0f};
+	float sun_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	std::array<std::array<float, 16>, 4> tex_effect_matrices{};
 	std::array<std::array<int32, 4>, 4> tex_effect_params{};
 	std::array<std::array<int32, 4>, 4> tex_effect_uv{};
 };
 
+/// Global world render data loaded from the current scene.
 extern std::unique_ptr<DiligentRenderWorld> g_render_world;
 
+/// Returns (and lazily creates) the lightmap SRV for a render block section.
 Diligent::ITextureView* diligent_get_lightmap_view(DiligentRBSection& section);
 
 #endif

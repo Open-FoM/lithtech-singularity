@@ -193,6 +193,7 @@ DiligentRBSection::DiligentRBSection()
 	: texture_effect(nullptr),
 	  shader_code(0),
 	  fullbright(false),
+	  light_anim(false),
 	  start_index(0),
 	  tri_count(0),
 	  start_vertex(0),
@@ -333,6 +334,11 @@ ILTStream& operator>>(ILTStream& stream, DiligentRBLightGroup& light_group)
 
 Diligent::ITextureView* diligent_get_lightmap_view(DiligentRBSection& section)
 {
+	if (g_CV_LoadLightmaps.m_Val == 0)
+	{
+		return nullptr;
+	}
+
 	if (section.lightmap_srv)
 	{
 		return section.lightmap_srv;
@@ -457,23 +463,8 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 			section.texture_effect = CTextureScriptMgr::GetSingleton().GetInstance(texture_effect);
 		}
 
-		// Filter out LightAnim placeholder sections - don't add to pipeline
-		if (texture_names[0][0] && strstr(texture_names[0], "LightAnim") != nullptr)
-		{
-			// Clean up texture ref counts
-			for (uint32 tex_index = 0; tex_index < DiligentRBSection::kNumTextures; ++tex_index)
-			{
-				if (section.textures[tex_index])
-				{
-					section.textures[tex_index]->SetRefCount(section.textures[tex_index]->GetRefCount() - 1);
-				}
-			}
-			sections.pop_back();
-		}
+		section.light_anim = (texture_names[0][0] && strstr(texture_names[0], "LightAnim") != nullptr);
 	}
-
-	// Update section_count after filtering out LightAnim sections
-	section_count = static_cast<uint32>(sections.size());
 
 	uint32 vertex_count = 0;
 	*stream >> vertex_count;
@@ -821,6 +812,10 @@ bool DiligentRenderBlock::UpdateLightmaps()
 	}
 
 	if (!g_diligent_state.render_device)
+	{
+		return false;
+	}
+	if (g_CV_LoadLightmaps.m_Val == 0)
 	{
 		return false;
 	}

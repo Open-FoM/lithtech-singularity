@@ -372,10 +372,12 @@ void diligent_queue_model_shadows(ModelInstance* instance)
 		}
 
 		const float atten = LTCLAMP(1.0f - (dist / radius), 0.0f, 1.0f);
+		const float intensity = LTMAX(light->m_Intensity, 0.0f);
+		const float scale = atten * intensity;
 		LTVector color(
-			static_cast<float>(light->m_ColorR) * atten,
-			static_cast<float>(light->m_ColorG) * atten,
-			static_cast<float>(light->m_ColorB) * atten);
+			static_cast<float>(light->m_ColorR) * scale,
+			static_cast<float>(light->m_ColorG) * scale,
+			static_cast<float>(light->m_ColorB) * scale);
 		const float score = LTMAX(color.x, LTMAX(color.y, color.z));
 
 		if (score <= 0.0f)

@@ -10,6 +10,8 @@ cbuffer WorldConstants
     float4 g_FogParams;
     float4 g_DynamicLightPos;
     float4 g_DynamicLightColor;
+    float4 g_SunDir;
+    float4 g_SunColor;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];
@@ -86,6 +88,21 @@ float3 EncodeOutput(float3 color_linear)
     return (g_FogParams.z > 0.5f) ? mapped : ToGamma(mapped);
 }
 
+float3 ApplySunLight(float3 color_linear, float3 normal)
+{
+    float3 sun_dir = g_SunDir.xyz;
+    float sun_len = length(sun_dir);
+    if (sun_len <= 1.0e-5f)
+    {
+        return color_linear;
+    }
+    float3 n = normalize(normal);
+    float3 l = -sun_dir / sun_len;
+    float ndotl = saturate(dot(n, l));
+    float3 sun_linear = ToLinear(g_SunColor.xyz) * ndotl;
+    return color_linear + sun_linear;
+}
+
 
 float Dither4x4(float2 pos)
 {
@@ -108,8 +125,9 @@ float4 PSMain(PSInput input) : SV_TARGET
     float2 uv = ResolveTexCoord(0, input.texcoord0);
     float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
     float3 vertex_color = input.color.rgb;
-    float3 color_linear = ToLinear(tex.rgb) * ToLinear(vertex_color);
+    float3 color_linear = ToLinear(tex.rgb) * vertex_color;
     float alpha = tex.a * input.color.a;
+    color_linear = ApplySunLight(color_linear, input.world_normal);
 
     float3 color = EncodeOutput(color_linear);
     float dither = Dither4x4(input.position.xy) / 255.0f;
