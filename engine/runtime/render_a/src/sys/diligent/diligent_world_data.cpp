@@ -2,6 +2,7 @@
 #include "diligent_state.h"
 
 #include "diligent_buffers.h"
+#include "world_client_bsp.h"
 
 #include "bdefs.h"
 #include "de_sprite.h"
@@ -16,6 +17,7 @@
 #include "texturescriptinstance.h"
 #include "texturescriptmgr.h"
 #include "viewparams.h"
+#include "rendererconsolevars.h"
 
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
@@ -185,6 +187,34 @@ bool diligent_GetStreamRemaining(ILTStream* stream, uint32& out_remaining)
 	out_remaining = len - pos;
 	return true;
 }
+
+bool diligent_world_has_uv1(const DiligentRenderWorld& world)
+{
+	for (const auto& block_ptr : world.render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		for (const auto& vert : block_ptr->vertices)
+		{
+			if (vert.u1 != 0.0f || vert.v1 != 0.0f)
+			{
+				return true;
+			}
+		}
+	}
+
+	for (const auto& entry : world.world_models)
+	{
+		if (entry.second && entry.second->has_uv1)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
 } // namespace
 
 std::unique_ptr<DiligentRenderWorld> g_render_world;
@@ -194,6 +224,7 @@ DiligentRBSection::DiligentRBSection()
 	  shader_code(0),
 	  fullbright(false),
 	  light_anim(false),
+	  poly_index(0xFFFFFFFFu),
 	  start_index(0),
 	  tri_count(0),
 	  start_vertex(0),
@@ -461,9 +492,11 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 		if (texture_effect[0] != '\0')
 		{
 			section.texture_effect = CTextureScriptMgr::GetSingleton().GetInstance(texture_effect);
+			if (strstr(texture_effect, "LightAnim") != nullptr)
+			{
+				section.light_anim = true;
+			}
 		}
-
-		section.light_anim = (texture_names[0][0] && strstr(texture_names[0], "LightAnim") != nullptr);
 	}
 
 	uint32 vertex_count = 0;
@@ -486,12 +519,116 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 	}
 	uint32 vertex_pos = 0;
 	stream->GetPos(&vertex_pos);
+	const uint32 expected_tri_count = [&]() -> uint32
+	{
+		uint32 total = 0;
+		for (const auto& section_ptr : sections)
+		{
+			if (section_ptr)
+			{
+				total += section_ptr->tri_count;
+			}
+		}
+		return total;
+	}();
+
+	auto validate_tri_at = [&](uint32 tri_pos, uint32 tri_count) -> bool
+	{
+		uint32 len = 0;
+		if (stream->GetLen(&len) != LT_OK)
+		{
+			return false;
+		}
+		if (tri_pos > len || (len - tri_pos) < sizeof(uint32))
+		{
+			return false;
+		}
+		if (expected_tri_count != 0 && tri_count != expected_tri_count)
+		{
+			return false;
+		}
+		const uint32 bytes_per_tri = sizeof(uint32) * 4;
+		const uint32 remaining_bytes = len - tri_pos - sizeof(uint32);
+		const uint64 max_tris = bytes_per_tri ? (remaining_bytes / bytes_per_tri) : 0;
+		return tri_count <= max_tris;
+	};
+
+	auto probe_layout = [&](uint32 vertex_stride, uint32& out_tri_count) -> bool
+	{
+		const uint64 tri_pos = static_cast<uint64>(vertex_pos) + static_cast<uint64>(vertex_stride) * vertex_count;
+		if (tri_pos > std::numeric_limits<uint32>::max())
+		{
+			return false;
+		}
+		if (stream->SeekTo(static_cast<uint32>(tri_pos)) != LT_OK)
+		{
+			return false;
+		}
+		out_tri_count = 0;
+		*stream >> out_tri_count;
+		return validate_tri_at(static_cast<uint32>(tri_pos), out_tri_count);
+	};
+
+	bool use_legacy_layout = false;
+#ifdef LTJS_USE_TANGENT_AND_BINORMAL
+	uint32 tri_full = 0;
+	uint32 tri_legacy = 0;
+	const bool full_valid = probe_layout(sizeof(DiligentRBVertex), tri_full);
+	const bool legacy_valid = probe_layout(sizeof(DiligentRBVertexLegacy), tri_legacy);
+	if (!full_valid && legacy_valid)
+	{
+		use_legacy_layout = true;
+	}
+	if (g_CV_WorldForceLegacyVerts.m_Val != 0)
+	{
+		use_legacy_layout = true;
+	}
+	if (stream->SeekTo(vertex_pos) != LT_OK)
+	{
+		dsi_ConsolePrint("Diligent: failed to restore vertex stream position.");
+		return false;
+	}
+#endif
+
 	vertices.clear();
 	vertices.resize(vertex_count);
+#ifdef LTJS_USE_TANGENT_AND_BINORMAL
+	if (use_legacy_layout)
+	{
+		std::vector<DiligentRBVertexLegacy> legacy_vertices;
+		legacy_vertices.resize(vertex_count);
+		if (!legacy_vertices.empty())
+		{
+			stream->Read(legacy_vertices.data(), sizeof(DiligentRBVertexLegacy) * legacy_vertices.size());
+		}
+		for (size_t i = 0; i < vertices.size(); ++i)
+		{
+			const auto& src = legacy_vertices[i];
+			auto& dst = vertices[i];
+			dst.position = src.position;
+			dst.u0 = src.u0;
+			dst.v0 = src.v0;
+			dst.u1 = src.u1;
+			dst.v1 = src.v1;
+			dst.color = src.color;
+			dst.normal = src.normal;
+			dst.tangent.Init(0.0f, 0.0f, 0.0f);
+			dst.binormal.Init(0.0f, 0.0f, 0.0f);
+		}
+	}
+	else
+	{
+		if (!vertices.empty())
+		{
+			stream->Read(vertices.data(), sizeof(DiligentRBVertex) * vertices.size());
+		}
+	}
+#else
 	if (!vertices.empty())
 	{
 		stream->Read(vertices.data(), sizeof(DiligentRBVertex) * vertices.size());
 	}
+#endif
 
 	uint32 tri_count = 0;
 	*stream >> tri_count;
@@ -513,38 +650,8 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 #ifdef LTJS_USE_TANGENT_AND_BINORMAL
 	if (!validate_tri_count(tri_count))
 	{
-		stream->SeekTo(vertex_pos);
-		std::vector<DiligentRBVertexLegacy> legacy_vertices;
-		legacy_vertices.resize(vertex_count);
-		if (!legacy_vertices.empty())
-		{
-			stream->Read(legacy_vertices.data(), sizeof(DiligentRBVertexLegacy) * legacy_vertices.size());
-		}
-		*stream >> tri_count;
-		if (!validate_tri_count(tri_count))
-		{
-			dsi_ConsolePrint("Diligent: invalid triangle count %u.", tri_count);
-			return false;
-		}
-
-		for (size_t i = 0; i < vertices.size(); ++i)
-		{
-			const auto& src = legacy_vertices[i];
-			auto& dst = vertices[i];
-			dst.position = src.position;
-			dst.u0 = src.u0;
-			dst.v0 = src.v0;
-			dst.u1 = src.u1;
-			dst.v1 = src.v1;
-			dst.color = src.color;
-			dst.normal = src.normal;
-			dst.tangent.Init(0.0f, 0.0f, 0.0f);
-			dst.binormal.Init(0.0f, 0.0f, 0.0f);
-		}
-	}
-	else
-	{
-		// tri_count validated for tangent/binormal layout.
+		dsi_ConsolePrint("Diligent: invalid triangle count %u.", tri_count);
+		return false;
 	}
 #else
 	if (!validate_tri_count(tri_count))
@@ -585,6 +692,13 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 
 			if (section_count)
 			{
+				if (section_index < section_count &&
+					section_left == sections[section_index]->tri_count &&
+					sections[section_index]->poly_index == 0xFFFFFFFFu)
+				{
+					sections[section_index]->poly_index = poly_index;
+				}
+
 				--section_left;
 				if (!section_left && section_index < section_count)
 				{
@@ -1004,6 +1118,8 @@ bool DiligentRenderWorld::Load(ILTStream* stream)
 		stream->ReadString(world_name, sizeof(world_name));
 
 		auto world_model = std::unique_ptr<DiligentRenderWorld>(new DiligentRenderWorld());
+		world_model->world_name = world_name;
+		world_model->world_index_valid = false;
 		if (!world_model->Load(stream))
 		{
 			return false;
@@ -1016,7 +1132,53 @@ bool DiligentRenderWorld::Load(ILTStream* stream)
 		}
 	}
 
+	has_uv1 = diligent_world_has_uv1(*this);
 	return true;
+}
+
+uint32 DiligentRenderWorld::ResolveWorldIndex()
+{
+	if (world_index_valid)
+	{
+		return world_index;
+	}
+
+	auto* bsp_client = g_diligent_state.world_bsp_client;
+	if (!bsp_client)
+	{
+		world_index = 0;
+		world_index_valid = true;
+		return world_index;
+	}
+
+	if (world_name.empty())
+	{
+		world_index = 0;
+		world_index_valid = true;
+		return world_index;
+	}
+
+	const uint32 model_count = bsp_client->NumWorldModels();
+	for (uint32 i = 0; i < model_count; ++i)
+	{
+		const WorldData* world_model = bsp_client->GetWorldModel(i);
+		if (!world_model || !world_model->OriginalBSP())
+		{
+			continue;
+		}
+
+		const char* model_name = world_model->OriginalBSP()->m_WorldName;
+		if (model_name && stricmp(model_name, world_name.c_str()) == 0)
+		{
+			world_index = i;
+			world_index_valid = true;
+			return world_index;
+		}
+	}
+
+	world_index = 0;
+	world_index_valid = true;
+	return world_index;
 }
 
 DiligentRenderBlock* DiligentRenderWorld::GetRenderBlock(uint32 index) const

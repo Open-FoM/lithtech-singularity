@@ -10,6 +10,7 @@ cbuffer WorldConstants
     float4 g_DynamicLightColor;
     float4 g_SunDir;
     float4 g_SunColor;
+    float4 g_WorldParams;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];
@@ -123,7 +124,7 @@ float4 ApplyFogLinear(float4 color_linear, float3 world_pos)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    float3 color_linear = input.color.rgb;
+    float3 color_linear = lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
     color_linear = ApplySunLight(color_linear, input.world_normal);
     float4 fogged = ApplyFogLinear(float4(color_linear, input.color.a), input.world_pos);
 

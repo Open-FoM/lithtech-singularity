@@ -71,6 +71,8 @@ bool diligent_GetWorldTextureStats(DiligentWorldTextureStats& out_stats);
 void diligent_InvalidateWorldGeometry();
 /// \brief Dumps up to \p limit world texture bindings to the log.
 void diligent_DumpWorldTextureBindings(uint32_t limit);
+/// \brief Writes debug information for up to \p limit world sections to a file.
+void diligent_DumpWorldSurfaceDebug(uint32_t limit);
 
 /// \brief Aggregate statistics about world UV coordinates (ranges and NaNs).
 struct DiligentWorldUvStats
@@ -96,6 +98,10 @@ bool diligent_GetWorldUvStats(DiligentWorldUvStats& out_stats);
 struct DiligentWorldPipelineStats
 {
 	uint64_t total_sections = 0;
+	uint64_t sections_lightmap_data = 0;
+	uint64_t sections_lightmap_view = 0;
+	uint64_t sections_lightmap_black = 0;
+	uint64_t sections_light_anim = 0;
 	uint64_t mode_skip = 0;
 	uint64_t mode_solid = 0;
 	uint64_t mode_textured = 0;

@@ -21,6 +21,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -44,6 +45,7 @@ struct DiligentRBSection
 	uint8 shader_code;
 	bool fullbright = false;
 	bool light_anim = false;
+	uint32 poly_index = 0xFFFFFFFFu;
 	uint32 start_index;
 	uint32 tri_count;
 	uint32 start_vertex;
@@ -163,10 +165,15 @@ struct DiligentRenderWorld
 {
 	std::vector<std::unique_ptr<DiligentRenderBlock>> render_blocks;
 	std::unordered_map<uint32, std::unique_ptr<DiligentRenderWorld>> world_models;
+	std::string world_name;
+	uint32 world_index = 0;
+	bool world_index_valid = true;
+	bool has_uv1 = false;
 
 	bool Load(ILTStream* stream);
 	bool SetLightGroupColor(uint32 id, const LTVector& color);
 	DiligentRenderBlock* GetRenderBlock(uint32 index) const;
+	uint32 ResolveWorldIndex();
 };
 
 /// GPU vertex layout for world rendering.
@@ -201,6 +208,7 @@ struct DiligentWorldConstants
 	float dynamic_light_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float sun_dir[4] = {0.0f, 0.0f, 1.0f, 0.0f};
 	float sun_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float world_params[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 	std::array<std::array<float, 16>, 4> tex_effect_matrices{};
 	std::array<std::array<int32, 4>, 4> tex_effect_params{};
 	std::array<std::array<int32, 4>, 4> tex_effect_uv{};

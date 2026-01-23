@@ -431,6 +431,234 @@ bool IsLightNode(const NodeProperties& props)
 	return is_light(type) || is_light(cls);
 }
 
+bool IsDirectionalLightNode(const NodeProperties& props)
+{
+	const std::string type = LowerCopy(props.type);
+	const std::string cls = LowerCopy(props.class_name);
+	auto is_dir = [](const std::string& value) -> bool
+	{
+		return value == "dirlight" || value == "directionallight";
+	};
+	return is_dir(type) || is_dir(cls);
+}
+
+bool IsLightIconOccluded(
+	const ViewportPanelState& viewport_state,
+	const ScenePanelState& scene_state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	int light_id,
+	const Diligent::float3& cam_pos,
+	const float light_pos[3])
+{
+	const Diligent::float3 light_world(light_pos[0], light_pos[1], light_pos[2]);
+	const Diligent::float3 to_light = Diligent::float3(
+		light_world.x - cam_pos.x,
+		light_world.y - cam_pos.y,
+		light_world.z - cam_pos.z);
+	const float dist_sq = to_light.x * to_light.x + to_light.y * to_light.y + to_light.z * to_light.z;
+	if (dist_sq <= 1.0e-4f)
+	{
+		return false;
+	}
+	const float dist = std::sqrt(dist_sq);
+	const float inv_dist = 1.0f / dist;
+	const Diligent::float3 dir(to_light.x * inv_dist, to_light.y * inv_dist, to_light.z * inv_dist);
+	const PickRay ray{cam_pos, dir};
+	const float occlusion_epsilon = 0.1f;
+
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		if (static_cast<int>(i) == light_id)
+		{
+			continue;
+		}
+		const TreeNode& node = nodes[i];
+		const NodeProperties& node_props = props[i];
+		if (node.deleted || node.is_folder || !node_props.visible)
+		{
+			continue;
+		}
+		if (IsLightNode(node_props))
+		{
+			continue;
+		}
+		if (!SceneNodePassesFilters(scene_state, static_cast<int>(i), nodes, props))
+		{
+			continue;
+		}
+		if (!NodePickableByRender(viewport_state, node_props))
+		{
+			continue;
+		}
+
+		float hit_t = 0.0f;
+		if (RaycastNode(node_props, ray, hit_t) && hit_t > 0.0f && hit_t < dist - occlusion_epsilon)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void BuildViewportDynamicLights(
+	const ViewportPanelState& viewport_state,
+	const ScenePanelState& scene_state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	std::vector<DynamicLight>& out_lights)
+{
+	out_lights.clear();
+	const size_t count = std::min(nodes.size(), props.size());
+	out_lights.reserve(count);
+
+	const float intensity_scale = std::max(0.0f, g_CV_DEdit2LightIntensityScale.m_Val);
+	const float radius_scale = std::max(0.0f, g_CV_DEdit2LightRadiusScale.m_Val);
+	constexpr float kIntensityReference = 5.0f;
+
+	auto to_u8 = [](float value) -> uint8
+	{
+		const float clamped = std::clamp(value, 0.0f, 1.0f);
+		return static_cast<uint8>(clamped * 255.0f + 0.5f);
+	};
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		const NodeProperties& node_props = props[i];
+		if (node.deleted || node.is_folder || !node_props.visible)
+		{
+			continue;
+		}
+		if (!IsLightNode(node_props))
+		{
+			continue;
+		}
+		if (IsDirectionalLightNode(node_props))
+		{
+			continue;
+		}
+		if (!SceneNodePassesFilters(scene_state, static_cast<int>(i), nodes, props))
+		{
+			continue;
+		}
+		if (!NodePickableByRender(viewport_state, node_props))
+		{
+			continue;
+		}
+
+		const float radius = std::max(0.0f, node_props.range * radius_scale);
+		const float intensity = std::max(0.0f, node_props.intensity * intensity_scale);
+		const float intensity_multiplier = (kIntensityReference > 0.0f) ? (intensity / kIntensityReference) : 0.0f;
+		if (radius <= 0.0f || intensity_multiplier <= 0.0f)
+		{
+			continue;
+		}
+
+		float pos[3] = {node_props.position[0], node_props.position[1], node_props.position[2]};
+		TryGetNodePickPosition(node_props, pos);
+
+		DynamicLight light;
+		light.SetPos(LTVector(pos[0], pos[1], pos[2]));
+		light.m_LightRadius = radius;
+		light.SetDims(LTVector(radius, radius, radius));
+		light.m_Flags = FLAG_VISIBLE;
+		light.m_Flags2 |= FLAG2_FORCEDYNAMICLIGHTWORLD;
+		light.m_ColorR = to_u8(node_props.color[0]);
+		light.m_ColorG = to_u8(node_props.color[1]);
+		light.m_ColorB = to_u8(node_props.color[2]);
+		light.m_ColorA = 255;
+		light.m_Intensity = intensity_multiplier;
+
+		out_lights.push_back(light);
+	}
+}
+
+void ApplyViewportDirectionalLight(
+	EngineRenderContext& ctx,
+	const ViewportPanelState& viewport_state,
+	const ScenePanelState& scene_state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	if (!ctx.render_struct)
+	{
+		return;
+	}
+
+	if (!viewport_state.render_dynamic_lights_world)
+	{
+		ctx.render_struct->m_GlobalLightColor.Init(0.0f, 0.0f, 0.0f);
+		ctx.render_struct->m_GlobalLightConvertToAmbient = 0.0f;
+		return;
+	}
+
+	const size_t count = std::min(nodes.size(), props.size());
+	const float intensity_scale = std::max(0.0f, g_CV_DEdit2LightIntensityScale.m_Val);
+	constexpr float kIntensityReference = 5.0f;
+
+	bool found = false;
+	float best_luminance = 0.0f;
+	LTVector best_dir(0.0f, -1.0f, 0.0f);
+	LTVector best_color(0.0f, 0.0f, 0.0f);
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		const NodeProperties& node_props = props[i];
+		if (node.deleted || node.is_folder || !node_props.visible)
+		{
+			continue;
+		}
+		if (!IsDirectionalLightNode(node_props))
+		{
+			continue;
+		}
+		if (!SceneNodePassesFilters(scene_state, static_cast<int>(i), nodes, props))
+		{
+			continue;
+		}
+		if (!NodePickableByRender(viewport_state, node_props))
+		{
+			continue;
+		}
+
+		const float intensity = std::max(0.0f, node_props.intensity * intensity_scale);
+		const float intensity_multiplier = (kIntensityReference > 0.0f) ? (intensity / kIntensityReference) : 0.0f;
+		if (intensity_multiplier <= 0.0f)
+		{
+			continue;
+		}
+
+		LTRotation rotation(node_props.rotation[0], node_props.rotation[1], node_props.rotation[2]);
+		LTVector forward = rotation.Forward();
+		if (forward.MagSqr() <= 1.0e-6f)
+		{
+			continue;
+		}
+		forward.Normalize();
+
+		LTVector color(
+			node_props.color[0] * intensity_multiplier,
+			node_props.color[1] * intensity_multiplier,
+			node_props.color[2] * intensity_multiplier);
+		const float luminance = color.x + color.y + color.z;
+		if (!found || luminance > best_luminance)
+		{
+			found = true;
+			best_luminance = luminance;
+			best_dir = forward;
+			best_color = color;
+		}
+	}
+
+	ctx.render_struct->m_GlobalLightDir = best_dir;
+	ctx.render_struct->m_GlobalLightColor = best_color;
+	ctx.render_struct->m_GlobalLightConvertToAmbient = 0.0f;
+}
+
 struct ViewportOverlayItem
 {
 	const NodeProperties* props = nullptr;
@@ -901,8 +1129,12 @@ void ApplySceneVisibilityToRenderer(
 			diligent_InvalidateWorldGeometry();
 		}
 	}
+	g_CV_LoadLightmaps = viewport_state.render_load_lightmaps ? 1 : 0;
 	g_CV_LightMap = (viewport_state.render_lightmap || viewport_state.render_lightmaps_only) ? 1 : 0;
 	g_CV_LightmapsOnly = viewport_state.render_lightmaps_only ? 1 : 0;
+	g_CV_LightmapUseVertexColor = viewport_state.render_lightmap_use_vertex_color ? 1 : 0;
+	g_CV_LightmapIntensity = viewport_state.render_lightmap_intensity;
+	g_CV_ForceLightmapPipeline = viewport_state.render_force_lightmap_pipeline ? 1 : 0;
 	g_CV_DrawSorted = viewport_state.render_draw_sorted ? 1 : 0;
 	g_CV_DrawSolidModels = viewport_state.render_draw_solid_models ? 1 : 0;
 	g_CV_DrawTranslucentModels = viewport_state.render_draw_translucent_models ? 1 : 0;
@@ -1177,7 +1409,8 @@ void RenderViewport(
 	DiligentContext& ctx,
 	const ViewportPanelState& viewport_state,
 	const NodeProperties* world_props,
-	const ViewportOverlayState& overlay_state)
+	const ViewportOverlayState& overlay_state,
+	std::vector<DynamicLight>& dynamic_lights)
 {
 	if (!ctx.viewport_visible || !ctx.viewport.color_rtv || !ctx.viewport.depth_dsv || !ctx.engine.context)
 	{
@@ -1201,14 +1434,31 @@ void RenderViewport(
 		clear_color[1] = world_props->background_color[1];
 		clear_color[2] = world_props->background_color[2];
 	}
+	if (ctx.engine.render_struct && ctx.engine.render_struct->Clear)
+	{
+		const auto to_u8 = [](float value) -> uint8
+		{
+			const float clamped = std::clamp(value, 0.0f, 1.0f);
+			return static_cast<uint8>(clamped * 255.0f + 0.5f);
+		};
 
-	ctx.engine.context->ClearRenderTarget(render_target, clear_color, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx.engine.context->ClearDepthStencil(
-		depth_target,
-		Diligent::CLEAR_DEPTH_FLAG,
-		1.0f,
-		0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		LTRGBColor clear_color_ltrgb{};
+		clear_color_ltrgb.rgb.r = to_u8(clear_color[0]);
+		clear_color_ltrgb.rgb.g = to_u8(clear_color[1]);
+		clear_color_ltrgb.rgb.b = to_u8(clear_color[2]);
+		clear_color_ltrgb.rgb.a = to_u8(clear_color[3]);
+		ctx.engine.render_struct->Clear(nullptr, 0, clear_color_ltrgb);
+	}
+	else
+	{
+		ctx.engine.context->ClearRenderTarget(render_target, clear_color, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ctx.engine.context->ClearDepthStencil(
+			depth_target,
+			Diligent::CLEAR_DEPTH_FLAG,
+			1.0f,
+			0,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
 
 	if (ctx.engine.world_loaded && ctx.engine.render_struct && ctx.engine.render_struct->RenderScene)
 	{
@@ -1248,6 +1498,14 @@ void RenderViewport(
 		{
 			object_list = GetEditorModelManager().CollectObjectList();
 		}
+		if (!dynamic_lights.empty())
+		{
+			object_list.reserve(object_list.size() + dynamic_lights.size());
+			for (DynamicLight& light : dynamic_lights)
+			{
+				object_list.push_back(static_cast<LTObject*>(&light));
+			}
+		}
 
 		if (!object_list.empty())
 		{
@@ -1272,6 +1530,15 @@ void RenderViewport(
 			ctx.engine.render_struct->End3D();
 		}
 	}
+
+	// Ensure editor overlays render to the viewport targets even if the renderer
+	// temporarily bound offscreen targets for post-processing.
+	diligent_SetOutputTargets(render_target, depth_target);
+	ctx.engine.context->SetRenderTargets(
+		1,
+		&render_target,
+		depth_target,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	if (ctx.grid_ready)
 	{
@@ -1444,6 +1711,7 @@ int main(int argc, char** argv)
 	{
 		world_file = path;
 		diligent.engine.world_loaded = false;
+		viewport_panel.lightmaps_autoloaded = false;
 		scene_nodes = BuildSceneTree(world_file, scene_props, scene_error);
 		scene_panel.error = scene_error;
 		scene_panel.selected_id = scene_nodes.empty() ? -1 : 0;
@@ -1463,6 +1731,18 @@ int main(int argc, char** argv)
 			if (!LoadRenderWorld(diligent.engine, compiled_path, render_error))
 			{
 				std::fprintf(stderr, "World render load failed: %s\n", render_error.c_str());
+			}
+			else
+			{
+				DiligentWorldTextureStats stats{};
+				if (diligent_GetWorldTextureStats(stats) && stats.lightmap_present > 0)
+				{
+					if (!viewport_panel.lightmaps_autoloaded)
+					{
+						viewport_panel.render_load_lightmaps = true;
+						viewport_panel.lightmaps_autoloaded = true;
+					}
+				}
 			}
 		}
 
@@ -1717,6 +1997,25 @@ int main(int argc, char** argv)
 			{
 				ImGui::OpenPopup("RenderSettings");
 			}
+			ImGui::SameLine();
+			const float eye_button_size = ImGui::GetFrameHeight();
+			if (ImGui::Button("##LightIconSettings", ImVec2(eye_button_size, eye_button_size)))
+			{
+				ImGui::OpenPopup("LightIconSettings");
+			}
+			{
+				const ImVec2 min = ImGui::GetItemRectMin();
+				const ImVec2 max = ImGui::GetItemRectMax();
+				const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+				const ImVec2 radius(
+					(max.x - min.x) * 0.38f,
+					(max.y - min.y) * 0.24f);
+				const ImU32 eye_color = ImGui::GetColorU32(
+					viewport_panel.show_light_icons ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+				ImDrawList* draw_list = ImGui::GetWindowDrawList();
+				draw_list->AddEllipse(center, radius, eye_color, 0.0f, 0, 1.2f);
+				draw_list->AddCircleFilled(center, radius.y * 0.55f, eye_color);
+			}
 			if (ImGui::BeginPopup("GizmoSettings"))
 			{
 				ImGui::TextUnformatted("Space");
@@ -1799,6 +2098,22 @@ int main(int argc, char** argv)
 					"%.2f");
 				ImGui::EndPopup();
 			}
+			if (ImGui::BeginPopup("LightIconSettings"))
+			{
+				ImGui::TextUnformatted("Lightbulbs");
+				ImGui::Separator();
+				ImGui::Checkbox("Show Lightbulb Icons", &viewport_panel.show_light_icons);
+				if (!viewport_panel.show_light_icons)
+				{
+					ImGui::BeginDisabled();
+				}
+				ImGui::Checkbox("Occlude Behind Geometry", &viewport_panel.light_icon_occlusion);
+				if (!viewport_panel.show_light_icons)
+				{
+					ImGui::EndDisabled();
+				}
+				ImGui::EndPopup();
+			}
 			if (ImGui::BeginPopup("RenderSettings"))
 			{
 				if (ImGui::BeginTabBar("RenderSettingsTabs"))
@@ -1854,8 +2169,12 @@ int main(int argc, char** argv)
 						ImGui::Combo("World Shading Mode", &viewport_panel.render_world_shading_mode, shading_modes, IM_ARRAYSIZE(shading_modes));
 						ImGui::Checkbox("Wireframe Overlay", &viewport_panel.render_wireframe_overlay);
 						ImGui::Checkbox("Fullbright", &viewport_panel.render_fullbright);
+						ImGui::Checkbox("Load Lightmaps", &viewport_panel.render_load_lightmaps);
 						ImGui::Checkbox("Lightmap", &viewport_panel.render_lightmap);
 						ImGui::Checkbox("Lightmaps Only", &viewport_panel.render_lightmaps_only);
+						ImGui::Checkbox("Lightmap Vertex Color", &viewport_panel.render_lightmap_use_vertex_color);
+						ImGui::DragFloat("Lightmap Intensity", &viewport_panel.render_lightmap_intensity, 0.05f, 0.0f, 4.0f, "%.2f");
+						ImGui::Checkbox("Force Lightmap Pipeline", &viewport_panel.render_force_lightmap_pipeline);
 						ImGui::Checkbox("Draw Sorted", &viewport_panel.render_draw_sorted);
 						ImGui::EndTabItem();
 					}
@@ -1881,6 +2200,10 @@ int main(int argc, char** argv)
 						ImGui::Checkbox("World Dynamic Lights", &viewport_panel.render_dynamic_lights_world);
 						ImGui::Checkbox("PolyGrid Env Map", &viewport_panel.render_polygrid_env_map);
 						ImGui::Checkbox("PolyGrid Bump Map", &viewport_panel.render_polygrid_bump_map);
+						ImGui::Separator();
+						ImGui::TextUnformatted("Editor Light Scaling");
+						ImGui::DragFloat("Intensity Scale", &g_CV_DEdit2LightIntensityScale.m_Val, 0.05f, 0.0f, 10.0f);
+						ImGui::DragFloat("Radius Scale", &g_CV_DEdit2LightRadiusScale.m_Val, 0.05f, 0.0f, 10.0f);
 						ImGui::EndTabItem();
 					}
 
@@ -2217,6 +2540,14 @@ int main(int argc, char** argv)
 			{
 				const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
 				const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
+				Diligent::float3 cam_pos;
+				Diligent::float3 cam_forward;
+				Diligent::float3 cam_right;
+				Diligent::float3 cam_up;
+				ComputeCameraBasis(viewport_panel, cam_pos, cam_forward, cam_right, cam_up);
+				(void)cam_forward;
+				(void)cam_right;
+				(void)cam_up;
 				const size_t count = std::min(scene_nodes.size(), scene_props.size());
 				const int selected_id = scene_panel.selected_id;
 				overlay_state.count = 0;
@@ -2252,58 +2583,73 @@ int main(int argc, char** argv)
 					}
 				}
 
-				ImDrawList* draw_list = ImGui::GetWindowDrawList();
-				for (size_t i = 0; i < count; ++i)
+				if (viewport_panel.show_light_icons)
 				{
-					const TreeNode& node = scene_nodes[i];
-					const NodeProperties& props = scene_props[i];
-					if (node.deleted || node.is_folder || !props.visible)
+					ImDrawList* draw_list = ImGui::GetWindowDrawList();
+					for (size_t i = 0; i < count; ++i)
 					{
-						continue;
-					}
-					if (!IsLightNode(props))
-					{
-						continue;
-					}
-					if (!SceneNodePassesFilters(
-							scene_panel,
-							static_cast<int>(i),
-							scene_nodes,
-							scene_props))
-					{
-						continue;
-					}
-					if (!NodePickableByRender(viewport_panel, props))
-					{
-						continue;
-					}
+						const TreeNode& node = scene_nodes[i];
+						const NodeProperties& props = scene_props[i];
+						if (node.deleted || node.is_folder || !props.visible)
+						{
+							continue;
+						}
+						if (!IsLightNode(props))
+						{
+							continue;
+						}
+						if (!SceneNodePassesFilters(
+								scene_panel,
+								static_cast<int>(i),
+								scene_nodes,
+								scene_props))
+						{
+							continue;
+						}
+						if (!NodePickableByRender(viewport_panel, props))
+						{
+							continue;
+						}
 
-					float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
-					TryGetNodePickPosition(props, pick_pos);
-					ImVec2 screen_pos;
-					if (!ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
-					{
-						continue;
+						float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
+						TryGetNodePickPosition(props, pick_pos);
+						ImVec2 screen_pos;
+						if (!ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
+						{
+							continue;
+						}
+						if (viewport_panel.light_icon_occlusion &&
+							IsLightIconOccluded(
+								viewport_panel,
+								scene_panel,
+								scene_nodes,
+								scene_props,
+								static_cast<int>(i),
+								cam_pos,
+								pick_pos))
+						{
+							continue;
+						}
+
+						const ImVec2 center(
+							viewport_pos.x + screen_pos.x,
+							viewport_pos.y + screen_pos.y);
+						const bool is_selected = static_cast<int>(i) == selected_id;
+						const bool is_hovered = static_cast<int>(i) == hovered_scene_id;
+						const float radius = is_selected ? 7.0f : (is_hovered ? 6.0f : 5.0f);
+						const ImU32 bulb_color = is_selected ? IM_COL32(255, 210, 120, 240)
+							: (is_hovered ? IM_COL32(255, 235, 160, 230) : IM_COL32(220, 200, 120, 210));
+						const ImU32 base_color = is_selected ? IM_COL32(120, 110, 90, 230)
+							: IM_COL32(90, 85, 70, 200);
+
+						draw_list->AddCircleFilled(center, radius, bulb_color, 20);
+						draw_list->AddCircle(center, radius, IM_COL32(30, 30, 30, 160), 20, 1.0f);
+						draw_list->AddRectFilled(
+							ImVec2(center.x - radius * 0.6f, center.y + radius * 0.4f),
+							ImVec2(center.x + radius * 0.6f, center.y + radius * 1.2f),
+							base_color,
+							2.0f);
 					}
-
-					const ImVec2 center(
-						viewport_pos.x + screen_pos.x,
-						viewport_pos.y + screen_pos.y);
-					const bool is_selected = static_cast<int>(i) == selected_id;
-					const bool is_hovered = static_cast<int>(i) == hovered_scene_id;
-					const float radius = is_selected ? 7.0f : (is_hovered ? 6.0f : 5.0f);
-					const ImU32 bulb_color = is_selected ? IM_COL32(255, 210, 120, 240)
-						: (is_hovered ? IM_COL32(255, 235, 160, 230) : IM_COL32(220, 200, 120, 210));
-					const ImU32 base_color = is_selected ? IM_COL32(120, 110, 90, 230)
-						: IM_COL32(90, 85, 70, 200);
-
-					draw_list->AddCircleFilled(center, radius, bulb_color, 20);
-					draw_list->AddCircle(center, radius, IM_COL32(30, 30, 30, 160), 20, 1.0f);
-					draw_list->AddRectFilled(
-						ImVec2(center.x - radius * 0.6f, center.y + radius * 0.4f),
-						ImVec2(center.x + radius * 0.6f, center.y + radius * 1.2f),
-						base_color,
-						2.0f);
 				}
 
 				if (hovered_scene_id >= 0)
@@ -2340,8 +2686,11 @@ int main(int argc, char** argv)
 		ApplyWorldSettingsToRenderer(*world_props);
 		UpdateWorldSettingsCache(*world_props, world_settings_cache);
 	}
+	std::vector<DynamicLight> viewport_dynamic_lights;
+	ApplyViewportDirectionalLight(diligent.engine, viewport_panel, scene_panel, scene_nodes, scene_props);
+	BuildViewportDynamicLights(viewport_panel, scene_panel, scene_nodes, scene_props, viewport_dynamic_lights);
 	ApplySceneVisibilityToRenderer(scene_panel, viewport_panel, scene_nodes, scene_props);
-	RenderViewport(diligent, viewport_panel, world_props, overlay_state);
+	RenderViewport(diligent, viewport_panel, world_props, overlay_state, viewport_dynamic_lights);
 
 		Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
 		Diligent::ITextureView* back_dsv = diligent.engine.swapchain->GetDepthBufferDSV();

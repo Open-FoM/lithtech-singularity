@@ -69,8 +69,12 @@ struct ViewportPanelState
 	bool render_wireframe_models = false;
 	int render_world_shading_mode = 0;
 	bool render_wireframe_overlay = false;
+	bool render_load_lightmaps = true;
 	bool render_lightmap = true;
 	bool render_lightmaps_only = false;
+	bool render_lightmap_use_vertex_color = false;
+	float render_lightmap_intensity = 1.0f;
+	bool render_force_lightmap_pipeline = false;
 	bool render_fullbright = false;
 	bool render_draw_sorted = true;
 	bool render_draw_solid_models = true;
@@ -109,7 +113,10 @@ struct ViewportPanelState
 	int render_ssao_sample_count = 8;
 	int render_ssao_downscale = 2;
 	bool render_ssao_blur_enable = true;
+	bool show_light_icons = true;
+	bool light_icon_occlusion = true;
 	float render_ssao_blur_radius = 1.0f;
+	bool lightmaps_autoloaded = false;
 };
 
 void ResetViewportPanel(ViewportPanelState& state, const ImVec2& size);

@@ -4,6 +4,27 @@
 #include "lt_stream.h"
 #include "dedit2_concommand.h"
 
+extern int32 g_CV_TextureMipMapOffset;
+
+namespace
+{
+struct ScopedTextureMipOffset
+{
+	explicit ScopedTextureMipOffset(int32 value)
+		: previous(g_CV_TextureMipMapOffset)
+	{
+		g_CV_TextureMipMapOffset = value;
+	}
+
+	~ScopedTextureMipOffset()
+	{
+		g_CV_TextureMipMapOffset = previous;
+	}
+
+	int32 previous = 0;
+};
+} // namespace
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -398,6 +419,8 @@ TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, c
 			uint32 base_width = 0;
 			uint32 base_height = 0;
 			TextureData* out = nullptr;
+			const int32 mip_offset = std::max(0, g_DEdit2MipMapOffset);
+			ScopedTextureMipOffset mip_guard(mip_offset);
 			const LTRESULT result = dtx_Create(stream, &out, base_width, base_height);
 			stream->Release();
 			if (result == LT_OK && out)

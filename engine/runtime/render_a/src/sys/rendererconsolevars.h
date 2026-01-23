@@ -108,6 +108,7 @@ RCONVAR(g_CV_WorldUvDebug, "WorldUvDebug", int, 0);
 RCONVAR(g_CV_WorldPsDebug, "WorldPsDebug", int, 0);
 RCONVAR(g_CV_WorldTexDebugMode, "WorldTexDebugMode", int, 0);
 RCONVAR(g_CV_WorldTexelUV, "WorldTexelUV", int, 0);
+RCONVAR(g_CV_WorldForceLegacyVerts, "WorldForceLegacyVerts", int, 0);
 RCONVAR(g_CV_WorldUseBaseVertex, "WorldUseBaseVertex", int, 1);
 
 //------------------------------
@@ -157,6 +158,8 @@ RCONVAR(g_CV_DynamicLight_Backfacing_ShowBackFaces, "DynamicLight_Backfacing_Sho
 RCONVAR(g_CV_LightAddPoly, "LightAddPoly", float, 1.0f);
 RCONVAR(g_CV_DynamicLight, "DynamicLight", int, 1);
 RCONVAR(g_CV_DynamicLightWorld, "DynamicLightWorld", int, 0);
+RCONVAR(g_CV_DEdit2LightIntensityScale, "DEdit2LightIntensityScale", float, 1.0f);
+RCONVAR(g_CV_DEdit2LightRadiusScale, "DEdit2LightRadiusScale", float, 1.0f);
 
 //------------------------------
 // Model Shadows
@@ -235,6 +238,11 @@ RCONVAR(g_CV_ShowTextureMemory, "ShowTextureMemory", int, 0);
 RCONVAR(g_CV_Wireframe, "Wireframe", int, 0);
 RCONVAR(g_CV_WireframeModels, "WireframeModels", int, 0);
 RCONVAR(g_CV_LightMap, "LightMap", int, 1);
+RCONVAR(g_CV_LoadLightmaps, "LoadLightmaps", int, 1);
+RCONVAR(g_CV_LightmapUseVertexColor, "LightmapUseVertexColor", int, 0);
+RCONVAR(g_CV_LightmapIntensity, "LightmapIntensity", float, 1.0f);
+RCONVAR(g_CV_LightmapSwapUV, "LightmapSwapUV", int, 0);
+RCONVAR(g_CV_ForceLightmapPipeline, "ForceLightmapPipeline", int, 0);
 RCONVAR(g_CV_DrawFlat, "DrawFlat", int, 0);
 RCONVAR(g_CV_WorldShadingMode, "WorldShadingMode", int, 0);
 RCONVAR(g_CV_WireframeOverlay, "WireframeOverlay", int, 0);

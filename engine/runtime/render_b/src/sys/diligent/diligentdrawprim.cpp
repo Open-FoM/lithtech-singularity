@@ -2,7 +2,6 @@
 #include "diligentdrawprim.h"
 
 #include "diligent_drawprim_api.h"
-#include "diligent_render.h"
 #include "diligent_state.h"
 #include "render.h"
 #include "rendererconsolevars.h"

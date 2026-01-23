@@ -11,6 +11,8 @@
 
 #include "ltvector.h"
 
+class WorldBsp;
+
 namespace Diligent
 {
 	class ITextureView;
@@ -32,5 +34,9 @@ void diligent_SetOutputTargets(Diligent::ITextureView *render_target, Diligent::
 void diligent_SetWorldOffset(const LTVector& offset);
 /// \brief Returns the current world-space offset applied during rendering.
 const LTVector& diligent_GetWorldOffset();
+
+/// \brief Provides external world BSP models (editor) for texture lookup fallback.
+/// \details Pass nullptr or count=0 to clear the override.
+void diligent_SetExternalWorldBspModels(WorldBsp* const* models, uint32 count);
 
 #endif

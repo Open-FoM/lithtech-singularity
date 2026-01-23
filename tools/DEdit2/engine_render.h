@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "texture_cache.h"
 
@@ -12,6 +14,7 @@
 struct RenderStruct;
 struct RMode;
 struct SDL_Window;
+class WorldBsp;
 
 struct EngineRenderContext
 {
@@ -21,6 +24,8 @@ struct EngineRenderContext
 	Diligent::RefCntAutoPtr<Diligent::ISwapChain> swapchain;
 	TextureCache textures;
 	std::string project_root;
+	std::vector<std::unique_ptr<WorldBsp>> world_bsp_models;
+	std::vector<WorldBsp*> world_bsp_model_ptrs;
 	bool world_loaded = false;
 };
 

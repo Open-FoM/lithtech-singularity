@@ -12,6 +12,7 @@ cbuffer WorldConstants
     float4 g_DynamicLightColor;
     float4 g_SunDir;
     float4 g_SunColor;
+    float4 g_WorldParams;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];
@@ -141,6 +142,29 @@ float4 ApplyFogLinear(float4 color_linear, float3 world_pos)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
+    if (g_FogParams.w > 7.5f)
+    {
+        float2 uv = ResolveTexCoord(0, input.texcoord0);
+        float4 tex = g_Texture0.SampleLevel(g_Texture0_sampler, uv, 0.0f);
+        return float4(tex.rgb, 1.0f);
+    }
+    if (g_FogParams.w > 6.5f)
+    {
+        float2 uv = input.uv0;
+        float4 tex = g_Texture0.SampleLevel(g_Texture0_sampler, uv, 0.0f);
+        return float4(tex.rgb, 1.0f);
+    }
+    if (g_FogParams.w > 5.5f)
+    {
+        float2 uv = input.uv1;
+        float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
+        return float4(tex.rgb, 1.0f);
+    }
+    if (g_FogParams.w > 4.5f)
+    {
+        float2 uv = input.uv1;
+        return float4(frac(uv.x), frac(uv.y), 0.0f, 1.0f);
+    }
     if (g_FogParams.w > 3.5f)
     {
         float2 uv = input.uv0;
@@ -164,9 +188,9 @@ float4 PSMain(PSInput input) : SV_TARGET
         return float4(frac(uv.x), frac(uv.y), 0.0f, 1.0f);
     }
 
-    float2 uv = ResolveTexCoord(0, input.texcoord0);
+    float2 uv = (g_WorldParams.z > 0.5f) ? ResolveTexCoord(0, input.texcoord0) : input.uv0;
     float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
-    float3 vertex_color = input.color.rgb;
+    float3 vertex_color = lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
     float3 color_linear = ToLinear(tex.rgb) * vertex_color;
     float alpha = tex.a * input.color.a;
     color_linear = ApplySunLight(color_linear, input.world_normal);

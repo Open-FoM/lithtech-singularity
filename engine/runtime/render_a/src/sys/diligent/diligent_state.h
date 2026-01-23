@@ -40,6 +40,7 @@ struct SceneDesc;
 class ILTCommon;
 class IWorldClientBSP;
 class IWorldSharedBSP;
+class WorldBsp;
 
 #ifdef LTJS_SDL_BACKEND
 struct SDL_Window;
@@ -55,6 +56,8 @@ struct DiligentRenderState
 	ILTCommon* common_client = nullptr;
 	IWorldClientBSP* world_bsp_client = nullptr;
 	IWorldSharedBSP* world_bsp_shared = nullptr;
+	WorldBsp* const* external_world_bsp_models = nullptr;
+	uint32 external_world_bsp_model_count = 0;
 
 	Diligent::RefCntAutoPtr<Diligent::IRenderDevice> render_device;
 	Diligent::RefCntAutoPtr<Diligent::IDeviceContext> immediate_context;

@@ -14,6 +14,7 @@ cbuffer WorldConstants
     float4 g_DynamicLightColor;
     float4 g_SunDir;
     float4 g_SunColor;
+    float4 g_WorldParams;
     float4x4 g_TexEffectMatrix[4];
     int4 g_TexEffectParams[4];
     int4 g_TexEffectUV[4];
@@ -147,7 +148,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     float2 uv1 = ResolveTexCoord(1, input.texcoord1);
     float4 base_tex = g_Texture0.Sample(g_Texture0_sampler, uv0);
     float4 bump_tex = g_Texture1.Sample(g_Texture1_sampler, uv1);
-    float3 vertex_color = input.color.rgb;
+    float3 vertex_color = lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
     float3 color_linear = ToLinear(base_tex.rgb) * ToLinear(bump_tex.rgb) * vertex_color;
     float alpha = base_tex.a * bump_tex.a * input.color.a;
     color_linear = ApplySunLight(color_linear, input.world_normal);

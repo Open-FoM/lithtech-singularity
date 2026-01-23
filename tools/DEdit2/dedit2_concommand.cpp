@@ -2,7 +2,6 @@
 
 #include "engine_render.h"
 #include "diligent_drawprim_api.h"
-#include "diligent_render.h"
 #include "diligent_render_debug.h"
 #include "rendererconsolevars.h"
 
@@ -16,6 +15,7 @@
 #include <vector>
 
 static DEdit2TexViewState g_TexView;
+extern int32 g_CV_TextureMipMapOffset;
 
 namespace
 {
@@ -392,8 +392,12 @@ void CmdWorldPipelineStats(int, const char*[])
 		return;
 	}
 
-	DEdit2_Log("World pipelines: total=%llu skip=%llu solid=%llu tex=%llu lm=%llu lm_only=%llu dual=%llu lm_dual=%llu bump=%llu glow=%llu dyn=%llu vol=%llu shadow=%llu flat=%llu normals=%llu",
+	DEdit2_Log("World pipelines: total=%llu lm_data=%llu lm_view=%llu lm_black=%llu light_anim=%llu skip=%llu solid=%llu tex=%llu lm=%llu lm_only=%llu dual=%llu lm_dual=%llu bump=%llu glow=%llu dyn=%llu vol=%llu shadow=%llu flat=%llu normals=%llu",
 		static_cast<unsigned long long>(stats.total_sections),
+		static_cast<unsigned long long>(stats.sections_lightmap_data),
+		static_cast<unsigned long long>(stats.sections_lightmap_view),
+		static_cast<unsigned long long>(stats.sections_lightmap_black),
+		static_cast<unsigned long long>(stats.sections_light_anim),
 		static_cast<unsigned long long>(stats.mode_skip),
 		static_cast<unsigned long long>(stats.mode_solid),
 		static_cast<unsigned long long>(stats.mode_textured),
@@ -439,18 +443,18 @@ void CmdWorldTexDebug(int argc, const char* argv[])
 {
 	if (argc < 1)
 	{
-		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4>");
+		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4|5|6|7|8>");
 		return;
 	}
 
 	int mode = 0;
 	if (!ParseInt(argv[0], mode))
 	{
-		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4>");
+		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4|5|6|7|8>");
 		return;
 	}
 
-	g_CV_WorldTexDebugMode.m_Val = std::clamp(mode, 0, 4);
+	g_CV_WorldTexDebugMode.m_Val = std::clamp(mode, 0, 8);
 	DEdit2_Log("worldtexdebug = %d", g_CV_WorldTexDebugMode.m_Val);
 }
 
@@ -488,6 +492,20 @@ void CmdWorldTexDump(int argc, const char* argv[])
 		}
 	}
 	diligent_DumpWorldTextureBindings(static_cast<uint32_t>(limit));
+}
+
+void CmdWorldSurfaceDump(int argc, const char* argv[])
+{
+	int limit = 1;
+	if (argc >= 1)
+	{
+		if (!ParseInt(argv[0], limit) || limit < 0)
+		{
+			DEdit2_Log("Usage: worldsurfacedump [limit]");
+			return;
+		}
+	}
+	diligent_DumpWorldSurfaceDebug(static_cast<uint32_t>(limit));
 }
 
 void CmdWorldBaseVertex(int argc, const char* argv[])
@@ -970,6 +988,7 @@ const DEdit2TexViewState& DEdit2_GetTexViewState()
 int g_DEdit2MipMapOffset = 0;
 int g_DEdit2Bilinear = 1;
 int g_DEdit2MaxTextureMemory = 128 * 1024 * 1024;
+int g_DEdit2WorldTexelUVAuto = 0;
 void DEdit2_InitConsoleCommands()
 {
 	g_Commands.clear();
@@ -999,6 +1018,7 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("worldtexdebug", CmdWorldTexDebug);
 	AddCommand("worldtexeluv", CmdWorldTexelUV);
 	AddCommand("worldtexdump", CmdWorldTexDump);
+	AddCommand("worldsurfacedump", CmdWorldSurfaceDump);
 	AddCommand("worldbasevertex", CmdWorldBaseVertex);
 	AddCommand("worldshaderreset", CmdWorldShaderReset);
 	AddCommand("shaders", CmdShaders);
@@ -1008,8 +1028,11 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("worldforcetexture", CmdWorldForceTextured);
 
 	AddVar("mipmapoffset", ConsoleVar::Type::Int, &g_DEdit2MipMapOffset);
+	AddVar("mipmapbias", ConsoleVar::Type::Float, &g_CV_MipMapBias.m_Val);
 	AddVar("bilinear", ConsoleVar::Type::Int, &g_DEdit2Bilinear);
 	AddVar("MaxTextureMemory", ConsoleVar::Type::Int, &g_DEdit2MaxTextureMemory);
+	AddVar("worldtexeluv_auto", ConsoleVar::Type::Int, &g_DEdit2WorldTexelUVAuto);
+	AddVar("worldforcelegacyverts", ConsoleVar::Type::Int, &g_CV_WorldForceLegacyVerts.m_Val);
 
 	DEdit2_Log("DEdit2 console initialized. Type 'help' for commands.");
 }
@@ -1099,6 +1122,10 @@ void DEdit2_CommandHandler(const char* command)
 				{
 					*static_cast<int*>(var.target) = parsed;
 				}
+				if (var.target == &g_DEdit2MipMapOffset)
+				{
+					g_CV_TextureMipMapOffset = parsed;
+				}
 				updated = true;
 			}
 			break;
@@ -1111,6 +1138,10 @@ void DEdit2_CommandHandler(const char* command)
 				if (var.target)
 				{
 					*static_cast<float*>(var.target) = parsed;
+				}
+				if (var.target == &g_CV_MipMapBias.m_Val)
+				{
+					diligent_ResetWorldShaders();
 				}
 				updated = true;
 			}

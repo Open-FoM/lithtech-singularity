@@ -3,7 +3,6 @@
 #include "ui_shared.h"
 #include "engine_render.h"
 #include "diligent_drawprim_api.h"
-#include "diligent_render.h"
 #include "diligent_render_debug.h"
 
 #include "imgui.h"

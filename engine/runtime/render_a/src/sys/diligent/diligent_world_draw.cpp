@@ -9,6 +9,8 @@
 #include "diligent_scene_collect.h"
 #include "diligent_texture_cache.h"
 #include "diligent_utils.h"
+#include "diligent_internal.h"
+#include "world_client_bsp.h"
 
 #include "bdefs.h"
 #include "de_objects.h"
@@ -18,6 +20,7 @@
 #include "texturescriptmgr.h"
 #include "texturescriptvarmgr.h"
 #include "viewparams.h"
+#include "dtxmgr.h"
 
 #include <algorithm>
 
@@ -32,7 +35,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <vector>
 
 namespace
@@ -45,8 +50,233 @@ struct DiligentTextureEffectStage
 	bool use_uv1 = false;
 };
 
+const WorldBsp* diligent_pick_external_bsp(const DiligentRenderBlock& block, uint32 poly_index, uint32& out_world_index)
+{
+	out_world_index = 0;
+	if (!g_diligent_state.external_world_bsp_models || g_diligent_state.external_world_bsp_model_count == 0)
+	{
+		return nullptr;
+	}
+
+	const char* desired_name = nullptr;
+	if (block.world && !block.world->world_name.empty())
+	{
+		desired_name = block.world->world_name.c_str();
+	}
+
+	if (desired_name && desired_name[0] != '\0')
+	{
+		for (uint32 i = 0; i < g_diligent_state.external_world_bsp_model_count; ++i)
+		{
+			const WorldBsp* candidate = g_diligent_state.external_world_bsp_models[i];
+			if (!candidate)
+			{
+				continue;
+			}
+			if (stricmp(candidate->m_WorldName, desired_name) == 0)
+			{
+				out_world_index = i;
+				return candidate;
+			}
+		}
+	}
+
+	for (uint32 i = 0; i < g_diligent_state.external_world_bsp_model_count; ++i)
+	{
+		const WorldBsp* candidate = g_diligent_state.external_world_bsp_models[i];
+		if (!candidate)
+		{
+			continue;
+		}
+		if (poly_index < candidate->m_nPolies || poly_index < candidate->m_nSurfaces)
+		{
+			out_world_index = i;
+			return candidate;
+		}
+	}
+
+	return nullptr;
+}
+
 static DiligentWorldPipelineStats g_diligent_pipeline_stats{};
 static LTVector g_diligent_world_offset(0.0f, 0.0f, 0.0f);
+
+bool diligent_is_placeholder_texture(SharedTexture* texture)
+{
+	if (!texture || !g_diligent_state.render_struct)
+	{
+		return false;
+	}
+
+	TextureData* texture_data = g_diligent_state.render_struct->GetTexture(texture);
+	if (!texture_data)
+	{
+		return false;
+	}
+
+	return texture_data->m_Header.m_BaseWidth <= 1 && texture_data->m_Header.m_BaseHeight <= 1;
+}
+
+SharedTexture* diligent_get_effect_linked_texture(SharedTexture* texture)
+{
+	if (!texture)
+	{
+		return nullptr;
+	}
+
+	const std::array<ELinkedTex, 4> linked_order = {
+		eLinkedTex_EffectTexture1,
+		eLinkedTex_EffectTexture2,
+		eLinkedTex_EffectTexture3,
+		eLinkedTex_EffectTexture4};
+
+	SharedTexture* fallback = nullptr;
+	for (const auto linked_type : linked_order)
+	{
+		if (auto* linked = texture->GetLinkedTexture(linked_type))
+		{
+			if (!fallback)
+			{
+				fallback = linked;
+			}
+			if (!diligent_is_placeholder_texture(linked))
+			{
+				return linked;
+			}
+		}
+	}
+
+	return fallback;
+}
+
+SharedTexture* diligent_get_section_surface_texture(const DiligentRenderBlock& block, const DiligentRBSection& section)
+{
+	if (section.poly_index == 0xFFFFFFFFu)
+	{
+		return nullptr;
+	}
+
+	auto* bsp_client = diligent_get_world_bsp_client();
+	if (bsp_client && bsp_client->NumWorldModels() == 0)
+	{
+		bsp_client = nullptr;
+	}
+	const WorldBsp* external_bsp = nullptr;
+	if (!bsp_client)
+	{
+		uint32 external_index = 0;
+		external_bsp = diligent_pick_external_bsp(block, section.poly_index, external_index);
+	}
+
+	const WorldBsp* bsp = external_bsp;
+	if (!bsp_client && !bsp)
+	{
+		return nullptr;
+	}
+
+	if (!bsp)
+	{
+		const uint32 model_count = bsp_client->NumWorldModels();
+		const WorldData* world_model = nullptr;
+		uint32 world_index = 0;
+		if (block.world)
+		{
+			world_index = block.world->ResolveWorldIndex();
+		}
+		if (world_index < model_count)
+		{
+			world_model = bsp_client->GetWorldModel(world_index);
+		}
+
+		bsp = world_model ? world_model->OriginalBSP() : nullptr;
+		if (!bsp || section.poly_index >= bsp->m_nPolies)
+		{
+			for (uint32 i = 0; i < model_count; ++i)
+			{
+				const WorldData* candidate = bsp_client->GetWorldModel(i);
+				if (!candidate || !candidate->OriginalBSP())
+				{
+					continue;
+				}
+				const WorldBsp* candidate_bsp = candidate->OriginalBSP();
+				if (section.poly_index < candidate_bsp->m_nPolies ||
+					section.poly_index < candidate_bsp->m_nSurfaces)
+				{
+					bsp = candidate_bsp;
+					break;
+				}
+			}
+		}
+		if (!bsp)
+		{
+			return nullptr;
+		}
+	}
+
+	Surface* surface = nullptr;
+	if (section.poly_index < bsp->m_nPolies && bsp->m_Polies)
+	{
+		WorldPoly* poly = bsp->m_Polies[section.poly_index];
+		if (poly)
+		{
+			surface = poly->GetSurface();
+		}
+	}
+
+	if (!surface && section.poly_index < bsp->m_nSurfaces && bsp->m_Surfaces)
+	{
+		surface = &bsp->m_Surfaces[section.poly_index];
+	}
+
+	if (!surface)
+	{
+		return nullptr;
+	}
+
+	if (auto* texture = surface->GetSharedTexture())
+	{
+		return texture;
+	}
+
+	if (!bsp->m_TextureNames || !g_diligent_state.render_struct)
+	{
+		return nullptr;
+	}
+
+	const char* texture_name = bsp->m_TextureNames[surface->m_iTexture];
+	if (!texture_name || texture_name[0] == '\0')
+	{
+		return nullptr;
+	}
+
+	return g_diligent_state.render_struct->GetSharedTexture(texture_name);
+}
+
+SharedTexture* diligent_resolve_effect_texture(SharedTexture* texture)
+{
+	if (!texture)
+	{
+		return nullptr;
+	}
+
+	if (texture->m_eTexType == eSharedTexType_Effect)
+	{
+		if (auto* linked = diligent_get_effect_linked_texture(texture))
+		{
+			return linked;
+		}
+	}
+
+	if (diligent_is_placeholder_texture(texture))
+	{
+		if (auto* linked = diligent_get_effect_linked_texture(texture))
+		{
+			return linked;
+		}
+	}
+
+	return texture;
+}
 
 float diligent_calc_world_model_draw_distance(const LTObject* object, const ViewParams& params)
 {
@@ -111,9 +341,9 @@ int diligent_get_world_tex_debug_mode()
 	{
 		mode = 0;
 	}
-	if (mode > 4)
+	if (mode > 8)
 	{
-		mode = 4;
+		mode = 8;
 	}
 	return mode;
 }
@@ -135,9 +365,14 @@ bool diligent_get_world_uv_debug()
 	return g_CV_WorldUvDebug.m_Val != 0;
 }
 
+int diligent_get_world_texel_uv_mode()
+{
+	return g_CV_WorldTexelUV.m_Val;
+}
+
 bool diligent_get_world_texel_uv()
 {
-	return g_CV_WorldTexelUV.m_Val != 0;
+	return diligent_get_world_texel_uv_mode() != 0;
 }
 
 bool diligent_get_world_use_base_vertex()
@@ -167,26 +402,30 @@ int diligent_get_world_shading_mode()
 uint32 diligent_get_texture_effect_stages(uint8 mode, std::array<DiligentTextureEffectStage, 4>& stages)
 {
 	stages = {};
+	const bool swap_lightmap_uv = (g_CV_LightmapSwapUV.m_Val != 0);
+	const bool has_uv1 = g_render_world && g_render_world->has_uv1;
+	const bool base_use_uv1 = swap_lightmap_uv;
+	const bool lightmap_use_uv1 = swap_lightmap_uv ? false : has_uv1;
 	switch (mode)
 	{
 		case kWorldPipelineTextured:
 		case kWorldPipelineGlowTextured:
-			stages[0] = {TSChannel_Base, false};
+			stages[0] = {TSChannel_Base, base_use_uv1};
 			return 1;
 		case kWorldPipelineLightmap:
-			stages[0] = {TSChannel_Base, false};
-			stages[1] = {TSChannel_LightMap, true};
+			stages[0] = {TSChannel_Base, base_use_uv1};
+			stages[1] = {TSChannel_LightMap, lightmap_use_uv1};
 			return 2;
 		case kWorldPipelineLightmapOnly:
-			stages[0] = {TSChannel_LightMap, true};
+			stages[0] = {TSChannel_LightMap, lightmap_use_uv1};
 			return 1;
 		case kWorldPipelineDualTexture:
-			stages[0] = {TSChannel_Base, false};
+			stages[0] = {TSChannel_Base, base_use_uv1};
 			stages[1] = {TSChannel_DualTexture, true};
 			return 2;
 		case kWorldPipelineLightmapDual:
-			stages[0] = {TSChannel_Base, false};
-			stages[1] = {TSChannel_LightMap, true};
+			stages[0] = {TSChannel_Base, base_use_uv1};
+			stages[1] = {TSChannel_LightMap, lightmap_use_uv1};
 			stages[2] = {TSChannel_DualTexture, true};
 			return 3;
 		default:
@@ -628,6 +867,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[0].Desc.MipLODBias = g_CV_MipMapBias.m_Val;
 	sampler_desc[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
@@ -636,6 +876,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[1].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[1].Desc.MipLODBias = g_CV_MipMapBias.m_Val;
 	sampler_desc[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
@@ -644,6 +885,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[2].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler_desc[2].Desc.MipLODBias = g_CV_MipMapBias.m_Val;
 	sampler_desc[2].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[2].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[2].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
@@ -850,6 +1092,7 @@ void diligent_init_texture_effect_constants(DiligentWorldConstants& constants)
 	}
 }
 void diligent_apply_texture_effect_constants(
+	const DiligentRenderBlock& block,
 	const DiligentRBSection& section,
 	uint8 pipeline_mode,
 	DiligentWorldConstants& constants)
@@ -872,18 +1115,30 @@ void diligent_apply_texture_effect_constants(
 		bool apply_scale = false;
 		float scale_u = 1.0f;
 		float scale_v = 1.0f;
-		if (diligent_get_world_texel_uv())
+		const int texel_uv_mode = diligent_get_world_texel_uv_mode();
+		const bool texel_uv_divide = (texel_uv_mode == 1);
+		const bool texel_uv_multiply = (texel_uv_mode >= 2);
+		if (texel_uv_divide || texel_uv_multiply)
 		{
 			if (stage.channel == TSChannel_Base)
 			{
-				SharedTexture* base_texture = section.textures[0];
+				SharedTexture* base_texture = diligent_resolve_effect_texture(section.textures[0]);
+				if (diligent_is_placeholder_texture(base_texture))
+				{
+					if (SharedTexture* surface_texture = diligent_get_section_surface_texture(block, section))
+					{
+						base_texture = diligent_resolve_effect_texture(surface_texture);
+					}
+				}
 				if (base_texture && g_diligent_state.render_struct)
 				{
 					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(base_texture);
 					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
 					{
-						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						const float width = static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						const float height = static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						scale_u = texel_uv_multiply ? width : (1.0f / width);
+						scale_v = texel_uv_multiply ? height : (1.0f / height);
 						apply_scale = true;
 					}
 				}
@@ -892,21 +1147,25 @@ void diligent_apply_texture_effect_constants(
 			{
 				if (section.lightmap_width > 0 && section.lightmap_height > 0)
 				{
-					scale_u = 1.0f / static_cast<float>(section.lightmap_width);
-					scale_v = 1.0f / static_cast<float>(section.lightmap_height);
+					const float width = static_cast<float>(section.lightmap_width);
+					const float height = static_cast<float>(section.lightmap_height);
+					scale_u = texel_uv_multiply ? width : (1.0f / width);
+					scale_v = texel_uv_multiply ? height : (1.0f / height);
 					apply_scale = true;
 				}
 			}
 			else if (stage.channel == TSChannel_DualTexture)
 			{
-				SharedTexture* dual_texture = section.textures[1];
+				SharedTexture* dual_texture = diligent_resolve_effect_texture(section.textures[1]);
 				if (dual_texture && g_diligent_state.render_struct)
 				{
 					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(dual_texture);
 					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
 					{
-						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						const float width = static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						const float height = static_cast<float>(texture_data->m_Header.m_BaseHeight);
+						scale_u = texel_uv_multiply ? width : (1.0f / width);
+						scale_v = texel_uv_multiply ? height : (1.0f / height);
 						apply_scale = true;
 					}
 				}
@@ -1332,30 +1591,87 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			auto& section = *section_ptr;
-			if (section_filter == DiligentWorldSectionFilter::Normal && section.light_anim)
+			const bool placeholder_light_anim =
+				section.light_anim && section.textures[0] && diligent_is_placeholder_texture(section.textures[0]);
+			if (section_filter == DiligentWorldSectionFilter::Normal)
 			{
-				continue;
+				if (section.light_anim && !placeholder_light_anim)
+				{
+					continue;
+				}
 			}
-			if (section_filter == DiligentWorldSectionFilter::LightAnim && !section.light_anim)
+			else if (section_filter == DiligentWorldSectionFilter::LightAnim)
 			{
-				continue;
+				if (!section.light_anim || placeholder_light_anim)
+				{
+					continue;
+				}
 			}
 
 			Diligent::ITextureView* texture_view = nullptr;
 			Diligent::ITextureView* dual_texture_view = nullptr;
 			if (section.textures[0])
 			{
-				texture_view = diligent_get_texture_view(section.textures[0], false);
+				SharedTexture* base_texture = diligent_resolve_effect_texture(section.textures[0]);
+				if (diligent_is_placeholder_texture(base_texture))
+				{
+					SharedTexture* surface_texture = diligent_get_section_surface_texture(*block, section);
+					if (surface_texture)
+					{
+						base_texture = diligent_resolve_effect_texture(surface_texture);
+						if (base_texture && base_texture != section.textures[0])
+						{
+							if (section.textures[0])
+							{
+								section.textures[0]->SetRefCount(section.textures[0]->GetRefCount() - 1);
+							}
+							base_texture->SetRefCount(base_texture->GetRefCount() + 1);
+							section.textures[0] = base_texture;
+							if (g_diligent_state.render_struct)
+							{
+								TextureData* texture_data = g_diligent_state.render_struct->GetTexture(base_texture);
+								section.fullbright =
+									texture_data && (texture_data->m_Header.m_IFlags & DTX_FULLBRITE) != 0;
+							}
+						}
+					}
+				}
+				texture_view = diligent_get_texture_view(base_texture, false);
 			}
 			if (section.textures[1])
 			{
-				dual_texture_view = diligent_get_texture_view(section.textures[1], false);
+				dual_texture_view = diligent_get_texture_view(diligent_resolve_effect_texture(section.textures[1]), false);
 			}
+			const bool had_lightmap_data =
+				(section.lightmap_size != 0 && section.lightmap_width != 0 && section.lightmap_height != 0);
+			if (had_lightmap_data)
+			{
+				++g_diligent_pipeline_stats.sections_lightmap_data;
+			}
+			if (section.light_anim)
+			{
+				++g_diligent_pipeline_stats.sections_light_anim;
+			}
+
 			Diligent::ITextureView* lightmap_view = diligent_get_lightmap_view(section);
+			if (lightmap_view)
+			{
+				++g_diligent_pipeline_stats.sections_lightmap_view;
+			}
+			else if (had_lightmap_data && section.lightmap_size == 0 && section.lightmap_data.empty())
+			{
+				++g_diligent_pipeline_stats.sections_lightmap_black;
+			}
 			if (g_CV_LightMap.m_Val == 0)
 			{
 				lightmap_view = nullptr;
 			}
+
+			const auto shader_type = static_cast<DiligentPCShaderType>(section.shader_code);
+			const bool can_combine_lightmap = g_render_world && g_render_world->has_uv1;
+			const bool is_lightmap_texture_section =
+				(!section.light_anim &&
+					(shader_type == kPcShaderLightmapTexture || shader_type == kPcShaderLightmapDualTexture));
 
 			uint8 mode = kWorldPipelineSkip;
 			if (section.light_anim)
@@ -1364,16 +1680,27 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 			else
 			{
-				switch (static_cast<DiligentPCShaderType>(section.shader_code))
+				switch (shader_type)
 				{
 					case kPcShaderGouraud:
 						mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
 						break;
 					case kPcShaderLightmap:
-						mode = lightmap_view ? kWorldPipelineLightmapOnly : kWorldPipelineSolid;
+						if (lightmap_view)
+						{
+							mode = kWorldPipelineLightmapOnly;
+						}
+						else if (texture_view)
+						{
+							mode = kWorldPipelineTextured;
+						}
+						else
+						{
+							mode = kWorldPipelineSolid;
+						}
 						break;
 					case kPcShaderLightmapTexture:
-						if (texture_view && lightmap_view)
+						if (texture_view && lightmap_view && can_combine_lightmap)
 						{
 							mode = kWorldPipelineLightmap;
 						}
@@ -1406,7 +1733,7 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 						break;
 					case kPcShaderLightmapDualTexture:
-						if (texture_view && lightmap_view && dual_texture_view)
+						if (texture_view && lightmap_view && dual_texture_view && can_combine_lightmap)
 						{
 							mode = kWorldPipelineLightmapDual;
 						}
@@ -1416,7 +1743,7 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 						else if (texture_view && lightmap_view)
 						{
-							mode = kWorldPipelineLightmap;
+							mode = can_combine_lightmap ? kWorldPipelineLightmap : kWorldPipelineTextured;
 						}
 						else if (texture_view)
 						{
@@ -1440,6 +1767,22 @@ bool diligent_draw_render_blocks_with_constants(
 					default:
 						mode = kWorldPipelineSkip;
 						break;
+				}
+			}
+
+			if (!section.light_anim && g_CV_LightMap.m_Val != 0 && g_CV_ForceLightmapPipeline.m_Val != 0 && lightmap_view)
+			{
+				if (can_combine_lightmap && texture_view && dual_texture_view)
+				{
+					mode = kWorldPipelineLightmapDual;
+				}
+				else if (can_combine_lightmap && texture_view)
+				{
+					mode = kWorldPipelineLightmap;
+				}
+				else
+				{
+					mode = kWorldPipelineLightmapOnly;
 				}
 			}
 
@@ -1522,14 +1865,45 @@ bool diligent_draw_render_blocks_with_constants(
 					break;
 			}
 
-			auto* pipeline = diligent_get_world_pipeline(mode, blend_mode, depth_mode, g_CV_Wireframe.m_Val != 0);
+			DiligentWorldBlendMode section_blend_mode = blend_mode;
+			if (is_lightmap_texture_section &&
+				(mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture) &&
+				g_CV_LightmapsOnly.m_Val == 0)
+			{
+				section_blend_mode = kWorldBlendMultiply;
+			}
+
+			auto* pipeline = diligent_get_world_pipeline(mode, section_blend_mode, depth_mode, g_CV_Wireframe.m_Val != 0);
 			if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
 			{
 				continue;
 			}
 
 			DiligentWorldConstants constants = base_constants;
-			diligent_apply_texture_effect_constants(section, mode, constants);
+			float vertex_color_scale = 1.0f;
+			if (section.light_anim)
+			{
+				vertex_color_scale = (g_CV_LightmapUseVertexColor.m_Val != 0) ? 1.0f : 0.0f;
+			}
+			else
+			{
+				if (mode == kWorldPipelineLightmap ||
+					mode == kWorldPipelineLightmapOnly ||
+					mode == kWorldPipelineLightmapDual)
+				{
+					vertex_color_scale = (g_CV_LightmapUseVertexColor.m_Val != 0) ? 1.0f : 0.0f;
+				}
+			}
+			if (is_lightmap_texture_section && (mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture))
+			{
+				vertex_color_scale = 0.0f;
+			}
+			constants.world_params[0] = vertex_color_scale;
+			constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
+			const bool has_uv1 = g_render_world && g_render_world->has_uv1;
+			const bool use_tex_effect = section.texture_effect != nullptr;
+			constants.world_params[2] = (use_tex_effect || diligent_get_world_texel_uv() || has_uv1) ? 1.0f : 0.0f;
+			diligent_apply_texture_effect_constants(*block, section, mode, constants);
 			void* mapped_constants = nullptr;
 			g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
 			if (!mapped_constants)
@@ -1875,6 +2249,10 @@ bool diligent_draw_world_blocks()
 		constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
 		constants.dynamic_light_color[3] = light->m_Intensity;
 	}
+	constants.world_params[0] = 1.0f;
+	constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
+	constants.world_params[2] = 0.0f;
+	constants.world_params[3] = 0.0f;
 
 	if (!diligent_draw_render_blocks_with_constants(
 			g_visible_render_blocks,
@@ -1985,6 +2363,10 @@ bool diligent_draw_world_model_list_with_view(
 			constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
 			constants.dynamic_light_color[3] = light->m_Intensity;
 		}
+		constants.world_params[0] = 1.0f;
+		constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
+		constants.world_params[2] = 0.0f;
+		constants.world_params[3] = 0.0f;
 
 		if (!diligent_draw_render_blocks_with_constants(
 				blocks,
@@ -2100,7 +2482,7 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			}
 
 			DiligentWorldConstants section_constants = constants;
-			diligent_apply_texture_effect_constants(section, mode, section_constants);
+			diligent_apply_texture_effect_constants(*block, section, mode, section_constants);
 			void* mapped_constants = nullptr;
 			g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
 			if (!mapped_constants)
@@ -2349,12 +2731,128 @@ void diligent_DumpWorldTextureBindings(uint32_t limit)
 			{
 				name = g_diligent_state.render_struct->GetTextureName(section_ptr->textures[0]);
 			}
-			dsi_ConsolePrint("World tex[%u]: %s size=%ux%u gpu=%d",
+			const char* bsp_name = nullptr;
+			const char* bsp_texname = nullptr;
+			uint32 bsp_world_index = 0;
+			uint32 bsp_poly_count = 0;
+			uint32 bsp_surface_count = 0;
+			uint32 bsp_surface_index = 0xFFFFFFFFu;
+			uint16 bsp_tex_index = 0xFFFFu;
+			auto* bsp_client = diligent_get_world_bsp_client();
+			if (bsp_client && bsp_client->NumWorldModels() == 0)
+			{
+				bsp_client = nullptr;
+			}
+			if (bsp_client)
+			{
+				const uint32 model_count = bsp_client->NumWorldModels();
+				const WorldData* world_model = nullptr;
+				if (block_ptr->world)
+				{
+					bsp_world_index = block_ptr->world->ResolveWorldIndex();
+				}
+				if (bsp_world_index < model_count)
+				{
+					world_model = bsp_client->GetWorldModel(bsp_world_index);
+				}
+				const WorldBsp* bsp = world_model ? world_model->OriginalBSP() : nullptr;
+				if (!bsp && model_count > 0)
+				{
+					world_model = bsp_client->GetWorldModel(0);
+					bsp = world_model ? world_model->OriginalBSP() : nullptr;
+					bsp_world_index = 0;
+				}
+
+				if (bsp)
+				{
+					bsp_poly_count = bsp->m_nPolies;
+					bsp_surface_count = bsp->m_nSurfaces;
+					if (section_ptr->poly_index < bsp->m_nPolies && bsp->m_Polies)
+					{
+						WorldPoly* poly = bsp->m_Polies[section_ptr->poly_index];
+						if (poly && poly->GetSurface())
+						{
+							Surface* surface = poly->GetSurface();
+							bsp_surface_index = static_cast<uint32>(surface - bsp->m_Surfaces);
+							bsp_tex_index = surface->m_iTexture;
+							if (g_diligent_state.render_struct)
+							{
+								bsp_name = g_diligent_state.render_struct->GetTextureName(surface->GetSharedTexture());
+							}
+						}
+					}
+					else if (section_ptr->poly_index < bsp->m_nSurfaces && bsp->m_Surfaces)
+					{
+						Surface* surface = &bsp->m_Surfaces[section_ptr->poly_index];
+						bsp_surface_index = section_ptr->poly_index;
+						bsp_tex_index = surface->m_iTexture;
+						if (g_diligent_state.render_struct)
+						{
+							bsp_name = g_diligent_state.render_struct->GetTextureName(surface->GetSharedTexture());
+						}
+					}
+
+					if (bsp->m_TextureNames && bsp_tex_index != 0xFFFFu)
+					{
+						bsp_texname = bsp->m_TextureNames[bsp_tex_index];
+					}
+				}
+			}
+			else
+			{
+				const WorldBsp* bsp = diligent_pick_external_bsp(*block_ptr, section_ptr->poly_index, bsp_world_index);
+				if (bsp)
+				{
+					bsp_poly_count = bsp->m_nPolies;
+					bsp_surface_count = bsp->m_nSurfaces;
+					if (section_ptr->poly_index < bsp->m_nPolies && bsp->m_Polies)
+					{
+						WorldPoly* poly = bsp->m_Polies[section_ptr->poly_index];
+						if (poly && poly->GetSurface())
+						{
+							Surface* surface = poly->GetSurface();
+							bsp_surface_index = static_cast<uint32>(surface - bsp->m_Surfaces);
+							bsp_tex_index = surface->m_iTexture;
+							if (g_diligent_state.render_struct)
+							{
+								bsp_name = g_diligent_state.render_struct->GetTextureName(surface->GetSharedTexture());
+							}
+						}
+					}
+					else if (section_ptr->poly_index < bsp->m_nSurfaces && bsp->m_Surfaces)
+					{
+						Surface* surface = &bsp->m_Surfaces[section_ptr->poly_index];
+						bsp_surface_index = section_ptr->poly_index;
+						bsp_tex_index = surface->m_iTexture;
+						if (g_diligent_state.render_struct)
+						{
+							bsp_name = g_diligent_state.render_struct->GetTextureName(surface->GetSharedTexture());
+						}
+					}
+
+					if (bsp->m_TextureNames && bsp_tex_index != 0xFFFFu)
+					{
+						bsp_texname = bsp->m_TextureNames[bsp_tex_index];
+					}
+				}
+			}
+
+			dsi_ConsolePrint(
+				"World tex[%u]: %s size=%ux%u gpu=%d bsp=%s tex=%s wi=%u poly=%u "
+				"surfaces=%u polies=%u surf=%u texi=%u",
 				dumped,
 				name ? name : "(unknown)",
 				info.width,
 				info.height,
-				info.has_render_texture ? 1 : 0);
+				info.has_render_texture ? 1 : 0,
+				bsp_name ? bsp_name : "(none)",
+				bsp_texname ? bsp_texname : "(none)",
+				bsp_world_index,
+				section_ptr->poly_index,
+				bsp_surface_count,
+				bsp_poly_count,
+				bsp_surface_index,
+				bsp_tex_index);
 
 			++dumped;
 			if (limit != 0 && dumped >= limit)
@@ -2368,6 +2866,253 @@ void diligent_DumpWorldTextureBindings(uint32_t limit)
 	{
 		dsi_ConsolePrint("World textures: none bound.");
 	}
+}
+void diligent_DumpWorldSurfaceDebug(uint32_t limit)
+{
+	if (!g_render_world)
+	{
+		dsi_ConsolePrint("World debug dump unavailable.");
+		return;
+	}
+
+	const char* home_dir = std::getenv("HOME");
+	std::string output_path = home_dir ? (std::string(home_dir) + "/world_surface_debug.txt") : "world_surface_debug.txt";
+	std::ofstream output(output_path, std::ios::trunc);
+	if (!output.is_open())
+	{
+		dsi_ConsolePrint("World debug dump: failed to open %s", output_path.c_str());
+		return;
+	}
+
+	output << "World surface debug dump\n";
+	uint32_t dumped = 0;
+	uint32_t block_index = 0;
+	for (const auto& block_ptr : g_render_world->render_blocks)
+	{
+		if (!block_ptr)
+		{
+			++block_index;
+			continue;
+		}
+
+		const auto& block = *block_ptr;
+		uint32_t section_index = 0;
+		for (const auto& section_ptr : block.sections)
+		{
+			if (!section_ptr)
+			{
+				++section_index;
+				continue;
+			}
+
+			if (limit != 0 && dumped >= limit)
+			{
+				break;
+			}
+
+			const auto& section = *section_ptr;
+			output << "\n[section " << dumped << "] block=" << block_index << " section=" << section_index << "\n";
+			output << " poly=" << section.poly_index
+				   << " start_vertex=" << section.start_vertex
+				   << " vertex_count=" << section.vertex_count
+				   << " start_index=" << section.start_index
+				   << " tri_count=" << section.tri_count << "\n";
+
+			const char* base_name = nullptr;
+			if (section.textures[0] && g_diligent_state.render_struct && g_diligent_state.render_struct->GetTextureName)
+			{
+				base_name = g_diligent_state.render_struct->GetTextureName(section.textures[0]);
+			}
+			const char* dual_name = nullptr;
+			if (section.textures[1] && g_diligent_state.render_struct && g_diligent_state.render_struct->GetTextureName)
+			{
+				dual_name = g_diligent_state.render_struct->GetTextureName(section.textures[1]);
+			}
+
+			DiligentTextureDebugInfo base_info{};
+			const bool base_info_valid = section.textures[0] && diligent_GetTextureDebugInfo(section.textures[0], base_info);
+
+			output << " base_texture=" << (base_name ? base_name : "(none)")
+				   << " size=" << (base_info_valid ? base_info.width : 0) << "x"
+				   << (base_info_valid ? base_info.height : 0)
+				   << " gpu=" << (base_info_valid && base_info.has_render_texture ? 1 : 0) << "\n";
+			if (section.textures[1])
+			{
+				DiligentTextureDebugInfo dual_info{};
+				const bool dual_valid = diligent_GetTextureDebugInfo(section.textures[1], dual_info);
+				output << " dual_texture=" << (dual_name ? dual_name : "(none)")
+					   << " size=" << (dual_valid ? dual_info.width : 0) << "x"
+					   << (dual_valid ? dual_info.height : 0)
+					   << " gpu=" << (dual_valid && dual_info.has_render_texture ? 1 : 0) << "\n";
+			}
+
+			bool lightmap_view = section.lightmap_srv != nullptr;
+			if (!lightmap_view && section.lightmap_size != 0 && section.lightmap_width != 0 && section.lightmap_height != 0)
+			{
+				lightmap_view = diligent_get_lightmap_view(const_cast<DiligentRBSection&>(section)) != nullptr;
+			}
+			output << " lightmap size=" << section.lightmap_width << "x" << section.lightmap_height
+				   << " bytes=" << section.lightmap_size
+				   << " srv=" << (lightmap_view ? 1 : 0) << "\n";
+			output << " light_anim=" << (section.light_anim ? 1 : 0) << " fullbright=" << (section.fullbright ? 1 : 0)
+				   << " effect=" << (section.texture_effect ? 1 : 0) << "\n";
+			if (section.texture_effect)
+			{
+				TextureScriptStageData stage_data{};
+				if (section.texture_effect->GetStageData(TSChannel_Base, stage_data))
+				{
+					output << " effect base input=" << static_cast<int>(stage_data.input_type)
+						   << " flags=0x" << std::hex << stage_data.flags << std::dec << "\n";
+				}
+				if (section.texture_effect->GetStageData(TSChannel_LightMap, stage_data))
+				{
+					output << " effect lightmap input=" << static_cast<int>(stage_data.input_type)
+						   << " flags=0x" << std::hex << stage_data.flags << std::dec << "\n";
+				}
+			}
+
+			const WorldBsp* bsp = nullptr;
+			uint32 bsp_world_index = 0;
+			const char* bsp_texname = nullptr;
+			auto* bsp_client = diligent_get_world_bsp_client();
+			if (bsp_client && bsp_client->NumWorldModels() == 0)
+			{
+				bsp_client = nullptr;
+			}
+			if (bsp_client)
+			{
+				const uint32 model_count = bsp_client->NumWorldModels();
+				const WorldData* world_model = nullptr;
+				if (block.world)
+				{
+					bsp_world_index = block.world->ResolveWorldIndex();
+				}
+				if (bsp_world_index < model_count)
+				{
+					world_model = bsp_client->GetWorldModel(bsp_world_index);
+				}
+				bsp = world_model ? world_model->OriginalBSP() : nullptr;
+				if (!bsp && model_count > 0)
+				{
+					world_model = bsp_client->GetWorldModel(0);
+					bsp = world_model ? world_model->OriginalBSP() : nullptr;
+					bsp_world_index = 0;
+				}
+			}
+			else
+			{
+				bsp = diligent_pick_external_bsp(block, section.poly_index, bsp_world_index);
+			}
+
+			if (bsp && bsp->m_TextureNames && section.poly_index < bsp->m_nPolies && bsp->m_Polies)
+			{
+				WorldPoly* poly = bsp->m_Polies[section.poly_index];
+				if (poly && poly->GetSurface())
+				{
+					Surface* surface = poly->GetSurface();
+					if (surface && surface->m_iTexture != 0xFFFFu)
+					{
+						bsp_texname = bsp->m_TextureNames[surface->m_iTexture];
+					}
+				}
+			}
+			output << " bsp_world=" << bsp_world_index << " bsp_tex=" << (bsp_texname ? bsp_texname : "(none)") << "\n";
+
+			const size_t total_vertices = block.vertices.size();
+			const uint32 start = section.start_vertex;
+			const uint32 count = section.vertex_count;
+			if (start + count <= total_vertices && count > 0)
+			{
+				bool has_range = false;
+				float min_u0 = 0.0f;
+				float min_v0 = 0.0f;
+				float max_u0 = 0.0f;
+				float max_v0 = 0.0f;
+				float min_u1 = 0.0f;
+				float min_v1 = 0.0f;
+				float max_u1 = 0.0f;
+				float max_v1 = 0.0f;
+				uint64_t uv1_nonzero = 0;
+				uint32 min_r = 255;
+				uint32 min_g = 255;
+				uint32 min_b = 255;
+				uint32 min_a = 255;
+				uint32 max_r = 0;
+				uint32 max_g = 0;
+				uint32 max_b = 0;
+				uint32 max_a = 0;
+
+				for (uint32 i = 0; i < count; ++i)
+				{
+					const auto& vert = block.vertices[start + i];
+					if (!has_range)
+					{
+						min_u0 = max_u0 = vert.u0;
+						min_v0 = max_v0 = vert.v0;
+						min_u1 = max_u1 = vert.u1;
+						min_v1 = max_v1 = vert.v1;
+						has_range = true;
+					}
+					else
+					{
+						min_u0 = std::min(min_u0, vert.u0);
+						min_v0 = std::min(min_v0, vert.v0);
+						max_u0 = std::max(max_u0, vert.u0);
+						max_v0 = std::max(max_v0, vert.v0);
+						min_u1 = std::min(min_u1, vert.u1);
+						min_v1 = std::min(min_v1, vert.v1);
+						max_u1 = std::max(max_u1, vert.u1);
+						max_v1 = std::max(max_v1, vert.v1);
+					}
+					if (vert.u1 != 0.0f || vert.v1 != 0.0f)
+					{
+						++uv1_nonzero;
+					}
+					const uint32 color = vert.color;
+					const uint32 a = (color >> 24) & 0xFF;
+					const uint32 r = (color >> 16) & 0xFF;
+					const uint32 g = (color >> 8) & 0xFF;
+					const uint32 b = color & 0xFF;
+					min_r = LTMIN(min_r, r);
+					min_g = LTMIN(min_g, g);
+					min_b = LTMIN(min_b, b);
+					min_a = LTMIN(min_a, a);
+					max_r = LTMAX(max_r, r);
+					max_g = LTMAX(max_g, g);
+					max_b = LTMAX(max_b, b);
+					max_a = LTMAX(max_a, a);
+				}
+
+				output << " uv0 min=(" << min_u0 << "," << min_v0 << ") max=(" << max_u0 << "," << max_v0 << ")\n";
+				output << " uv1 min=(" << min_u1 << "," << min_v1 << ") max=(" << max_u1 << "," << max_v1
+					   << ") nonzero=" << uv1_nonzero << "/" << count << "\n";
+				output << " color min=(" << min_r << "," << min_g << "," << min_b << "," << min_a << ") max=("
+					   << max_r << "," << max_g << "," << max_b << "," << max_a << ")\n";
+
+				const auto& vert0 = block.vertices[start];
+				output << " sample v0 uv0=(" << vert0.u0 << "," << vert0.v0 << ") uv1=(" << vert0.u1 << "," << vert0.v1
+					   << ") color=0x" << std::hex << vert0.color << std::dec << "\n";
+			}
+			else
+			{
+				output << " vertex_range invalid (start=" << start << " count=" << count << " total=" << total_vertices
+					   << ")\n";
+			}
+
+			++dumped;
+			++section_index;
+		}
+
+		if (limit != 0 && dumped >= limit)
+		{
+			break;
+		}
+
+		++block_index;
+	}
+
+	output.close();
+	dsi_ConsolePrint("World surface dump: %u section(s) -> %s", dumped, output_path.c_str());
 }
 void diligent_ResetWorldShaders()
 {

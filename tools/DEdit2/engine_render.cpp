@@ -1,5 +1,4 @@
 #include "engine_render.h"
-#include "diligent_render.h"
 
 #include "lt_stream.h"
 
@@ -8,8 +7,11 @@
 #include "render.h"
 #include "dedit2_concommand.h"
 #include "world_shared_bsp.h"
+#include "de_world.h"
 #include "ltvector.h"
 #include "diligent_render.h"
+#include "diligent_render_debug.h"
+#include "rendererconsolevars.h"
 
 #include <SDL3/SDL.h>
 
@@ -24,6 +26,37 @@ TextureCache* g_texture_cache = nullptr;
 uint32 g_object_frame_code = 0;
 uint16 g_texture_frame_code = 1;
 
+void AutoEnableWorldTexelUV()
+{
+	if (g_DEdit2WorldTexelUVAuto == 0)
+	{
+		return;
+	}
+	if (g_CV_WorldTexelUV.m_Val != 0)
+	{
+		return;
+	}
+
+	DiligentWorldUvStats stats;
+	if (!diligent_GetWorldUvStats(stats) || !stats.has_range)
+	{
+		return;
+	}
+
+	const bool uv1_zero =
+		stats.min_u1 == 0.0f && stats.max_u1 == 0.0f &&
+		stats.min_v1 == 0.0f && stats.max_v1 == 0.0f;
+	const float uv0_extent = std::max(
+		std::max(std::abs(stats.min_u0), std::abs(stats.max_u0)),
+		std::max(std::abs(stats.min_v0), std::abs(stats.max_v0)));
+
+	if (uv1_zero && uv0_extent > 2.0f)
+	{
+		g_CV_WorldTexelUV.m_Val = 1;
+		DEdit2_Log("World UVs appear to be in texel space; enabling WorldTexelUV.");
+	}
+}
+
 LTObject* Engine_ProcessAttachment(LTObject*, Attachment*)
 {
 	return nullptr;
@@ -37,6 +70,113 @@ SharedTexture* Engine_GetSharedTexture(const char* filename)
 TextureData* Engine_GetTexture(SharedTexture* texture)
 {
 	return g_texture_cache ? g_texture_cache->GetTexture(texture) : nullptr;
+}
+
+bool LoadWorldBspModels(EngineRenderContext& ctx, ILTStream* stream, std::string& error)
+{
+	ctx.world_bsp_models.clear();
+	ctx.world_bsp_model_ptrs.clear();
+
+	if (!stream)
+	{
+		error = "Invalid world stream for BSP data.";
+		return false;
+	}
+
+	if (stream->SeekTo(0) != LT_OK)
+	{
+		error = "Failed to rewind world file for BSP data.";
+		return false;
+	}
+
+	uint32 version = 0;
+	uint32 object_data_pos = 0;
+	uint32 blind_object_data_pos = 0;
+	uint32 lightgrid_pos = 0;
+	uint32 collision_pos = 0;
+	uint32 particle_pos = 0;
+	uint32 render_pos = 0;
+
+	if (!IWorldSharedBSP::ReadWorldHeader(
+			stream,
+			version,
+			object_data_pos,
+			blind_object_data_pos,
+			lightgrid_pos,
+			collision_pos,
+			particle_pos,
+			render_pos))
+	{
+		error = "World header invalid or unsupported.";
+		return false;
+	}
+
+	uint32 info_len = 0;
+	stream->Read(&info_len, sizeof(info_len));
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		error = "World header invalid or unsupported.";
+		return false;
+	}
+
+	if (info_len > 0)
+	{
+		const uint32 skip_to = stream->GetPos() + info_len;
+		if (stream->SeekTo(skip_to) != LT_OK)
+		{
+			error = "World header invalid or unsupported.";
+			return false;
+		}
+	}
+
+	LTVector world_min{};
+	LTVector world_max{};
+	LTVector world_offset{};
+	*stream >> world_min >> world_max >> world_offset;
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		error = "World header invalid or unsupported.";
+		return false;
+	}
+
+	WorldTree world_tree;
+	if (!world_tree.LoadLayout(stream))
+	{
+		error = "World file world tree is invalid.";
+		return false;
+	}
+
+	uint32 num_world_models = 0;
+	stream->Read(&num_world_models, sizeof(num_world_models));
+	if (stream->ErrorStatus() != LT_OK)
+	{
+		error = "World file data is invalid.";
+		return false;
+	}
+
+	ctx.world_bsp_models.reserve(num_world_models);
+	ctx.world_bsp_model_ptrs.reserve(num_world_models);
+
+	for (uint32 model_index = 0; model_index < num_world_models; ++model_index)
+	{
+		uint32 dummy = 0;
+		stream->Read(&dummy, sizeof(dummy));
+
+		auto bsp = std::make_unique<WorldBsp>();
+		const ELoadWorldStatus load_status = bsp->Load(stream, true);
+		if (load_status != LoadWorld_Ok)
+		{
+			error = "Failed to load world model BSP data.";
+			ctx.world_bsp_models.clear();
+			ctx.world_bsp_model_ptrs.clear();
+			return false;
+		}
+
+		ctx.world_bsp_model_ptrs.push_back(bsp.get());
+		ctx.world_bsp_models.push_back(std::move(bsp));
+	}
+
+	return true;
 }
 
 const char* Engine_GetTextureName(const SharedTexture* texture)
@@ -205,6 +345,9 @@ void ShutdownEngineRenderer(EngineRenderContext& ctx)
 	}
 
 	ctx.textures.Clear();
+	diligent_SetExternalWorldBspModels(nullptr, 0);
+	ctx.world_bsp_model_ptrs.clear();
+	ctx.world_bsp_models.clear();
 	ctx.swapchain.Release();
 	ctx.context.Release();
 	ctx.device.Release();
@@ -357,6 +500,23 @@ bool LoadRenderWorld(EngineRenderContext& ctx, const std::string& world_path, st
 		error = "Renderer failed to load world render data.";
 		stream->Release();
 		return false;
+	}
+	AutoEnableWorldTexelUV();
+
+	std::string bsp_error;
+	if (LoadWorldBspModels(ctx, stream, bsp_error))
+	{
+		diligent_SetExternalWorldBspModels(ctx.world_bsp_model_ptrs.data(),
+			static_cast<uint32>(ctx.world_bsp_model_ptrs.size()));
+		DEdit2_Log("BSP models loaded: %u", static_cast<unsigned>(ctx.world_bsp_model_ptrs.size()));
+	}
+	else
+	{
+		diligent_SetExternalWorldBspModels(nullptr, 0);
+		if (!bsp_error.empty())
+		{
+			DEdit2_Log("BSP load warning: %s", bsp_error.c_str());
+		}
 	}
 
 	ctx.world_loaded = true;

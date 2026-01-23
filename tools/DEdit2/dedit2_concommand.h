@@ -44,3 +44,4 @@ const std::vector<std::string>& DEdit2_GetLog();
 extern int g_DEdit2MipMapOffset;
 extern int g_DEdit2Bilinear;
 extern int g_DEdit2MaxTextureMemory;
+extern int g_DEdit2WorldTexelUVAuto;
