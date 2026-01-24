@@ -16,6 +16,10 @@
 #include <array>
 
 struct LTMatrix;
+namespace Diligent
+{
+	struct SamplerDesc;
+}
 
 /// Combines two values into a 64-bit hash.
 uint64 diligent_hash_combine(uint64 seed, uint64 value);
@@ -39,5 +43,10 @@ LTMatrix diligent_build_transform(const LTVector& position, const LTRotation& ro
 void diligent_set_viewport(float width, float height);
 /// Sets the viewport to a sub-rectangle of the render target.
 void diligent_set_viewport_rect(float left, float top, float width, float height);
+
+/// Returns the active anisotropy level (0 when disabled/unsupported).
+uint8 diligent_get_anisotropy_level();
+/// Applies anisotropic filtering to the sampler when enabled.
+void diligent_apply_anisotropy(Diligent::SamplerDesc& desc);
 
 #endif

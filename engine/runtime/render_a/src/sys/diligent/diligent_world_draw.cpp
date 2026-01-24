@@ -853,6 +853,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[0].SamplerOrTextureName = "g_Texture0_sampler";
+	diligent_apply_anisotropy(sampler_desc[0].Desc);
 	sampler_desc[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[1].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[1].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -862,6 +863,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[1].SamplerOrTextureName = "g_Texture1_sampler";
+	diligent_apply_anisotropy(sampler_desc[1].Desc);
 	sampler_desc[2].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 	sampler_desc[2].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc[2].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -871,6 +873,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	sampler_desc[2].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[2].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc[2].SamplerOrTextureName = "g_Texture2_sampler";
+	diligent_apply_anisotropy(sampler_desc[2].Desc);
 
 	if (mode == kWorldPipelineVolumeEffect)
 	{
@@ -1096,54 +1099,7 @@ void diligent_apply_texture_effect_constants(
 		bool apply_scale = false;
 		float scale_u = 1.0f;
 		float scale_v = 1.0f;
-		const bool use_texel_uv = block.world && block.world->use_texel_uv;
-		if (use_texel_uv)
-		{
-			if (stage.channel == TSChannel_Base)
-			{
-				SharedTexture* base_texture = diligent_resolve_effect_texture(section.textures[0]);
-				if (diligent_is_placeholder_texture(base_texture))
-				{
-					if (SharedTexture* surface_texture = diligent_get_section_surface_texture(block, section))
-					{
-						base_texture = diligent_resolve_effect_texture(surface_texture);
-					}
-				}
-				if (base_texture && g_diligent_state.render_struct)
-				{
-					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(base_texture);
-					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
-					{
-						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
-						apply_scale = true;
-					}
-				}
-			}
-			else if (stage.channel == TSChannel_LightMap)
-			{
-				if (section.lightmap_width > 0 && section.lightmap_height > 0)
-				{
-					scale_u = 1.0f / static_cast<float>(section.lightmap_width);
-					scale_v = 1.0f / static_cast<float>(section.lightmap_height);
-					apply_scale = true;
-				}
-			}
-			else if (stage.channel == TSChannel_DualTexture)
-			{
-				SharedTexture* dual_texture = diligent_resolve_effect_texture(section.textures[1]);
-				if (dual_texture && g_diligent_state.render_struct)
-				{
-					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(dual_texture);
-					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
-					{
-						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
-						apply_scale = true;
-					}
-				}
-			}
-		}
+		(void)block;
 
 		TextureScriptStageData stage_data;
 		if (!section.texture_effect || !section.texture_effect->GetStageData(stage.channel, stage_data))

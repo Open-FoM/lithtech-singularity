@@ -2184,6 +2184,23 @@ int main(int argc, char** argv)
 						ImGui::Combo("World Shading Mode", &viewport_panel.render_world_shading_mode, shading_modes, IM_ARRAYSIZE(shading_modes));
 						ImGui::Checkbox("Wireframe Overlay", &viewport_panel.render_wireframe_overlay);
 						ImGui::Checkbox("Fullbright", &viewport_panel.render_fullbright);
+						ImGui::Separator();
+						ImGui::TextUnformatted("Texture Filtering");
+						const char* anisotropy_levels[] = {"Off", "2x", "4x", "8x", "16x"};
+						int anisotropy_index = 0;
+						switch (g_CV_Anisotropic.m_Val)
+						{
+							case 16: anisotropy_index = 4; break;
+							case 8: anisotropy_index = 3; break;
+							case 4: anisotropy_index = 2; break;
+							case 2: anisotropy_index = 1; break;
+							default: anisotropy_index = 0; break;
+						}
+						if (ImGui::Combo("Anisotropic", &anisotropy_index, anisotropy_levels, IM_ARRAYSIZE(anisotropy_levels)))
+						{
+							static const int kLevels[] = {0, 2, 4, 8, 16};
+							g_CV_Anisotropic.m_Val = kLevels[anisotropy_index];
+						}
 						const char* lightmap_modes[] = {"Dynamic", "Baked (if available)", "Lightmap Only"};
 						int& lightmap_mode = viewport_panel.render_lightmap_mode;
 						if (!viewport_panel.render_lightmaps_available && lightmap_mode != 0)

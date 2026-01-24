@@ -21,6 +21,7 @@
 
 #include "diligent_shaders_generated.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -35,6 +36,30 @@ extern int32 g_ScreenHeight;
 
 namespace
 {
+uint8 GetAnisotropyLevel()
+{
+	if (!g_diligent_state.render_device)
+	{
+		return 0;
+	}
+
+	const int requested = g_CV_Anisotropic.m_Val;
+	if (requested <= 1)
+	{
+		return 0;
+	}
+
+	const auto& adapter_info = g_diligent_state.render_device->GetAdapterInfo();
+	const uint32 max_anisotropy = adapter_info.Sampler.MaxAnisotropy;
+	if (max_anisotropy <= 1)
+	{
+		return 0;
+	}
+
+	const uint32 clamped = std::min<uint32>(static_cast<uint32>(requested), max_anisotropy);
+	return static_cast<uint8>(std::max<uint32>(2, clamped));
+}
+
 struct DrawPrimConstants
 {
 	std::array<float, 16> mvp{};
@@ -485,6 +510,14 @@ static DrawPrimPipeline* GetPipeline(
 		sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.SamplerOrTextureName = "g_Texture";
+		const uint8 anisotropy_level = GetAnisotropyLevel();
+		if (anisotropy_level > 1)
+		{
+			sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+			sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+			sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+			sampler_desc.Desc.MaxAnisotropy = anisotropy_level;
+		}
 		pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 		pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 	}

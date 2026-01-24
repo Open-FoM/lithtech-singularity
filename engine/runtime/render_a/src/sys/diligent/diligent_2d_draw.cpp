@@ -286,6 +286,7 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	sampler_desc.Desc.AddressV = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc.Desc.AddressW = clamp_sampler ? Diligent::TEXTURE_ADDRESS_CLAMP : Diligent::TEXTURE_ADDRESS_WRAP;
 	sampler_desc.SamplerOrTextureName = "g_Texture";
+	diligent_apply_anisotropy(sampler_desc.Desc);
 	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
 	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 

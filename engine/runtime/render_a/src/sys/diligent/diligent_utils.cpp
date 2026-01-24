@@ -4,9 +4,13 @@
 #include "ltrotation.h"
 #include "ltvector.h"
 #include "viewparams.h"
+#include "../rendererconsolevars.h"
 
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
+#include "Graphics/GraphicsEngine/interface/RenderDevice.h"
+#include "Graphics/GraphicsEngine/interface/Sampler.h"
 
+#include <algorithm>
 #include <cstring>
 
 uint64 diligent_hash_combine(uint64 seed, uint64 value)
@@ -128,4 +132,42 @@ void diligent_set_viewport_rect(float left, float top, float width, float height
 	viewport.MinDepth = 0.0f;
 	viewport.MaxDepth = 1.0f;
 	g_diligent_state.immediate_context->SetViewports(1, &viewport, 0, 0);
+}
+
+uint8 diligent_get_anisotropy_level()
+{
+	if (!g_diligent_state.render_device)
+	{
+		return 0;
+	}
+
+	const int requested = g_CV_Anisotropic.m_Val;
+	if (requested <= 1)
+	{
+		return 0;
+	}
+
+	const auto& adapter_info = g_diligent_state.render_device->GetAdapterInfo();
+	const uint32 max_anisotropy = adapter_info.Sampler.MaxAnisotropy;
+	if (max_anisotropy <= 1)
+	{
+		return 0;
+	}
+
+	const uint32 clamped = std::min<uint32>(static_cast<uint32>(requested), max_anisotropy);
+	return static_cast<uint8>(std::max<uint32>(2, clamped));
+}
+
+void diligent_apply_anisotropy(Diligent::SamplerDesc& desc)
+{
+	const uint8 level = diligent_get_anisotropy_level();
+	if (level <= 1)
+	{
+		return;
+	}
+
+	desc.MinFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+	desc.MagFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+	desc.MipFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+	desc.MaxAnisotropy = level;
 }
