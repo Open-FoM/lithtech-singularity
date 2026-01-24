@@ -336,16 +336,7 @@ namespace
 {
 int diligent_get_world_tex_debug_mode()
 {
-	int mode = g_CV_WorldTexDebugMode.m_Val;
-	if (mode < 0)
-	{
-		mode = 0;
-	}
-	if (mode > 8)
-	{
-		mode = 8;
-	}
-	return mode;
+	return 0;
 }
 
 int diligent_get_world_ps_debug()
@@ -363,16 +354,6 @@ int diligent_get_world_ps_debug()
 bool diligent_get_world_uv_debug()
 {
 	return g_CV_WorldUvDebug.m_Val != 0;
-}
-
-int diligent_get_world_texel_uv_mode()
-{
-	return g_CV_WorldTexelUV.m_Val;
-}
-
-bool diligent_get_world_texel_uv()
-{
-	return diligent_get_world_texel_uv_mode() != 0;
 }
 
 bool diligent_get_world_use_base_vertex()
@@ -1115,10 +1096,8 @@ void diligent_apply_texture_effect_constants(
 		bool apply_scale = false;
 		float scale_u = 1.0f;
 		float scale_v = 1.0f;
-		const int texel_uv_mode = diligent_get_world_texel_uv_mode();
-		const bool texel_uv_divide = (texel_uv_mode == 1);
-		const bool texel_uv_multiply = (texel_uv_mode >= 2);
-		if (texel_uv_divide || texel_uv_multiply)
+		const bool use_texel_uv = block.world && block.world->use_texel_uv;
+		if (use_texel_uv)
 		{
 			if (stage.channel == TSChannel_Base)
 			{
@@ -1135,10 +1114,8 @@ void diligent_apply_texture_effect_constants(
 					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(base_texture);
 					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
 					{
-						const float width = static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						const float height = static_cast<float>(texture_data->m_Header.m_BaseHeight);
-						scale_u = texel_uv_multiply ? width : (1.0f / width);
-						scale_v = texel_uv_multiply ? height : (1.0f / height);
+						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
 						apply_scale = true;
 					}
 				}
@@ -1147,10 +1124,8 @@ void diligent_apply_texture_effect_constants(
 			{
 				if (section.lightmap_width > 0 && section.lightmap_height > 0)
 				{
-					const float width = static_cast<float>(section.lightmap_width);
-					const float height = static_cast<float>(section.lightmap_height);
-					scale_u = texel_uv_multiply ? width : (1.0f / width);
-					scale_v = texel_uv_multiply ? height : (1.0f / height);
+					scale_u = 1.0f / static_cast<float>(section.lightmap_width);
+					scale_v = 1.0f / static_cast<float>(section.lightmap_height);
 					apply_scale = true;
 				}
 			}
@@ -1162,10 +1137,8 @@ void diligent_apply_texture_effect_constants(
 					TextureData* texture_data = g_diligent_state.render_struct->GetTexture(dual_texture);
 					if (texture_data && texture_data->m_Header.m_BaseWidth > 0 && texture_data->m_Header.m_BaseHeight > 0)
 					{
-						const float width = static_cast<float>(texture_data->m_Header.m_BaseWidth);
-						const float height = static_cast<float>(texture_data->m_Header.m_BaseHeight);
-						scale_u = texel_uv_multiply ? width : (1.0f / width);
-						scale_v = texel_uv_multiply ? height : (1.0f / height);
+						scale_u = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseWidth);
+						scale_v = 1.0f / static_cast<float>(texture_data->m_Header.m_BaseHeight);
 						apply_scale = true;
 					}
 				}
@@ -1770,22 +1743,6 @@ bool diligent_draw_render_blocks_with_constants(
 				}
 			}
 
-			if (!section.light_anim && g_CV_LightMap.m_Val != 0 && g_CV_ForceLightmapPipeline.m_Val != 0 && lightmap_view)
-			{
-				if (can_combine_lightmap && texture_view && dual_texture_view)
-				{
-					mode = kWorldPipelineLightmapDual;
-				}
-				else if (can_combine_lightmap && texture_view)
-				{
-					mode = kWorldPipelineLightmap;
-				}
-				else
-				{
-					mode = kWorldPipelineLightmapOnly;
-				}
-			}
-
 			if (diligent_get_force_textured_world())
 			{
 				mode = texture_view ? kWorldPipelineTextured : kWorldPipelineSolid;
@@ -1883,7 +1840,7 @@ bool diligent_draw_render_blocks_with_constants(
 			float vertex_color_scale = 1.0f;
 			if (section.light_anim)
 			{
-				vertex_color_scale = (g_CV_LightmapUseVertexColor.m_Val != 0) ? 1.0f : 0.0f;
+				vertex_color_scale = 0.0f;
 			}
 			else
 			{
@@ -1891,7 +1848,7 @@ bool diligent_draw_render_blocks_with_constants(
 					mode == kWorldPipelineLightmapOnly ||
 					mode == kWorldPipelineLightmapDual)
 				{
-					vertex_color_scale = (g_CV_LightmapUseVertexColor.m_Val != 0) ? 1.0f : 0.0f;
+					vertex_color_scale = 0.0f;
 				}
 			}
 			if (is_lightmap_texture_section && (mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture))
@@ -1902,7 +1859,7 @@ bool diligent_draw_render_blocks_with_constants(
 			constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
 			const bool has_uv1 = g_render_world && g_render_world->has_uv1;
 			const bool use_tex_effect = section.texture_effect != nullptr;
-			constants.world_params[2] = (use_tex_effect || diligent_get_world_texel_uv() || has_uv1) ? 1.0f : 0.0f;
+			constants.world_params[2] = (use_tex_effect || has_uv1) ? 1.0f : 0.0f;
 			diligent_apply_texture_effect_constants(*block, section, mode, constants);
 			void* mapped_constants = nullptr;
 			g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);

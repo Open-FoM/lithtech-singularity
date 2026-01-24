@@ -69,12 +69,15 @@ struct ViewportPanelState
 	bool render_wireframe_models = false;
 	int render_world_shading_mode = 0;
 	bool render_wireframe_overlay = false;
-	bool render_load_lightmaps = true;
-	bool render_lightmap = true;
-	bool render_lightmaps_only = false;
-	bool render_lightmap_use_vertex_color = false;
+	enum class WorldLightmapMode
+	{
+		Dynamic = 0,
+		Baked = 1,
+		LightmapOnly = 2
+	};
+	int render_lightmap_mode = static_cast<int>(WorldLightmapMode::Dynamic);
+	bool render_lightmaps_available = false;
 	float render_lightmap_intensity = 1.0f;
-	bool render_force_lightmap_pipeline = false;
 	bool render_fullbright = false;
 	bool render_draw_sorted = true;
 	bool render_draw_solid_models = true;

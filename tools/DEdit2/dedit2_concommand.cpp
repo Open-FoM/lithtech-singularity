@@ -439,47 +439,6 @@ void CmdWorldPsDebug(int argc, const char* argv[])
 	DEdit2_Log("worldpsdebug = %d", g_CV_WorldPsDebug.m_Val);
 }
 
-void CmdWorldTexDebug(int argc, const char* argv[])
-{
-	if (argc < 1)
-	{
-		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4|5|6|7|8>");
-		return;
-	}
-
-	int mode = 0;
-	if (!ParseInt(argv[0], mode))
-	{
-		DEdit2_Log("Usage: worldtexdebug <0|1|2|3|4|5|6|7|8>");
-		return;
-	}
-
-	g_CV_WorldTexDebugMode.m_Val = std::clamp(mode, 0, 8);
-	DEdit2_Log("worldtexdebug = %d", g_CV_WorldTexDebugMode.m_Val);
-}
-
-void CmdWorldTexelUV(int argc, const char* argv[])
-{
-	int enabled = g_CV_WorldTexelUV.m_Val;
-	if (argc >= 1)
-	{
-		int parsed = 0;
-		if (!ParseInt(argv[0], parsed) || (parsed < 0 || parsed > 2))
-		{
-			DEdit2_Log("Usage: worldtexeluv <0|1|2>");
-			return;
-		}
-		enabled = parsed;
-	}
-	else
-	{
-		enabled = enabled ? 0 : 1;
-	}
-
-	g_CV_WorldTexelUV.m_Val = enabled;
-	DEdit2_Log("worldtexeluv = %d", enabled);
-}
-
 void CmdWorldTexDump(int argc, const char* argv[])
 {
 	int limit = 10;
@@ -988,7 +947,6 @@ const DEdit2TexViewState& DEdit2_GetTexViewState()
 int g_DEdit2MipMapOffset = 0;
 int g_DEdit2Bilinear = 1;
 int g_DEdit2MaxTextureMemory = 128 * 1024 * 1024;
-int g_DEdit2WorldTexelUVAuto = 0;
 void DEdit2_InitConsoleCommands()
 {
 	g_Commands.clear();
@@ -1015,8 +973,6 @@ void DEdit2_InitConsoleCommands()
 	AddCommand("worldpipestats", CmdWorldPipelineStats);
 	AddCommand("worldpipereset", CmdWorldPipelineReset);
 	AddCommand("worldpsdebug", CmdWorldPsDebug);
-	AddCommand("worldtexdebug", CmdWorldTexDebug);
-	AddCommand("worldtexeluv", CmdWorldTexelUV);
 	AddCommand("worldtexdump", CmdWorldTexDump);
 	AddCommand("worldsurfacedump", CmdWorldSurfaceDump);
 	AddCommand("worldbasevertex", CmdWorldBaseVertex);
@@ -1031,7 +987,6 @@ void DEdit2_InitConsoleCommands()
 	AddVar("mipmapbias", ConsoleVar::Type::Float, &g_CV_MipMapBias.m_Val);
 	AddVar("bilinear", ConsoleVar::Type::Int, &g_DEdit2Bilinear);
 	AddVar("MaxTextureMemory", ConsoleVar::Type::Int, &g_DEdit2MaxTextureMemory);
-	AddVar("worldtexeluv_auto", ConsoleVar::Type::Int, &g_DEdit2WorldTexelUVAuto);
 	AddVar("worldforcelegacyverts", ConsoleVar::Type::Int, &g_CV_WorldForceLegacyVerts.m_Val);
 
 	DEdit2_Log("DEdit2 console initialized. Type 'help' for commands.");

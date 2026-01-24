@@ -1129,12 +1129,14 @@ void ApplySceneVisibilityToRenderer(
 			diligent_InvalidateWorldGeometry();
 		}
 	}
-	g_CV_LoadLightmaps = viewport_state.render_load_lightmaps ? 1 : 0;
-	g_CV_LightMap = (viewport_state.render_lightmap || viewport_state.render_lightmaps_only) ? 1 : 0;
-	g_CV_LightmapsOnly = viewport_state.render_lightmaps_only ? 1 : 0;
-	g_CV_LightmapUseVertexColor = viewport_state.render_lightmap_use_vertex_color ? 1 : 0;
+	int lightmap_mode = viewport_state.render_lightmap_mode;
+	if (!viewport_state.render_lightmaps_available && lightmap_mode != 0)
+	{
+		lightmap_mode = 0;
+	}
+	g_CV_LightMap = (lightmap_mode != 0) ? 1 : 0;
+	g_CV_LightmapsOnly = (lightmap_mode == 2) ? 1 : 0;
 	g_CV_LightmapIntensity = viewport_state.render_lightmap_intensity;
-	g_CV_ForceLightmapPipeline = viewport_state.render_force_lightmap_pipeline ? 1 : 0;
 	g_CV_DrawSorted = viewport_state.render_draw_sorted ? 1 : 0;
 	g_CV_DrawSolidModels = viewport_state.render_draw_solid_models ? 1 : 0;
 	g_CV_DrawTranslucentModels = viewport_state.render_draw_translucent_models ? 1 : 0;
@@ -1712,6 +1714,7 @@ int main(int argc, char** argv)
 		world_file = path;
 		diligent.engine.world_loaded = false;
 		viewport_panel.lightmaps_autoloaded = false;
+		viewport_panel.render_lightmaps_available = false;
 		scene_nodes = BuildSceneTree(world_file, scene_props, scene_error);
 		scene_panel.error = scene_error;
 		scene_panel.selected_id = scene_nodes.empty() ? -1 : 0;
@@ -1735,11 +1738,23 @@ int main(int argc, char** argv)
 			else
 			{
 				DiligentWorldTextureStats stats{};
-				if (diligent_GetWorldTextureStats(stats) && stats.lightmap_present > 0)
+				if (diligent_GetWorldTextureStats(stats))
 				{
-					if (!viewport_panel.lightmaps_autoloaded)
+					const bool has_lightmaps = stats.lightmap_present > 0;
+					viewport_panel.render_lightmaps_available = has_lightmaps;
+					if (has_lightmaps)
 					{
-						viewport_panel.render_load_lightmaps = true;
+						if (!viewport_panel.lightmaps_autoloaded)
+						{
+							viewport_panel.render_lightmap_mode =
+								static_cast<int>(ViewportPanelState::WorldLightmapMode::Baked);
+							viewport_panel.lightmaps_autoloaded = true;
+						}
+					}
+					else
+					{
+						viewport_panel.render_lightmap_mode =
+							static_cast<int>(ViewportPanelState::WorldLightmapMode::Dynamic);
 						viewport_panel.lightmaps_autoloaded = true;
 					}
 				}
@@ -2169,12 +2184,38 @@ int main(int argc, char** argv)
 						ImGui::Combo("World Shading Mode", &viewport_panel.render_world_shading_mode, shading_modes, IM_ARRAYSIZE(shading_modes));
 						ImGui::Checkbox("Wireframe Overlay", &viewport_panel.render_wireframe_overlay);
 						ImGui::Checkbox("Fullbright", &viewport_panel.render_fullbright);
-						ImGui::Checkbox("Load Lightmaps", &viewport_panel.render_load_lightmaps);
-						ImGui::Checkbox("Lightmap", &viewport_panel.render_lightmap);
-						ImGui::Checkbox("Lightmaps Only", &viewport_panel.render_lightmaps_only);
-						ImGui::Checkbox("Lightmap Vertex Color", &viewport_panel.render_lightmap_use_vertex_color);
+						const char* lightmap_modes[] = {"Dynamic", "Baked (if available)", "Lightmap Only"};
+						int& lightmap_mode = viewport_panel.render_lightmap_mode;
+						if (!viewport_panel.render_lightmaps_available && lightmap_mode != 0)
+						{
+							lightmap_mode = 0;
+						}
+						const char* current_lightmap_mode = lightmap_modes[lightmap_mode];
+						if (ImGui::BeginCombo("World Lighting", current_lightmap_mode))
+						{
+							if (ImGui::Selectable(lightmap_modes[0], lightmap_mode == 0))
+							{
+								lightmap_mode = 0;
+							}
+							if (!viewport_panel.render_lightmaps_available)
+							{
+								ImGui::BeginDisabled();
+							}
+							if (ImGui::Selectable(lightmap_modes[1], lightmap_mode == 1))
+							{
+								lightmap_mode = 1;
+							}
+							if (ImGui::Selectable(lightmap_modes[2], lightmap_mode == 2))
+							{
+								lightmap_mode = 2;
+							}
+							if (!viewport_panel.render_lightmaps_available)
+							{
+								ImGui::EndDisabled();
+							}
+							ImGui::EndCombo();
+						}
 						ImGui::DragFloat("Lightmap Intensity", &viewport_panel.render_lightmap_intensity, 0.05f, 0.0f, 4.0f, "%.2f");
-						ImGui::Checkbox("Force Lightmap Pipeline", &viewport_panel.render_force_lightmap_pipeline);
 						ImGui::Checkbox("Draw Sorted", &viewport_panel.render_draw_sorted);
 						ImGui::EndTabItem();
 					}

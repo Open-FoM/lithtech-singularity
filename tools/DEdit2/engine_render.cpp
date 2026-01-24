@@ -26,37 +26,6 @@ TextureCache* g_texture_cache = nullptr;
 uint32 g_object_frame_code = 0;
 uint16 g_texture_frame_code = 1;
 
-void AutoEnableWorldTexelUV()
-{
-	if (g_DEdit2WorldTexelUVAuto == 0)
-	{
-		return;
-	}
-	if (g_CV_WorldTexelUV.m_Val != 0)
-	{
-		return;
-	}
-
-	DiligentWorldUvStats stats;
-	if (!diligent_GetWorldUvStats(stats) || !stats.has_range)
-	{
-		return;
-	}
-
-	const bool uv1_zero =
-		stats.min_u1 == 0.0f && stats.max_u1 == 0.0f &&
-		stats.min_v1 == 0.0f && stats.max_v1 == 0.0f;
-	const float uv0_extent = std::max(
-		std::max(std::abs(stats.min_u0), std::abs(stats.max_u0)),
-		std::max(std::abs(stats.min_v0), std::abs(stats.max_v0)));
-
-	if (uv1_zero && uv0_extent > 2.0f)
-	{
-		g_CV_WorldTexelUV.m_Val = 1;
-		DEdit2_Log("World UVs appear to be in texel space; enabling WorldTexelUV.");
-	}
-}
-
 LTObject* Engine_ProcessAttachment(LTObject*, Attachment*)
 {
 	return nullptr;
@@ -501,7 +470,6 @@ bool LoadRenderWorld(EngineRenderContext& ctx, const std::string& world_path, st
 		stream->Release();
 		return false;
 	}
-	AutoEnableWorldTexelUV();
 
 	std::string bsp_error;
 	if (LoadWorldBspModels(ctx, stream, bsp_error))

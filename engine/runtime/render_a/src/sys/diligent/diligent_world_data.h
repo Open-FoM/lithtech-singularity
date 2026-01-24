@@ -169,6 +169,7 @@ struct DiligentRenderWorld
 	uint32 world_index = 0;
 	bool world_index_valid = true;
 	bool has_uv1 = false;
+	bool use_texel_uv = false;
 
 	bool Load(ILTStream* stream);
 	bool SetLightGroupColor(uint32 id, const LTVector& color);

@@ -215,6 +215,61 @@ bool diligent_world_has_uv1(const DiligentRenderWorld& world)
 
 	return false;
 }
+
+bool diligent_world_use_texel_uv(const DiligentRenderWorld& world)
+{
+	bool has_range = false;
+	float min_u0 = 0.0f;
+	float min_v0 = 0.0f;
+	float max_u0 = 0.0f;
+	float max_v0 = 0.0f;
+	bool uv1_zero = true;
+
+	for (const auto& block_ptr : world.render_blocks)
+	{
+		if (!block_ptr)
+		{
+			continue;
+		}
+		for (const auto& vert : block_ptr->vertices)
+		{
+			const float u0 = vert.u0;
+			const float v0 = vert.v0;
+			if (!has_range)
+			{
+				min_u0 = max_u0 = u0;
+				min_v0 = max_v0 = v0;
+				has_range = true;
+			}
+			else
+			{
+				min_u0 = LTMIN(min_u0, u0);
+				min_v0 = LTMIN(min_v0, v0);
+				max_u0 = LTMAX(max_u0, u0);
+				max_v0 = LTMAX(max_v0, v0);
+			}
+
+			if (uv1_zero && (vert.u1 != 0.0f || vert.v1 != 0.0f))
+			{
+				uv1_zero = false;
+			}
+		}
+	}
+
+	if (!has_range)
+	{
+		return false;
+	}
+
+	const float u_extent = std::max(std::abs(min_u0), std::abs(max_u0));
+	const float v_extent = std::max(std::abs(min_v0), std::abs(max_v0));
+	const float uv0_extent = std::max(u_extent, v_extent);
+	if (!uv1_zero)
+	{
+		return false;
+	}
+	return uv0_extent > 2.0f;
+}
 } // namespace
 
 std::unique_ptr<DiligentRenderWorld> g_render_world;
@@ -365,11 +420,6 @@ ILTStream& operator>>(ILTStream& stream, DiligentRBLightGroup& light_group)
 
 Diligent::ITextureView* diligent_get_lightmap_view(DiligentRBSection& section)
 {
-	if (g_CV_LoadLightmaps.m_Val == 0)
-	{
-		return nullptr;
-	}
-
 	if (section.lightmap_srv)
 	{
 		return section.lightmap_srv;
@@ -929,10 +979,6 @@ bool DiligentRenderBlock::UpdateLightmaps()
 	{
 		return false;
 	}
-	if (g_CV_LoadLightmaps.m_Val == 0)
-	{
-		return false;
-	}
 
 	bool updated = false;
 	bool has_lightmaps = false;
@@ -1133,6 +1179,7 @@ bool DiligentRenderWorld::Load(ILTStream* stream)
 	}
 
 	has_uv1 = diligent_world_has_uv1(*this);
+	use_texel_uv = diligent_world_use_texel_uv(*this);
 	return true;
 }
 
