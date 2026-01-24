@@ -1100,110 +1100,32 @@ bool diligent_section_supports_texel_uv(const DiligentRBSection& section)
 		shader_type == kPcShaderLightmapDualTexture;
 }
 bool diligent_section_uses_texel_uv(
-	const DiligentRenderBlock& block,
+	[[maybe_unused]] const DiligentRenderBlock& block,
 	const DiligentRBSection& section,
 	uint32 width,
 	uint32 height)
 {
+	// First check: Does the world use texel-space UVs?
+	// This is determined at load time by analyzing UV extents.
+	if (!g_render_world || !g_render_world->use_texel_uv)
+	{
+		return false;
+	}
+
+	// Second check: Is this a lightmap shader type?
+	// Only lightmap shaders expect texel-space UV0.
+	if (!diligent_section_supports_texel_uv(section))
+	{
+		return false;
+	}
+
+	// Validate texture dimensions required for scaling
 	if (width == 0 || height == 0)
 	{
 		return false;
 	}
 
-	const uint32 start = section.start_vertex;
-	if (start >= block.vertices.size() || section.vertex_count == 0)
-	{
-		return false;
-	}
-
-	const uint32 end = std::min(
-		start + section.vertex_count,
-		static_cast<uint32>(block.vertices.size()));
-	const uint32 count = end - start;
-	if (count == 0)
-	{
-		return false;
-	}
-
-	constexpr uint32 kSampleTarget = 64;
-	const uint32 step = std::max(1u, count / kSampleTarget);
-	float min_u = std::numeric_limits<float>::max();
-	float min_v = std::numeric_limits<float>::max();
-	float max_u = std::numeric_limits<float>::lowest();
-	float max_v = std::numeric_limits<float>::lowest();
-	uint32 samples = 0;
-	uint32 integer_samples = 0;
-	uint32 uv1_zero_samples = 0;
-	constexpr float kIntegerEpsilon = 0.01f;
-	constexpr float kUv1ZeroEps = 0.0001f;
-
-	for (uint32 i = start; i < end; i += step)
-	{
-		const auto& vert = block.vertices[i];
-		const float u = vert.u0;
-		const float v = vert.v0;
-		if (!std::isfinite(u) || !std::isfinite(v))
-		{
-			continue;
-		}
-		min_u = std::min(min_u, u);
-		max_u = std::max(max_u, u);
-		min_v = std::min(min_v, v);
-		max_v = std::max(max_v, v);
-
-		const float u_rounded = std::round(u);
-		const float v_rounded = std::round(v);
-		if (std::abs(u - u_rounded) <= kIntegerEpsilon && std::abs(v - v_rounded) <= kIntegerEpsilon)
-		{
-			++integer_samples;
-		}
-		if (std::abs(vert.u1) <= kUv1ZeroEps && std::abs(vert.v1) <= kUv1ZeroEps)
-		{
-			++uv1_zero_samples;
-		}
-		++samples;
-	}
-
-	if (samples == 0)
-	{
-		return false;
-	}
-
-	const float range_u = max_u - min_u;
-	const float range_v = max_v - min_v;
-	if (range_u <= 0.0f && range_v <= 0.0f)
-	{
-		return false;
-	}
-
-	const float repeats_u = range_u / static_cast<float>(width);
-	const float repeats_v = range_v / static_cast<float>(height);
-	const float extent = std::max(range_u, range_v);
-	const float uv1_zero_ratio = static_cast<float>(uv1_zero_samples) / static_cast<float>(samples);
-	if (uv1_zero_ratio >= 0.9f && extent > 2.0f)
-	{
-		return true;
-	}
-
-	constexpr float kRepeatTolerance = 0.25f;
-	constexpr float kMinRepeats = 0.05f;
-	constexpr float kMaxRepeats = 64.0f;
-	const auto repeats_match = [](float repeats) -> bool {
-		if (!std::isfinite(repeats))
-		{
-			return false;
-		}
-		if (repeats < kMinRepeats || repeats > kMaxRepeats)
-		{
-			return false;
-		}
-		return std::abs(repeats - std::round(repeats)) <= kRepeatTolerance;
-	};
-	const bool repeat_ok = repeats_match(repeats_u) || repeats_match(repeats_v);
-	const float integer_ratio = static_cast<float>(integer_samples) / static_cast<float>(samples);
-	constexpr float kMinIntegerRatio = 0.6f;
-
-	return repeat_ok && integer_ratio >= kMinIntegerRatio;
+	return true;
 }
 bool diligent_get_texel_uv_scale(
 	const DiligentRenderBlock& block,
@@ -2381,7 +2303,7 @@ bool diligent_draw_world_blocks()
 	constants.world_params[0] = 1.0f;
 	constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
 	constants.world_params[2] = 0.0f;
-	constants.world_params[3] = 0.0f;
+	constants.world_params[3] = static_cast<float>(g_diligent_state.frame_counter & 15u);
 
 	if (!diligent_draw_render_blocks_with_constants(
 			g_visible_render_blocks,
@@ -2421,6 +2343,7 @@ bool diligent_draw_world_model_list_with_view(
 	}
 
 	const bool fog_enabled_base = (g_CV_FogEnable.m_Val != 0);
+	const float dither_frame = static_cast<float>(g_diligent_state.frame_counter & 15u);
 
 	for (auto* instance : models)
 	{
@@ -2495,7 +2418,7 @@ bool diligent_draw_world_model_list_with_view(
 		constants.world_params[0] = 1.0f;
 		constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
 		constants.world_params[2] = 0.0f;
-		constants.world_params[3] = 0.0f;
+		constants.world_params[3] = dither_frame;
 
 		if (!diligent_draw_render_blocks_with_constants(
 				blocks,

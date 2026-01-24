@@ -31,6 +31,8 @@ int diligent_RenderScene(SceneDesc* desc)
 		return RENDER_OK;
 	}
 
+	++g_diligent_state.frame_counter;
+
 	if (!diligent_EnsureSwapChain())
 	{
 		return RENDER_ERROR;

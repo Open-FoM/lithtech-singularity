@@ -72,12 +72,13 @@ float3 EncodeOutput(float3 color_linear)
 }
 
 
-float Dither4x4(float2 pos)
+float Dither4x4(float2 pos, int offset)
 {
     int2 p = int2(pos);
     int x = p.x & 3;
     int y = p.y & 3;
     int idx = (y << 2) | x;
+    idx = (idx + offset) & 15;
     static const float bayer[16] =
     {
         0.0f, 8.0f, 2.0f, 10.0f,
@@ -120,7 +121,9 @@ float4 PSMain(PSInput input) : SV_TARGET
     float4 fogged = ApplyFogLinear(float4(color_linear, input.color.a), input.world_pos);
 
     float3 color = EncodeOutput(fogged.rgb);
-    float dither = Dither4x4(input.position.xy) / 255.0f;
+    int dither_offset = (int)g_WorldParams.w;
+    dither_offset &= 15;
+    float dither = Dither4x4(input.position.xy, dither_offset) / 255.0f;
     color = saturate(color + dither);
 
     return float4(color, fogged.a);

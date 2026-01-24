@@ -52,6 +52,7 @@ struct DiligentRenderState
 	RenderStruct* render_struct = nullptr;
 	SceneDesc* scene_desc = nullptr;
 	uint32 object_frame_code = 0;
+	uint32 frame_counter = 0;
 	ViewParams view_params{};
 	ILTCommon* common_client = nullptr;
 	IWorldClientBSP* world_bsp_client = nullptr;
