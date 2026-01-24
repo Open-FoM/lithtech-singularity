@@ -1141,6 +1141,27 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 		return false;
 	}
 
+	if (ctx.final_depth_target && targets.scene_depth)
+	{
+		auto* dst_depth = ctx.final_depth_target->GetTexture();
+		auto* src_depth = targets.scene_depth.RawPtr();
+		if (dst_depth && src_depth)
+		{
+			const auto src_desc = src_depth->GetDesc();
+			const auto dst_desc = dst_depth->GetDesc();
+			if (src_desc.Width == dst_desc.Width && src_desc.Height == dst_desc.Height &&
+				src_desc.Format == dst_desc.Format)
+			{
+				Diligent::CopyTextureAttribs copy_attribs;
+				copy_attribs.pSrcTexture = src_depth;
+				copy_attribs.pDstTexture = dst_depth;
+				copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+				copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+				g_diligent_state.immediate_context->CopyTexture(copy_attribs);
+			}
+		}
+	}
+
 	const float proj_scale_x = std::fabs(g_diligent_state.view_params.m_mProjection.m[0][0]);
 	const float proj_scale_y = std::fabs(g_diligent_state.view_params.m_mProjection.m[1][1]);
 	const int sample_count = std::clamp(g_CV_SSAOSampleCount.m_Val, 1, static_cast<int>(kDiligentSsaoKernelSize));
