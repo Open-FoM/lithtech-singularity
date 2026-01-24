@@ -35,9 +35,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 namespace
@@ -622,11 +624,13 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	DiligentWorldDepthMode depth_mode,
 	bool wireframe)
 {
+	const uint8 sample_count = static_cast<uint8>(diligent_get_active_sample_count());
 	DiligentWorldPipelineKey key{
 		mode,
 		blend_mode,
 		depth_mode,
-		static_cast<uint8>(wireframe ? 1 : 0)
+		static_cast<uint8>(wireframe ? 1 : 0),
+		sample_count
 	};
 	auto it = g_world_pipelines.pipelines.find(key);
 	if (it != g_world_pipelines.pipelines.end())
@@ -714,6 +718,7 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = swap_desc.ColorBufferFormat;
 	pipeline_info.GraphicsPipeline.DSVFormat = swap_desc.DepthBufferFormat;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pipeline_info.GraphicsPipeline.SmplDesc.Count = sample_count;
 
 	constexpr auto kWorldVertexStride = static_cast<uint32>(sizeof(DiligentWorldVertex));
 	Diligent::LayoutElement layout_elements[] =
@@ -1075,6 +1080,215 @@ void diligent_init_texture_effect_constants(DiligentWorldConstants& constants)
 		uv = {0, 0, 0, 0};
 	}
 }
+bool diligent_pipeline_allows_texel_uv(uint8 pipeline_mode)
+{
+	switch (pipeline_mode)
+	{
+		case kWorldPipelineLightmap:
+		case kWorldPipelineLightmapOnly:
+		case kWorldPipelineLightmapDual:
+			return false;
+		default:
+			return true;
+	}
+}
+bool diligent_section_supports_texel_uv(const DiligentRBSection& section)
+{
+	const auto shader_type = static_cast<DiligentPCShaderType>(section.shader_code);
+	return shader_type == kPcShaderLightmap ||
+		shader_type == kPcShaderLightmapTexture ||
+		shader_type == kPcShaderLightmapDualTexture;
+}
+bool diligent_section_uses_texel_uv(
+	const DiligentRenderBlock& block,
+	const DiligentRBSection& section,
+	uint32 width,
+	uint32 height)
+{
+	if (width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	const uint32 start = section.start_vertex;
+	if (start >= block.vertices.size() || section.vertex_count == 0)
+	{
+		return false;
+	}
+
+	const uint32 end = std::min(
+		start + section.vertex_count,
+		static_cast<uint32>(block.vertices.size()));
+	const uint32 count = end - start;
+	if (count == 0)
+	{
+		return false;
+	}
+
+	constexpr uint32 kSampleTarget = 64;
+	const uint32 step = std::max(1u, count / kSampleTarget);
+	float min_u = std::numeric_limits<float>::max();
+	float min_v = std::numeric_limits<float>::max();
+	float max_u = std::numeric_limits<float>::lowest();
+	float max_v = std::numeric_limits<float>::lowest();
+	uint32 samples = 0;
+	uint32 integer_samples = 0;
+	uint32 uv1_zero_samples = 0;
+	constexpr float kIntegerEpsilon = 0.01f;
+	constexpr float kUv1ZeroEps = 0.0001f;
+
+	for (uint32 i = start; i < end; i += step)
+	{
+		const auto& vert = block.vertices[i];
+		const float u = vert.u0;
+		const float v = vert.v0;
+		if (!std::isfinite(u) || !std::isfinite(v))
+		{
+			continue;
+		}
+		min_u = std::min(min_u, u);
+		max_u = std::max(max_u, u);
+		min_v = std::min(min_v, v);
+		max_v = std::max(max_v, v);
+
+		const float u_rounded = std::round(u);
+		const float v_rounded = std::round(v);
+		if (std::abs(u - u_rounded) <= kIntegerEpsilon && std::abs(v - v_rounded) <= kIntegerEpsilon)
+		{
+			++integer_samples;
+		}
+		if (std::abs(vert.u1) <= kUv1ZeroEps && std::abs(vert.v1) <= kUv1ZeroEps)
+		{
+			++uv1_zero_samples;
+		}
+		++samples;
+	}
+
+	if (samples == 0)
+	{
+		return false;
+	}
+
+	const float range_u = max_u - min_u;
+	const float range_v = max_v - min_v;
+	if (range_u <= 0.0f && range_v <= 0.0f)
+	{
+		return false;
+	}
+
+	const float repeats_u = range_u / static_cast<float>(width);
+	const float repeats_v = range_v / static_cast<float>(height);
+	const float extent = std::max(range_u, range_v);
+	const float uv1_zero_ratio = static_cast<float>(uv1_zero_samples) / static_cast<float>(samples);
+	if (uv1_zero_ratio >= 0.9f && extent > 2.0f)
+	{
+		return true;
+	}
+
+	constexpr float kRepeatTolerance = 0.25f;
+	constexpr float kMinRepeats = 0.05f;
+	constexpr float kMaxRepeats = 64.0f;
+	const auto repeats_match = [](float repeats) -> bool {
+		if (!std::isfinite(repeats))
+		{
+			return false;
+		}
+		if (repeats < kMinRepeats || repeats > kMaxRepeats)
+		{
+			return false;
+		}
+		return std::abs(repeats - std::round(repeats)) <= kRepeatTolerance;
+	};
+	const bool repeat_ok = repeats_match(repeats_u) || repeats_match(repeats_v);
+	const float integer_ratio = static_cast<float>(integer_samples) / static_cast<float>(samples);
+	constexpr float kMinIntegerRatio = 0.6f;
+
+	return repeat_ok && integer_ratio >= kMinIntegerRatio;
+}
+bool diligent_get_texel_uv_scale(
+	const DiligentRenderBlock& block,
+	const DiligentRBSection& section,
+	const DiligentTextureEffectStage& stage,
+	uint8 pipeline_mode,
+	float& out_scale_u,
+	float& out_scale_v)
+{
+	if (!diligent_pipeline_allows_texel_uv(pipeline_mode))
+	{
+		return false;
+	}
+	if (!diligent_section_supports_texel_uv(section))
+	{
+		return false;
+	}
+	if (stage.use_uv1 || stage.channel == TSChannel_LightMap)
+	{
+		return false;
+	}
+
+	SharedTexture* stage_texture = nullptr;
+	if (stage.channel == TSChannel_Base)
+	{
+		stage_texture = diligent_resolve_effect_texture(section.textures[0]);
+		if (diligent_is_placeholder_texture(stage_texture))
+		{
+			if (SharedTexture* surface_texture = diligent_get_section_surface_texture(block, section))
+			{
+				stage_texture = diligent_resolve_effect_texture(surface_texture);
+			}
+		}
+	}
+	else if (stage.channel == TSChannel_DualTexture)
+	{
+		stage_texture = diligent_resolve_effect_texture(section.textures[1]);
+	}
+
+	if (!stage_texture || !g_diligent_state.render_struct)
+	{
+		return false;
+	}
+
+	TextureData* texture_data = g_diligent_state.render_struct->GetTexture(stage_texture);
+	if (!texture_data || texture_data->m_Header.m_BaseWidth == 0 || texture_data->m_Header.m_BaseHeight == 0)
+	{
+		return false;
+	}
+
+	const uint32 width = texture_data->m_Header.m_BaseWidth;
+	const uint32 height = texture_data->m_Header.m_BaseHeight;
+	if (!diligent_section_uses_texel_uv(block, section, width, height))
+	{
+		return false;
+	}
+
+	out_scale_u = 1.0f / static_cast<float>(width);
+	out_scale_v = 1.0f / static_cast<float>(height);
+	return true;
+}
+bool diligent_section_applies_texel_uv(
+	const DiligentRenderBlock& block,
+	const DiligentRBSection& section,
+	uint8 pipeline_mode)
+{
+	std::array<DiligentTextureEffectStage, 4> stages{};
+	const uint32 stage_count = diligent_get_texture_effect_stages(pipeline_mode, stages);
+	if (stage_count == 0)
+	{
+		return false;
+	}
+
+	for (uint32 stage_index = 0; stage_index < stage_count; ++stage_index)
+	{
+		float scale_u = 1.0f;
+		float scale_v = 1.0f;
+		if (diligent_get_texel_uv_scale(block, section, stages[stage_index], pipeline_mode, scale_u, scale_v))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
 void diligent_apply_texture_effect_constants(
 	const DiligentRenderBlock& block,
 	const DiligentRBSection& section,
@@ -1099,7 +1313,7 @@ void diligent_apply_texture_effect_constants(
 		bool apply_scale = false;
 		float scale_u = 1.0f;
 		float scale_v = 1.0f;
-		(void)block;
+		apply_scale = diligent_get_texel_uv_scale(block, section, stage, pipeline_mode, scale_u, scale_v);
 
 		TextureScriptStageData stage_data;
 		if (!section.texture_effect || !section.texture_effect->GetStageData(stage.channel, stage_data))
@@ -1815,7 +2029,9 @@ bool diligent_draw_render_blocks_with_constants(
 			constants.world_params[1] = g_CV_LightmapIntensity.m_Val;
 			const bool has_uv1 = g_render_world && g_render_world->has_uv1;
 			const bool use_tex_effect = section.texture_effect != nullptr;
-			constants.world_params[2] = (use_tex_effect || has_uv1) ? 1.0f : 0.0f;
+			const bool allow_texel_uv = (g_CV_LightMap.m_Val == 0 && g_CV_LightmapsOnly.m_Val == 0);
+			const bool use_texel_uv = allow_texel_uv && diligent_section_applies_texel_uv(*block, section, mode);
+			constants.world_params[2] = (use_tex_effect || has_uv1 || use_texel_uv) ? 1.0f : 0.0f;
 			diligent_apply_texture_effect_constants(*block, section, mode, constants);
 			void* mapped_constants = nullptr;
 			g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
@@ -2395,6 +2611,9 @@ bool diligent_draw_world_glow(const DiligentWorldConstants& constants, const std
 			}
 
 			DiligentWorldConstants section_constants = constants;
+			const bool allow_texel_uv = (g_CV_LightMap.m_Val == 0 && g_CV_LightmapsOnly.m_Val == 0);
+			const bool use_texel_uv = allow_texel_uv && diligent_section_applies_texel_uv(*block, section, mode);
+			section_constants.world_params[2] = use_texel_uv ? 1.0f : 0.0f;
 			diligent_apply_texture_effect_constants(*block, section, mode, section_constants);
 			void* mapped_constants = nullptr;
 			g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);

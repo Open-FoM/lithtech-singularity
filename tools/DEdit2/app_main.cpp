@@ -1,6 +1,5 @@
 #include "dedit2_concommand.h"
 #include "de_objects.h"
-#include "editor_model_mgr.h"
 #include "editor_state.h"
 #include "editor_transfer.h"
 #include "platform_macos.h"
@@ -1494,12 +1493,7 @@ void RenderViewport(
 		scene.m_SkyObjects = nullptr;
 		scene.m_nSkyObjects = 0;
 
-		// Collect model instances for rendering if models are enabled
 		std::vector<LTObject*> object_list;
-		if (viewport_state.render_draw_models)
-		{
-			object_list = GetEditorModelManager().CollectObjectList();
-		}
 		if (!dynamic_lights.empty())
 		{
 			object_list.reserve(object_list.size() + dynamic_lights.size());
@@ -1762,7 +1756,6 @@ int main(int argc, char** argv)
 		}
 
 		// Sync model instances with the scene tree for rendering
-		SyncModelsWithSceneTree(scene_nodes, scene_props);
 	};
 
 	if (!world_file.empty())
@@ -2200,6 +2193,22 @@ int main(int argc, char** argv)
 						{
 							static const int kLevels[] = {0, 2, 4, 8, 16};
 							g_CV_Anisotropic.m_Val = kLevels[anisotropy_index];
+						}
+						ImGui::Separator();
+						ImGui::TextUnformatted("Antialiasing");
+						const char* msaa_levels[] = {"Off", "2x", "4x", "8x"};
+						int msaa_index = 0;
+						switch (g_CV_MSAA.m_Val)
+						{
+							case 8: msaa_index = 3; break;
+							case 4: msaa_index = 2; break;
+							case 2: msaa_index = 1; break;
+							default: msaa_index = 0; break;
+						}
+						if (ImGui::Combo("MSAA", &msaa_index, msaa_levels, IM_ARRAYSIZE(msaa_levels)))
+						{
+							static const int kMsaaLevels[] = {0, 2, 4, 8};
+							g_CV_MSAA.m_Val = kMsaaLevels[msaa_index];
 						}
 						const char* lightmap_modes[] = {"Dynamic", "Baked (if available)", "Lightmap Only"};
 						int& lightmap_mode = viewport_panel.render_lightmap_mode;

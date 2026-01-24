@@ -36,6 +36,25 @@ int diligent_RenderScene(SceneDesc* desc)
 		return RENDER_ERROR;
 	}
 
+	DiligentAaContext aa_ctx{};
+	const bool aa_active = diligent_begin_antialiasing(desc, aa_ctx);
+	struct DiligentAaScope
+	{
+		DiligentAaContext& ctx;
+		bool active;
+		~DiligentAaScope()
+		{
+			if (active)
+			{
+				diligent_end_antialiasing(ctx);
+			}
+		}
+		void Dismiss()
+		{
+			active = false;
+		}
+	} aa_scope{aa_ctx, aa_active};
+
 	constexpr float kNearZ = 7.0f;
 	constexpr float kFarZ = 10000.0f;
 
@@ -73,8 +92,9 @@ int diligent_RenderScene(SceneDesc* desc)
 		g_diligent_state.immediate_context->SetViewports(1, &viewport, 0, 0);
 	}
 
+	const uint32 msaa_samples = diligent_get_msaa_samples();
 	DiligentSsaoContext ssao_ctx{};
-	const bool ssao_active = diligent_begin_ssao(desc, ssao_ctx);
+	const bool ssao_active = (msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
 
 	diligent_collect_visible_render_blocks(g_diligent_state.view_params);
 
@@ -254,6 +274,16 @@ int diligent_RenderScene(SceneDesc* desc)
 	}
 
 	diligent_render_screen_glow(desc);
+
+	if (aa_active)
+	{
+		if (!diligent_apply_antialiasing(aa_ctx))
+		{
+			return RENDER_ERROR;
+		}
+		diligent_end_antialiasing(aa_ctx);
+		aa_scope.Dismiss();
+	}
 
 	return RENDER_OK;
 }

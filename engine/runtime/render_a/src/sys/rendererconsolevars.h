@@ -122,6 +122,7 @@ RCONVAR(g_CV_ZBitDepth, "ZBitDepth", int, 32);
 RCONVAR(g_CV_StencilBitDepth, "StencilBitDepth", int, 0);
 RCONVAR(g_CV_ForceSwapEffectBlt, "ForceSwapEffectBlt", int, 0);
 RCONVAR(g_CV_AntiAliasFSOverSample, "AntiAliasFSOverSample", int, 0);
+RCONVAR(g_CV_MSAA, "MSAA", int, 0);
 RCONVAR(g_CV_ForceSWVertProcess, "ForceSWVertProcess", int, 0);
 RCONVAR(g_CV_Dither, "Dither", int, 1);
 RCONVAR(g_CV_S3TCEnable, "S3TCEnable", int, 1);

@@ -99,6 +99,14 @@ endif ()
 if (NOT TARGET ltjs_lib_ui)
 	add_subdirectory ("${LTJS_ROOT}/engine/runtime/ui/src" "${CMAKE_BINARY_DIR}/ltjs_lib_ui")
 endif ()
+if (NOT TARGET ltjs_lib_model)
+	add_subdirectory ("${LTJS_ROOT}/engine/runtime/model/src" "${CMAKE_BINARY_DIR}/ltjs_lib_model")
+endif ()
+target_compile_definitions (
+	ltjs_lib_model
+	PRIVATE
+		LTJS_USE_DILIGENT_RENDER
+)
 
 add_executable (${PROJECT_NAME})
 
@@ -124,13 +132,13 @@ target_sources (
 		app_main.cpp
 		bsp_view.cpp
 		dedit2_concommand.cpp
-		editor_model_mgr.cpp
 		editor_state.cpp
 		editor_transfer.cpp
 		engine_console_stub.cpp
 		engine_sprite.cpp
 		engine_render.cpp
 		lt_stream.cpp
+		path_utils.cpp
 		texture_cache.cpp
 		ui_console.cpp
 		ui_dock.cpp

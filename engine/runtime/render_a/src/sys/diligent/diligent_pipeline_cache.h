@@ -35,6 +35,7 @@ struct DiligentPsoKey
 	uint32 color_format = 0;
 	uint32 depth_format = 0;
 	uint32 topology = 0;
+	uint8 sample_count = 1;
 
 	bool operator==(const DiligentPsoKey& other) const
 	{
@@ -44,7 +45,8 @@ struct DiligentPsoKey
 			pixel_shader_id == other.pixel_shader_id &&
 			color_format == other.color_format &&
 			depth_format == other.depth_format &&
-			topology == other.topology;
+			topology == other.topology &&
+			sample_count == other.sample_count;
 	}
 };
 
@@ -135,6 +137,7 @@ DiligentPsoKey diligent_make_pso_key(
 	uint32 input_layout_hash,
 	Diligent::TEXTURE_FORMAT color_format,
 	Diligent::TEXTURE_FORMAT depth_format,
-	Diligent::PRIMITIVE_TOPOLOGY topology);
+	Diligent::PRIMITIVE_TOPOLOGY topology,
+	uint8 sample_count = 1);
 
 #endif

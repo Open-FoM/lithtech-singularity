@@ -52,6 +52,24 @@ Diligent::ITextureView* diligent_get_active_depth_target()
 	return g_diligent_state.swap_chain ? g_diligent_state.swap_chain->GetDepthBufferDSV() : nullptr;
 }
 
+uint32 diligent_get_active_sample_count()
+{
+	auto* render_target = diligent_get_active_render_target();
+	if (!render_target)
+	{
+		return 1;
+	}
+
+	auto* texture = render_target->GetTexture();
+	if (!texture)
+	{
+		return 1;
+	}
+
+	const uint32 samples = texture->GetDesc().SampleCount;
+	return samples > 0 ? samples : 1;
+}
+
 float diligent_get_swapchain_output_is_srgb()
 {
 	if (!g_diligent_state.swap_chain)

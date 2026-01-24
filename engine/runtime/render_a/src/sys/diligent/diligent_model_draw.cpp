@@ -453,13 +453,15 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 
 	DiligentModelPipelineKey pipeline_key;
 	pipeline_key.uses_texture = uses_texture;
+	const uint8 sample_count = static_cast<uint8>(diligent_get_active_sample_count());
 	pipeline_key.pso_key = diligent_make_pso_key(
 		pass,
 		shader_pass,
 		layout.hash,
 		color_format,
 		depth_format,
-		Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+		Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		sample_count);
 
 	auto it = g_model_pipelines.find(pipeline_key);
 	if (it != g_model_pipelines.end())
@@ -486,6 +488,7 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = color_format;
 	pipeline_info.GraphicsPipeline.DSVFormat = depth_format;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pipeline_info.GraphicsPipeline.SmplDesc.Count = sample_count;
 	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout.elements.data();
 	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(layout.elements.size());
 
@@ -997,9 +1000,16 @@ void DiligentSkelMesh::ReCreateObject()
 	}
 }
 
-bool diligent_get_model_transform(ModelInstance* instance, uint32 bone_index, LTMatrix& transform)
+bool diligent_get_model_transform_raw(ModelInstance* instance, uint32 bone_index, LTMatrix& transform)
 {
 	if (!instance)
+	{
+		transform.Identity();
+		return false;
+	}
+
+	Model* model = instance->GetModelDB();
+	if (!model || bone_index >= model->NumNodes())
 	{
 		transform.Identity();
 		return false;
@@ -1011,6 +1021,25 @@ bool diligent_get_model_transform(ModelInstance* instance, uint32 bone_index, LT
 		return false;
 	}
 
+	return true;
+}
+
+bool diligent_get_model_transform_render(ModelInstance* instance, uint32 bone_index, LTMatrix& transform)
+{
+	if (!diligent_get_model_transform_raw(instance, bone_index, transform))
+	{
+		return false;
+	}
+
+	Model* model = instance->GetModelDB();
+	if (!model)
+	{
+		transform.Identity();
+		return false;
+	}
+
+	// Match engine rendering transforms: remove bind-pose global transform.
+	transform = transform * model->GetNode(bone_index)->GetInvGlobalTransform();
 	return true;
 }
 
@@ -1051,7 +1080,7 @@ bool DiligentSkelMesh::UpdateSkinnedVertices(ModelInstance* instance)
 	for (uint32 bone_index = 0; bone_index < bone_count; ++bone_index)
 	{
 		LTMatrix transform;
-		if (!diligent_get_model_transform(instance, bone_index, transform))
+		if (!diligent_get_model_transform_render(instance, bone_index, transform))
 		{
 			return false;
 		}
@@ -1601,8 +1630,8 @@ void diligent_debug_add_model_skeleton(ModelInstance* instance, Model* model, co
 
 		LTMatrix node_transform;
 		LTMatrix parent_transform;
-		if (!diligent_get_model_transform(instance, node_index, node_transform) ||
-			!diligent_get_model_transform(instance, parent_index, parent_transform))
+		if (!diligent_get_model_transform_raw(instance, node_index, node_transform) ||
+			!diligent_get_model_transform_raw(instance, parent_index, parent_transform))
 		{
 			continue;
 		}
@@ -1670,7 +1699,7 @@ void diligent_debug_add_model_vertex_normals(ModelInstance* instance, CDIModelDr
 	{
 		auto* mesh = static_cast<DiligentRigidMesh*>(drawable);
 		LTMatrix model_matrix;
-		diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
 		diligent_debug_add_vertex_normals(
 			mesh->GetLayout(),
 			mesh->GetVertexData(),
@@ -1694,7 +1723,7 @@ void diligent_debug_add_model_vertex_normals(ModelInstance* instance, CDIModelDr
 	{
 		auto* mesh = static_cast<DiligentVAMesh*>(drawable);
 		LTMatrix model_matrix;
-		diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
 		diligent_debug_add_vertex_normals(
 			mesh->GetLayout(),
 			mesh->GetVertexData(),
@@ -1994,7 +2023,7 @@ bool diligent_draw_rigid_mesh(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
 	LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 	Diligent::IBuffer* vertex_buffers[4] = {};
@@ -2076,7 +2105,7 @@ bool diligent_draw_va_mesh(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_get_model_transform(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
 	LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 	Diligent::IBuffer* vertex_buffers[4] = {};
@@ -2171,9 +2200,10 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 		}
 
 		CRenderStyle* render_style = nullptr;
+		bool use_default_render_style = false;
 		if (!instance->GetRenderStyle(piece->m_iRenderStyle, &render_style) || !render_style)
 		{
-			continue;
+			use_default_render_style = true;
 		}
 
 		if (render_style_map)
@@ -2193,14 +2223,14 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 			}
 		}
 
-		const uint32 pass_count = render_style->GetRenderPassCount();
+		std::array<SharedTexture*, MAX_PIECE_TEXTURES> piece_textures{};
+		diligent_get_model_piece_textures(instance, piece, piece_textures);
+
+		const uint32 pass_count = use_default_render_style ? 1u : render_style->GetRenderPassCount();
 		if (pass_count == 0)
 		{
 			continue;
 		}
-
-		std::array<SharedTexture*, MAX_PIECE_TEXTURES> piece_textures{};
-		diligent_get_model_piece_textures(instance, piece, piece_textures);
 
 		if (skel_mesh)
 		{
@@ -2220,13 +2250,59 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 		for (uint32 pass_index = 0; pass_index < pass_count; ++pass_index)
 		{
 			RenderPassOp pass{};
-			if (!render_style->GetRenderPass(pass_index, &pass))
-			{
-				continue;
-			}
-
 			RSRenderPassShaders shader_pass{};
-			render_style->GetRenderPassShaders(pass_index, &shader_pass);
+
+			if (!use_default_render_style)
+			{
+				if (!render_style->GetRenderPass(pass_index, &pass))
+				{
+					continue;
+				}
+				render_style->GetRenderPassShaders(pass_index, &shader_pass);
+			}
+			else
+			{
+				for (auto& stage : pass.TextureStages)
+				{
+					stage.TextureParam = RENDERSTYLE_NOTEXTURE;
+					stage.ColorOp = RENDERSTYLE_COLOROP_DISABLE;
+					stage.ColorArg1 = RENDERSTYLE_COLORARG_CURRENT;
+					stage.ColorArg2 = RENDERSTYLE_COLORARG_CURRENT;
+					stage.AlphaOp = RENDERSTYLE_ALPHAOP_DISABLE;
+					stage.AlphaArg1 = RENDERSTYLE_ALPHAARG_CURRENT;
+					stage.AlphaArg2 = RENDERSTYLE_ALPHAARG_CURRENT;
+					stage.UVSource = RENDERSTYLE_UVFROM_MODELDATA_UVSET1;
+					stage.UAddress = RENDERSTYLE_UVADDR_WRAP;
+					stage.VAddress = RENDERSTYLE_UVADDR_WRAP;
+					stage.TexFilter = RENDERSTYLE_TEXFILTER_BILINEAR;
+					stage.UVTransform_Enable = false;
+					std::fill(std::begin(stage.UVTransform_Matrix), std::end(stage.UVTransform_Matrix), 0.0f);
+					stage.ProjectTexCoord = false;
+					stage.TexCoordCount = 2;
+				}
+
+				pass.TextureStages[0].TextureParam = RENDERSTYLE_USE_TEXTURE1;
+				pass.TextureStages[0].ColorOp = RENDERSTYLE_COLOROP_MODULATE;
+				pass.TextureStages[0].ColorArg1 = RENDERSTYLE_COLORARG_TEXTURE;
+				pass.TextureStages[0].ColorArg2 = RENDERSTYLE_COLORARG_DIFFUSE;
+				pass.TextureStages[0].AlphaOp = RENDERSTYLE_ALPHAOP_MODULATE;
+				pass.TextureStages[0].AlphaArg1 = RENDERSTYLE_ALPHAARG_TEXTURE;
+				pass.TextureStages[0].AlphaArg2 = RENDERSTYLE_ALPHAARG_DIFFUSE;
+
+				pass.BlendMode = RENDERSTYLE_NOBLEND;
+				pass.ZBufferMode = RENDERSTYLE_ZRW;
+				pass.CullMode = RENDERSTYLE_CULL_NONE;
+				pass.TextureFactor = 0xFFFFFFFF;
+				pass.AlphaRef = 0;
+				pass.DynamicLight = false;
+				pass.ZBufferTestMode = RENDERSTYLE_ALPHATEST_LESSEQUAL;
+				pass.AlphaTestMode = RENDERSTYLE_NOALPHATEST;
+				pass.FillMode = RENDERSTYLE_FILL;
+				pass.bUseBumpEnvMap = false;
+				pass.BumpEnvMapStage = 0;
+				pass.fBumpEnvMap_Scale = 0.0f;
+				pass.fBumpEnvMap_Offset = 0.0f;
+			}
 
 			if (g_CV_WireframeModels.m_Val)
 			{
@@ -2370,7 +2446,7 @@ bool diligent_draw_model_instance_shadow(
 		if (rigid_mesh)
 		{
 			LTMatrix model_matrix;
-			diligent_get_model_transform(instance, rigid_mesh->GetBoneEffector(), model_matrix);
+			diligent_get_model_transform_raw(instance, rigid_mesh->GetBoneEffector(), model_matrix);
 			LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 			Diligent::IBuffer* vertex_buffers[4] = {};
@@ -2422,7 +2498,7 @@ bool diligent_draw_model_instance_shadow(
 		else if (va_mesh)
 		{
 			LTMatrix model_matrix;
-			diligent_get_model_transform(instance, va_mesh->GetBoneEffector(), model_matrix);
+			diligent_get_model_transform_raw(instance, va_mesh->GetBoneEffector(), model_matrix);
 			LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 			Diligent::IBuffer* vertex_buffers[4] = {};

@@ -2,6 +2,7 @@
 #include "diligentdrawprim.h"
 
 #include "diligent_drawprim_api.h"
+#include "diligent_device.h"
 #include "diligent_state.h"
 #include "render.h"
 #include "rendererconsolevars.h"
@@ -79,6 +80,7 @@ struct DrawPrimPipelineKey
 	int32 fill_mode = 0;
 	int32 cull_mode = 0;
 	bool textured = false;
+	uint8 sample_count = 1;
 
 	bool operator==(const DrawPrimPipelineKey& other) const
 	{
@@ -87,7 +89,8 @@ struct DrawPrimPipelineKey
 			z_mode == other.z_mode &&
 			fill_mode == other.fill_mode &&
 			cull_mode == other.cull_mode &&
-			textured == other.textured;
+			textured == other.textured &&
+			sample_count == other.sample_count;
 	}
 };
 
@@ -102,6 +105,7 @@ struct DrawPrimPipelineKeyHash
 		hash_value ^= std::hash<int32>{}(key.fill_mode) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
 		hash_value ^= std::hash<int32>{}(key.cull_mode) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
 		hash_value ^= std::hash<bool>{}(key.textured) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
+		hash_value ^= std::hash<uint8>{}(key.sample_count) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
 		return hash_value;
 	}
 };
@@ -471,6 +475,7 @@ static DrawPrimPipeline* GetPipeline(
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = swap_desc.ColorBufferFormat;
 	pipeline_info.GraphicsPipeline.DSVFormat = swap_desc.DepthBufferFormat;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = key.topology;
+	pipeline_info.GraphicsPipeline.SmplDesc.Count = key.sample_count;
 
 	Diligent::LayoutElement layout_elements[] =
 	{
@@ -903,6 +908,7 @@ LTRESULT CDiligentDrawPrim::SubmitDraw(const std::vector<DrawPrimVertex>& vertic
 	key.fill_mode = m_eFillMode;
 	key.cull_mode = m_eCullMode;
 	key.textured = use_texture;
+	key.sample_count = static_cast<uint8>(diligent_get_active_sample_count());
 
 	DrawPrimPipeline* pipeline = GetPipeline(resources, key);
 	if (!pipeline || !pipeline->pipeline_state)

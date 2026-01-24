@@ -9,6 +9,8 @@
 #ifndef LTJS_DILIGENT_POSTFX_H
 #define LTJS_DILIGENT_POSTFX_H
 
+#include "ltbasedefs.h"
+
 struct SceneDesc;
 union LTRGBColor;
 
@@ -27,6 +29,17 @@ struct DiligentSsaoContext
 	Diligent::ITextureView* final_depth_target = nullptr;
 };
 
+/// \brief Per-frame antialiasing render state used to restore targets after post-processing.
+struct DiligentAaContext
+{
+	bool active = false;
+	bool msaa_active = false;
+	Diligent::ITextureView* prev_render_target = nullptr;
+	Diligent::ITextureView* prev_depth_target = nullptr;
+	Diligent::ITextureView* final_render_target = nullptr;
+	Diligent::ITextureView* final_depth_target = nullptr;
+};
+
 /// \brief Returns 1.0f if tonemapping is enabled, otherwise 0.0f.
 float diligent_get_tonemap_enabled();
 
@@ -34,6 +47,14 @@ float diligent_get_tonemap_enabled();
 /// \details This uses the glow render-style mapping and blur pipeline to
 ///          composite glow over the current back buffer.
 bool diligent_render_screen_glow(SceneDesc* desc);
+/// \brief Returns the effective MSAA sample count (0 disables MSAA).
+uint32 diligent_get_msaa_samples();
+/// \brief Begins MSAA rendering and redirects output to AA targets if needed.
+bool diligent_begin_antialiasing(SceneDesc* desc, DiligentAaContext& ctx);
+/// \brief Resolves MSAA into the final target if active.
+bool diligent_apply_antialiasing(const DiligentAaContext& ctx);
+/// \brief Ends AA rendering and restores prior render targets.
+void diligent_end_antialiasing(const DiligentAaContext& ctx);
 /// \brief Begins SSAO rendering and redirects output to SSAO targets.
 /// \details On success, the caller should render the scene into the SSAO
 ///          targets and then call diligent_apply_ssao/diligent_end_ssao.

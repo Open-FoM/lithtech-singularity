@@ -24,6 +24,8 @@ Diligent::ITextureView* diligent_get_active_render_target();
 /// \brief Returns the currently active depth target (swapchain or override).
 /// \details If an override is set via diligent_SetOutputTargets, it is returned.
 Diligent::ITextureView* diligent_get_active_depth_target();
+/// \brief Returns sample count for the active render target (defaults to 1).
+uint32 diligent_get_active_sample_count();
 
 /// \brief Updates renderer window handles based on render init data.
 /// \details Required before creating or resizing the swap chain.

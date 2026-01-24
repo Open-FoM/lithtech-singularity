@@ -56,7 +56,8 @@ DiligentPsoKey diligent_make_pso_key(
 	uint32 input_layout_hash,
 	Diligent::TEXTURE_FORMAT color_format,
 	Diligent::TEXTURE_FORMAT depth_format,
-	Diligent::PRIMITIVE_TOPOLOGY topology)
+	Diligent::PRIMITIVE_TOPOLOGY topology,
+	uint8 sample_count)
 {
 	DiligentPsoKey key;
 	key.render_pass_hash = diligent_hash_render_pass(pass);
@@ -66,6 +67,7 @@ DiligentPsoKey diligent_make_pso_key(
 	key.color_format = static_cast<uint32>(color_format);
 	key.depth_format = static_cast<uint32>(depth_format);
 	key.topology = static_cast<uint32>(topology);
+	key.sample_count = sample_count;
 	return key;
 }
 
@@ -79,6 +81,7 @@ size_t DiligentPsoKeyHash::operator()(const DiligentPsoKey& key) const noexcept
 	hash = diligent_hash_combine(hash, key.color_format);
 	hash = diligent_hash_combine(hash, key.depth_format);
 	hash = diligent_hash_combine(hash, key.topology);
+	hash = diligent_hash_combine(hash, key.sample_count);
 	return static_cast<size_t>(hash);
 }
 

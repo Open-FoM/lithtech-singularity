@@ -11,6 +11,7 @@
 #include "ltvector.h"
 #include "diligent_render.h"
 #include "diligent_render_debug.h"
+#include "diligent_render_api.h"
 #include "rendererconsolevars.h"
 
 #include <SDL3/SDL.h>
@@ -39,6 +40,16 @@ SharedTexture* Engine_GetSharedTexture(const char* filename)
 TextureData* Engine_GetTexture(SharedTexture* texture)
 {
 	return g_texture_cache ? g_texture_cache->GetTexture(texture) : nullptr;
+}
+
+CRenderObject* DEdit2_CreateRenderObject(CRenderObject::RENDER_OBJECT_TYPES object_type)
+{
+	return diligent_CreateRenderObject(object_type);
+}
+
+bool DEdit2_DestroyRenderObject(CRenderObject* object)
+{
+	return diligent_DestroyRenderObject(object);
 }
 
 bool LoadWorldBspModels(EngineRenderContext& ctx, ILTStream* stream, std::string& error)
@@ -246,6 +257,8 @@ bool InitEngineRenderer(SDL_Window* window, void* native_handle, EngineRenderCon
 	InitRenderStruct(*ctx.render_struct);
 
 	rdll_RenderDLLSetup(ctx.render_struct);
+	ctx.render_struct->CreateRenderObject = DEdit2_CreateRenderObject;
+	ctx.render_struct->DestroyRenderObject = DEdit2_DestroyRenderObject;
 
 	int width = 0;
 	int height = 0;
@@ -278,6 +291,10 @@ bool InitEngineRenderer(SDL_Window* window, void* native_handle, EngineRenderCon
 	ctx.render_struct->m_bLoaded = true;
 	ctx.render_struct->m_Width = init.m_Mode.m_Width;
 	ctx.render_struct->m_Height = init.m_Mode.m_Height;
+
+	dsi_PrintToConsole("[InitEngineRenderer] g_Render=%p m_bLoaded=%d CreateRenderObject=%p",
+		static_cast<void*>(&g_Render), g_Render.m_bLoaded,
+		reinterpret_cast<void*>(g_Render.CreateRenderObject));
 
 	Diligent::IRenderDevice* raw_device = ctx.render_struct->GetRenderDevice ?
 		ctx.render_struct->GetRenderDevice() : nullptr;

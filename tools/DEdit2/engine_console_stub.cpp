@@ -1,4 +1,5 @@
 #include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 
 extern void DEdit2_Log(const char* fmt, ...);
@@ -15,6 +16,7 @@ void dsi_PrintToConsole(const char* msg, ...)
 	va_start(args, msg);
 	DEdit2_LogV(msg, args);
 	va_end(args);
+	fflush(stderr);
 }
 
 void dsi_OnMemoryFailure()

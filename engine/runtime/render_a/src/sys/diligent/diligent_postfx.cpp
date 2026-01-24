@@ -178,6 +178,26 @@ struct DiligentSsaoState
 
 DiligentSsaoState g_diligent_ssao_state;
 
+struct DiligentAaTargets
+{
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color_msaa;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> color_msaa_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> depth_msaa;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_msaa_dsv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color_resolve;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> color_resolve_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> color_resolve_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> depth_resolve;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_resolve_dsv;
+	uint32 width = 0;
+	uint32 height = 0;
+	uint32 sample_count = 1;
+	Diligent::TEXTURE_FORMAT color_format = Diligent::TEX_FORMAT_UNKNOWN;
+	Diligent::TEXTURE_FORMAT depth_format = Diligent::TEX_FORMAT_UNKNOWN;
+};
+
+DiligentAaTargets g_diligent_aa_targets;
+
 struct DiligentSceneDescScope
 {
 	SceneDesc*& target;
@@ -538,6 +558,157 @@ bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale,
 	return true;
 }
 
+uint32 diligent_get_msaa_samples_internal()
+{
+	const int requested = g_CV_MSAA.m_Val;
+	if (requested < 2)
+	{
+		return 0;
+	}
+	if (requested < 4)
+	{
+		return 2;
+	}
+	if (requested < 8)
+	{
+		return 4;
+	}
+	return 8;
+}
+
+bool diligent_ensure_aa_targets(
+	uint32 width,
+	uint32 height,
+	uint32 sample_count,
+	Diligent::TEXTURE_FORMAT color_format,
+	Diligent::TEXTURE_FORMAT depth_format)
+{
+	if (!g_diligent_state.render_device)
+	{
+		return false;
+	}
+
+	if (width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	if (sample_count < 1)
+	{
+		sample_count = 1;
+	}
+
+	if (depth_format == Diligent::TEX_FORMAT_UNKNOWN)
+	{
+		depth_format = Diligent::TEX_FORMAT_D32_FLOAT;
+	}
+
+	if (g_diligent_aa_targets.width == width &&
+		g_diligent_aa_targets.height == height &&
+		g_diligent_aa_targets.sample_count == sample_count &&
+		g_diligent_aa_targets.color_format == color_format &&
+		g_diligent_aa_targets.depth_format == depth_format)
+	{
+		return true;
+	}
+
+	g_diligent_aa_targets = {};
+
+	DiligentAaTargets targets;
+	targets.width = width;
+	targets.height = height;
+	targets.sample_count = sample_count;
+	targets.color_format = color_format;
+	targets.depth_format = depth_format;
+
+	Diligent::TextureDesc color_desc;
+	color_desc.Name = "ltjs_aa_color_resolve";
+	color_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	color_desc.Width = width;
+	color_desc.Height = height;
+	color_desc.MipLevels = 1;
+	color_desc.Format = color_format;
+	color_desc.Usage = Diligent::USAGE_DEFAULT;
+	color_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+	color_desc.SampleCount = 1;
+	g_diligent_state.render_device->CreateTexture(color_desc, nullptr, &targets.color_resolve);
+	if (!targets.color_resolve)
+	{
+		return false;
+	}
+
+	targets.color_resolve_rtv = targets.color_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.color_resolve_srv = targets.color_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.color_resolve_rtv || !targets.color_resolve_srv)
+	{
+		return false;
+	}
+
+	if (sample_count > 1)
+	{
+		Diligent::TextureDesc msaa_color_desc = color_desc;
+		msaa_color_desc.Name = "ltjs_aa_color_msaa";
+		msaa_color_desc.BindFlags = Diligent::BIND_RENDER_TARGET;
+		msaa_color_desc.SampleCount = sample_count;
+		g_diligent_state.render_device->CreateTexture(msaa_color_desc, nullptr, &targets.color_msaa);
+		if (!targets.color_msaa)
+		{
+			return false;
+		}
+
+		targets.color_msaa_rtv = targets.color_msaa->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+		if (!targets.color_msaa_rtv)
+		{
+			return false;
+		}
+	}
+
+	Diligent::TextureDesc depth_desc;
+	depth_desc.Name = "ltjs_aa_depth";
+	depth_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	depth_desc.Width = width;
+	depth_desc.Height = height;
+	depth_desc.MipLevels = 1;
+	depth_desc.Format = depth_format;
+	depth_desc.Usage = Diligent::USAGE_DEFAULT;
+	depth_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+
+	if (sample_count > 1)
+	{
+		depth_desc.Name = "ltjs_aa_depth_msaa";
+		depth_desc.SampleCount = sample_count;
+		g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.depth_msaa);
+		if (!targets.depth_msaa)
+		{
+			return false;
+		}
+
+		targets.depth_msaa_dsv = targets.depth_msaa->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+		if (!targets.depth_msaa_dsv)
+		{
+			return false;
+		}
+	}
+	else
+	{
+		depth_desc.SampleCount = 1;
+		g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.depth_resolve);
+		if (!targets.depth_resolve)
+		{
+			return false;
+		}
+
+		targets.depth_resolve_dsv = targets.depth_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+		if (!targets.depth_resolve_dsv)
+		{
+			return false;
+		}
+	}
+
+	g_diligent_aa_targets = targets;
+	return true;
+}
+
 DiligentSsaoPipeline* diligent_get_ssao_pipeline(
 	DiligentSsaoPipeline& pipeline,
 	const char* name,
@@ -748,6 +919,145 @@ bool diligent_draw_ssao_quad(
 float diligent_get_tonemap_enabled()
 {
 	return g_CV_ToneMapEnable.m_Val != 0 ? 1.0f : 0.0f;
+}
+
+uint32 diligent_get_msaa_samples()
+{
+	return diligent_get_msaa_samples_internal();
+}
+
+bool diligent_begin_antialiasing(SceneDesc* desc, DiligentAaContext& ctx)
+{
+	ctx = {};
+
+	if (!desc || !g_diligent_state.immediate_context)
+	{
+		return false;
+	}
+
+	const uint32 msaa_samples = diligent_get_msaa_samples_internal();
+	if (msaa_samples == 0)
+	{
+		return false;
+	}
+
+	const uint32 width = desc->m_Rect.right - desc->m_Rect.left;
+	const uint32 height = desc->m_Rect.bottom - desc->m_Rect.top;
+	if (width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	auto* final_rtv = diligent_get_active_render_target();
+	if (!final_rtv || !final_rtv->GetTexture())
+	{
+		return false;
+	}
+
+	auto* final_dsv = diligent_get_active_depth_target();
+	const auto color_format = final_rtv->GetTexture()->GetDesc().Format;
+	const auto depth_format = final_dsv && final_dsv->GetTexture() ? final_dsv->GetTexture()->GetDesc().Format : Diligent::TEX_FORMAT_UNKNOWN;
+
+	const uint32 sample_count = msaa_samples > 0 ? msaa_samples : 1;
+	if (!diligent_ensure_aa_targets(width, height, sample_count, color_format, depth_format))
+	{
+		return false;
+	}
+
+	ctx.active = true;
+	ctx.msaa_active = msaa_samples > 0;
+	ctx.prev_render_target = g_diligent_state.output_render_target_override;
+	ctx.prev_depth_target = g_diligent_state.output_depth_target_override;
+	ctx.final_render_target = final_rtv;
+	ctx.final_depth_target = final_dsv;
+
+	Diligent::ITextureView* render_target = (sample_count > 1)
+		? g_diligent_aa_targets.color_msaa_rtv.RawPtr()
+		: g_diligent_aa_targets.color_resolve_rtv.RawPtr();
+	Diligent::ITextureView* depth_target = (sample_count > 1)
+		? g_diligent_aa_targets.depth_msaa_dsv.RawPtr()
+		: g_diligent_aa_targets.depth_resolve_dsv.RawPtr();
+
+	diligent_SetOutputTargets(render_target, depth_target);
+
+	const float clear_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	if (render_target)
+	{
+		g_diligent_state.immediate_context->ClearRenderTarget(
+			render_target,
+			clear_color,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
+	if (depth_target)
+	{
+		g_diligent_state.immediate_context->ClearDepthStencil(
+			depth_target,
+			Diligent::CLEAR_DEPTH_FLAG,
+			1.0f,
+			0,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
+	return true;
+}
+
+bool diligent_apply_antialiasing(const DiligentAaContext& ctx)
+{
+	if (!ctx.active)
+	{
+		return true;
+	}
+
+	if (!g_diligent_state.immediate_context || !ctx.final_render_target || !ctx.final_render_target->GetTexture())
+	{
+		return false;
+	}
+
+	if (ctx.msaa_active)
+	{
+		if (!g_diligent_aa_targets.color_msaa || !g_diligent_aa_targets.color_resolve)
+		{
+			return false;
+		}
+
+		Diligent::ResolveTextureSubresourceAttribs resolve_attribs;
+		resolve_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		resolve_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		g_diligent_state.immediate_context->ResolveTextureSubresource(
+			g_diligent_aa_targets.color_msaa,
+			g_diligent_aa_targets.color_resolve,
+			resolve_attribs);
+	}
+
+	if (ctx.msaa_active)
+	{
+		Diligent::ITexture* src_texture = g_diligent_aa_targets.color_resolve.RawPtr();
+		auto* dst_texture = ctx.final_render_target->GetTexture();
+		if (!src_texture || !dst_texture)
+		{
+			return false;
+		}
+
+		Diligent::CopyTextureAttribs copy_attribs;
+		copy_attribs.pSrcTexture = src_texture;
+		copy_attribs.pDstTexture = dst_texture;
+		copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		g_diligent_state.immediate_context->CopyTexture(copy_attribs);
+	}
+
+	return true;
+}
+
+void diligent_end_antialiasing(const DiligentAaContext& ctx)
+{
+	if (!ctx.active)
+	{
+		return;
+	}
+
+	diligent_SetOutputTargets(ctx.prev_render_target, ctx.prev_depth_target);
 }
 
 /// \brief Begins the SSAO capture pass by redirecting output to SSAO targets.
@@ -2075,4 +2385,5 @@ void diligent_postfx_term()
 	g_diligent_ssao_state.resources.blur_pipeline.pipeline_state.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
+	g_diligent_aa_targets = {};
 }

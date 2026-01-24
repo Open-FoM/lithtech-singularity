@@ -221,8 +221,10 @@ bool diligent_ensure_optimized_2d_vertex_buffer(uint32 size)
 
 DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend blend, bool clamp_sampler)
 {
+	const uint32 sample_count = diligent_get_active_sample_count();
+	const int32 pipeline_key = static_cast<int32>((static_cast<uint32>(blend) & 0xFFFFu) | (sample_count << 16));
 	auto& pipelines = clamp_sampler ? g_optimized_2d_resources.clamped_pipelines : g_optimized_2d_resources.pipelines;
-	auto it = pipelines.find(static_cast<int32>(blend));
+	auto it = pipelines.find(pipeline_key);
 	if (it != pipelines.end())
 	{
 		return &it->second;
@@ -247,6 +249,7 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = swap_desc.ColorBufferFormat;
 	pipeline_info.GraphicsPipeline.DSVFormat = swap_desc.DepthBufferFormat;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+	pipeline_info.GraphicsPipeline.SmplDesc.Count = static_cast<Diligent::Uint8>(sample_count);
 
 	Diligent::LayoutElement layout_elements[] =
 	{
@@ -309,7 +312,7 @@ DiligentOptimized2DPipeline* diligent_get_optimized_2d_pipeline(LTSurfaceBlend b
 	}
 
 	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
-	auto result = pipelines.emplace(static_cast<int32>(blend), std::move(pipeline));
+	auto result = pipelines.emplace(pipeline_key, std::move(pipeline));
 	return result.second ? &result.first->second : nullptr;
 }
 

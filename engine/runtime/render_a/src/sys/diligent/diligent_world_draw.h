@@ -115,13 +115,15 @@ struct DiligentWorldPipelineKey
 	uint8 blend_mode = kWorldBlendSolid;
 	uint8 depth_mode = kWorldDepthEnabled;
 	uint8 wireframe = 0;
+	uint8 sample_count = 1;
 
 	bool operator==(const DiligentWorldPipelineKey& other) const
 	{
 		return mode == other.mode &&
 			blend_mode == other.blend_mode &&
 			depth_mode == other.depth_mode &&
-			wireframe == other.wireframe;
+			wireframe == other.wireframe &&
+			sample_count == other.sample_count;
 	}
 };
 
@@ -135,6 +137,7 @@ struct DiligentWorldPipelineKeyHash
 		hash = diligent_hash_combine(hash, key.blend_mode);
 		hash = diligent_hash_combine(hash, key.depth_mode);
 		hash = diligent_hash_combine(hash, key.wireframe);
+		hash = diligent_hash_combine(hash, key.sample_count);
 		return static_cast<size_t>(hash);
 	}
 };

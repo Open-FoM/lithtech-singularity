@@ -3,6 +3,7 @@
 #include "dtxmgr.h"
 #include "lt_stream.h"
 #include "dedit2_concommand.h"
+#include "path_utils.h"
 
 extern int32 g_CV_TextureMipMapOffset;
 
@@ -30,51 +31,9 @@ struct ScopedTextureMipOffset
 #include <cstring>
 namespace
 {
-std::string TrimWhitespace(std::string name)
-{
-	auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
-	while (!name.empty() && is_space(static_cast<unsigned char>(name.front())))
-	{
-		name.erase(name.begin());
-	}
-	while (!name.empty() && is_space(static_cast<unsigned char>(name.back())))
-	{
-		name.pop_back();
-	}
-	return name;
-}
-
-std::string SanitizePath(std::string name)
-{
-	std::string out;
-	out.reserve(name.size());
-	bool last_was_sep = false;
-	for (unsigned char raw : name)
-	{
-		if (std::iscntrl(raw))
-		{
-			continue;
-		}
-		char c = static_cast<char>(raw);
-		if (c == '\\' || c == '/')
-		{
-			if (!last_was_sep)
-			{
-				out.push_back('/');
-				last_was_sep = true;
-			}
-			continue;
-		}
-		last_was_sep = false;
-		out.push_back(c);
-	}
-	return out;
-}
-
 std::string NormalizeKey(std::string name)
 {
-	name = TrimWhitespace(std::move(name));
-	name = SanitizePath(std::move(name));
+	name = path_utils::NormalizePathSeparators(std::move(name));
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	if (name.size() > 4 && name.compare(name.size() - 4, 4, ".dtx") == 0)
 	{
@@ -85,23 +44,9 @@ std::string NormalizeKey(std::string name)
 
 std::string NormalizeKeyLegacy(std::string name)
 {
-	name = TrimWhitespace(std::move(name));
-	name = SanitizePath(std::move(name));
+	name = path_utils::NormalizePathSeparators(std::move(name));
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	return name;
-}
-
-std::string NormalizePathSeparators(std::string name)
-{
-	name = TrimWhitespace(std::move(name));
-	return SanitizePath(std::move(name));
-}
-
-bool HasExtension(const std::string& value)
-{
-	const size_t slash = value.find_last_of("/\\");
-	const size_t dot = value.find_last_of('.');
-	return dot != std::string::npos && (slash == std::string::npos || dot > slash);
 }
 
 TextureData* CreateSolidColorTexture(uint32 rgba)
@@ -147,7 +92,7 @@ SharedTexture* TextureCache::GetSharedTexture(const char* name)
 		return nullptr;
 	}
 
-	std::string trimmed = TrimWhitespace(name);
+	std::string trimmed = path_utils::TrimWhitespace(name);
 	if (trimmed.empty())
 	{
 		return nullptr;
@@ -376,8 +321,8 @@ std::string TextureCache::ResolveTexturePath(const std::string& name) const
 
 std::string TextureCache::ResolveResourcePath(const std::string& name, const char* extension) const
 {
-	std::string normalized = NormalizePathSeparators(name);
-	if (!HasExtension(normalized) && extension && extension[0] != '\0')
+	std::string normalized = path_utils::NormalizePathSeparators(name);
+	if (!path_utils::HasExtension(normalized) && extension && extension[0] != '\0')
 	{
 		normalized += extension;
 	}
@@ -386,7 +331,7 @@ std::string TextureCache::ResolveResourcePath(const std::string& name, const cha
 
 TextureCache::TextureEntry* TextureCache::CreateEntry(const std::string& name, const std::string& path)
 {
-	const std::string canonical_name = NormalizePathSeparators(name);
+	const std::string canonical_name = path_utils::NormalizePathSeparators(name);
 	const std::string key = NormalizeKey(canonical_name);
 	auto existing = by_name_.find(key);
 	if (existing != by_name_.end())
