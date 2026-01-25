@@ -1082,11 +1082,17 @@ void diligent_init_texture_effect_constants(DiligentWorldConstants& constants)
 }
 bool diligent_pipeline_allows_texel_uv(uint8 pipeline_mode)
 {
+	// Texel UV scaling should only apply to lightmap pipeline modes.
+	// When falling back to textured mode (e.g., LightMap 0), raw UVs work correctly.
+	// The use_texel_uv heuristic can misdetect tiling textures as texel-space UVs.
 	switch (pipeline_mode)
 	{
 		case kWorldPipelineLightmap:
 		case kWorldPipelineLightmapOnly:
 		case kWorldPipelineLightmapDual:
+		case kWorldPipelineTextured:
+		case kWorldPipelineDualTexture:
+		case kWorldPipelineGlowTextured:
 			return false;
 		default:
 			return true;
@@ -1755,12 +1761,11 @@ bool diligent_draw_render_blocks_with_constants(
 						{
 							mode = kWorldPipelineLightmapOnly;
 						}
-						else if (texture_view)
-						{
-							mode = kWorldPipelineTextured;
-						}
 						else
 						{
+							// In dynamic mode, lightmap-only sections have no lightmap to show.
+							// Render as solid color rather than textured (the texture reference
+							// in section.textures[0] is not intended for display).
 							mode = kWorldPipelineSolid;
 						}
 						break;
@@ -1775,8 +1780,7 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 						else if (lightmap_view)
 						{
-							// Skip: kPcShaderLightmapTexture expects a texture, but none is available.
-							mode = kWorldPipelineSkip;
+							mode = kWorldPipelineLightmapOnly;
 						}
 						else
 						{
@@ -1808,7 +1812,7 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 						else if (texture_view && lightmap_view)
 						{
-							mode = can_combine_lightmap ? kWorldPipelineLightmap : kWorldPipelineTextured;
+							mode = kWorldPipelineLightmap;
 						}
 						else if (texture_view)
 						{
@@ -1816,8 +1820,7 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 						else if (lightmap_view)
 						{
-							// Skip: kPcShaderLightmapDualTexture expects textures, but none available.
-							mode = kWorldPipelineSkip;
+							mode = kWorldPipelineLightmapOnly;
 						}
 						else
 						{
@@ -1943,7 +1946,8 @@ bool diligent_draw_render_blocks_with_constants(
 					vertex_color_scale = 0.0f;
 				}
 			}
-			if (is_lightmap_texture_section && (mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture))
+			if (is_lightmap_texture_section &&
+				(mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture))
 			{
 				vertex_color_scale = 0.0f;
 			}
