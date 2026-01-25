@@ -309,6 +309,10 @@ RCONVAR(g_CV_SSAOSampleCount, "SSAOSampleCount", int, 8);
 RCONVAR(g_CV_SSAODownscale, "SSAODownscale", int, 2);
 RCONVAR(g_CV_SSAOBlurEnable, "SSAOBlurEnable", int, 1);
 RCONVAR(g_CV_SSAOBlurRadius, "SSAOBlurRadius", float, 1.0f);
+RCONVAR(g_CV_SSAOBlurDepthSigma, "SSAOBlurDepthSigma", float, 50.0f);
+RCONVAR(g_CV_SSAOTemporalEnable, "SSAOTemporalEnable", int, 0);
+RCONVAR(g_CV_SSAOTemporalBlend, "SSAOTemporalBlend", float, 0.1f);
+RCONVAR(g_CV_SSAOTemporalVelocityReject, "SSAOTemporalVelocityReject", float, 0.05f);
 
 //------------------------------
 // Effect file settings

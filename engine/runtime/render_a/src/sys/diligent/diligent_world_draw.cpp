@@ -895,7 +895,8 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 		sampler_desc[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
 	}
 
-	if (mode == kWorldPipelineTextured || mode == kWorldPipelineGlowTextured || mode == kWorldPipelineVolumeEffect)
+	if (mode == kWorldPipelineTextured || mode == kWorldPipelineGlowTextured ||
+		mode == kWorldPipelineVolumeEffect || mode == kWorldPipelineDynamicLight)
 	{
 		pipeline_info.PSODesc.ResourceLayout.Variables = variables;
 		pipeline_info.PSODesc.ResourceLayout.NumVariables = 1u;
@@ -1933,20 +1934,28 @@ bool diligent_draw_render_blocks_with_constants(
 
 			DiligentWorldConstants constants = base_constants;
 			float vertex_color_scale = 1.0f;
+			const bool dynamic_mode = (g_CV_LightMap.m_Val == 0);
 			if (section.light_anim)
 			{
 				vertex_color_scale = 0.0f;
 			}
-			else
+			else if (dynamic_mode)
 			{
-				if (mode == kWorldPipelineLightmap ||
-					mode == kWorldPipelineLightmapOnly ||
-					mode == kWorldPipelineLightmapDual)
-				{
-					vertex_color_scale = 0.0f;
-				}
+				// In dynamic lighting mode, use negative value to signal dark base color.
+				// This ensures all sections have uniform black base, eliminating seams
+				// caused by inconsistent pre-baked vertex colors between section types.
+				// Shaders interpret negative scale as "use black" instead of white or vertex colors.
+				// Use -2.0 to signal fullbright mode (fully lit textures without lighting calculations).
+				vertex_color_scale = g_CV_Fullbright ? -2.0f : -1.0f;
 			}
-			if (is_lightmap_texture_section &&
+			else if (mode == kWorldPipelineLightmap ||
+					 mode == kWorldPipelineLightmapOnly ||
+					 mode == kWorldPipelineLightmapDual)
+			{
+				vertex_color_scale = 0.0f;
+			}
+			// In baked mode, lightmap texture sections using textured pipeline need white base
+			if (!dynamic_mode && is_lightmap_texture_section &&
 				(mode == kWorldPipelineTextured || mode == kWorldPipelineDualTexture))
 			{
 				vertex_color_scale = 0.0f;
@@ -2102,7 +2111,6 @@ bool diligent_draw_render_blocks_with_constants(
 					g_diligent_state.immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 					g_diligent_state.immediate_context->SetPipelineState(light_pipeline->pipeline_state);
-					g_diligent_state.immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 					for (const auto& section_ptr : block->sections)
 					{
@@ -2141,6 +2149,23 @@ bool diligent_draw_render_blocks_with_constants(
 						{
 							continue;
 						}
+
+						// Get texture for this section and bind it so dynamic lights illuminate textured surfaces
+						Diligent::ITextureView* section_texture_view = nullptr;
+						if (section.textures[0])
+						{
+							SharedTexture* base_texture = diligent_resolve_effect_texture(section.textures[0]);
+							section_texture_view = diligent_get_texture_view(base_texture, false);
+						}
+						if (section_texture_view)
+						{
+							auto* texture_var = light_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture0");
+							if (texture_var)
+							{
+								texture_var->Set(section_texture_view);
+							}
+						}
+						g_diligent_state.immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 						Diligent::DrawIndexedAttribs draw_attribs;
 						draw_attribs.NumIndices = section.tri_count * 3;

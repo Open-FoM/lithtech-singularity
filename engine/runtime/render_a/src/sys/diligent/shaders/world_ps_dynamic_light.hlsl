@@ -1,3 +1,5 @@
+Texture2D g_Texture0;
+SamplerState g_Texture0_sampler;
 cbuffer WorldConstants
 {
     float4x4 g_Mvp;
@@ -29,6 +31,22 @@ struct PSInput
     float4 texcoord2 : TEXCOORD6;
     float4 texcoord3 : TEXCOORD7;
 };
+
+float2 ResolveTexCoord(int stage, float4 coord)
+{
+    float2 uv = coord.xy;
+    int projected = g_TexEffectParams[stage].w;
+    int coord_count = g_TexEffectParams[stage].z;
+    if (projected != 0)
+    {
+        float q = (coord_count == 3) ? coord.z : coord.w;
+        if (abs(q) > 1e-5f)
+        {
+            uv /= q;
+        }
+    }
+    return uv;
+}
 
 float3 ToLinear(float3 c)
 {
@@ -117,8 +135,12 @@ float4 PSMain(PSInput input) : SV_TARGET
     float light_strength = max(g_DynamicLightColor.w, 0.0f);
 
     float3 light_linear = ToLinear(g_DynamicLightColor.xyz) * light_strength * atten;
-    float3 color_linear = light_linear * lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
-    float4 fogged = ApplyFogLinear(float4(color_linear, input.color.a), input.world_pos);
+
+    // Sample texture and multiply with light to properly illuminate textured surfaces
+    float2 uv = (g_WorldParams.z > 0.5f) ? ResolveTexCoord(0, input.texcoord0) : input.uv0;
+    float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
+    float3 color_linear = ToLinear(tex.rgb) * light_linear;
+    float4 fogged = ApplyFogLinear(float4(color_linear, tex.a), input.world_pos);
 
     float3 color = EncodeOutput(fogged.rgb);
     int dither_offset = (int)g_WorldParams.w;

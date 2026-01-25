@@ -91,19 +91,18 @@ float3 EncodeOutput(float3 color_linear)
     return (g_FogParams.z > 0.5f) ? mapped : ToGamma(mapped);
 }
 
-float3 ApplySunLight(float3 color_linear, float3 normal)
+float3 ComputeSunLight(float3 normal)
 {
     float3 sun_dir = g_SunDir.xyz;
     float sun_len = length(sun_dir);
     if (sun_len <= 1.0e-5f)
     {
-        return color_linear;
+        return 0.0f.xxx;
     }
     float3 n = normalize(normal);
     float3 l = -sun_dir / sun_len;
     float ndotl = saturate(dot(n, l));
-    float3 sun_linear = ToLinear(g_SunColor.xyz) * ndotl;
-    return color_linear + sun_linear;
+    return ToLinear(g_SunColor.xyz) * ndotl;
 }
 
 
@@ -195,10 +194,24 @@ float4 PSMain(PSInput input) : SV_TARGET
     float2 uv1 = (g_WorldParams.z > 0.5f) ? ResolveTexCoord(1, input.texcoord1) : input.uv0;
     float4 base_tex = g_Texture0.Sample(g_Texture0_sampler, uv0);
     float4 lightmap = g_Texture1.Sample(g_Texture1_sampler, uv1);
-    float3 vertex_color = lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
-    float3 color_linear = ToLinear(base_tex.rgb) * (lightmap.rgb * g_WorldParams.y) * vertex_color;
     float alpha = base_tex.a * lightmap.a * input.color.a;
-    color_linear = ApplySunLight(color_linear, input.world_normal);
+    float3 sun_light = ComputeSunLight(input.world_normal);
+    float3 color_linear;
+
+    bool dynamic_mode = (g_WorldParams.x < 0.0f);
+    bool fullbright = (g_WorldParams.x < -1.5f);
+    if (dynamic_mode)
+    {
+        // Dynamic mode: texture illuminated by sun only (no lightmap, no baked vertex colors)
+        // Fullbright (-2.0) shows textures at full brightness without lighting
+        color_linear = fullbright ? ToLinear(base_tex.rgb) : ToLinear(base_tex.rgb) * sun_light;
+    }
+    else
+    {
+        // Baked mode: texture * lightmap * vertex_color + additive sun
+        float3 vertex_color = lerp(1.0f.xxx, input.color.rgb, g_WorldParams.x);
+        color_linear = ToLinear(base_tex.rgb) * (lightmap.rgb * g_WorldParams.y) * vertex_color + sun_light;
+    }
     float4 fogged = ApplyFogLinear(float4(color_linear, alpha), input.world_pos);
 
     float3 color = EncodeOutput(fogged.rgb);
