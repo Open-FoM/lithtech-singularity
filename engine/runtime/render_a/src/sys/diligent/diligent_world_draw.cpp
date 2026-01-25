@@ -747,7 +747,10 @@ DiligentWorldPipeline* diligent_get_world_pipeline(
 	{
 		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_EQUAL;
+		pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
+		// Depth bias pulls geometry toward camera to handle floating-point precision issues
+		pipeline_info.GraphicsPipeline.RasterizerDesc.DepthBias = -1;
+		pipeline_info.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.0f;
 		auto& blend_desc = pipeline_info.GraphicsPipeline.BlendDesc.RenderTargets[0];
 		blend_desc.BlendEnable = true;
 		blend_desc.SrcBlend = Diligent::BLEND_FACTOR_ONE;
@@ -2054,8 +2057,8 @@ bool diligent_draw_render_blocks_with_constants(
 		}
 	}
 
-	if (section_filter == DiligentWorldSectionFilter::Normal &&
-		shading_mode == kWorldShadingTextured && g_diligent_num_world_dynamic_lights > 0)
+	// Apply dynamic lights to all section types (Normal and LightAnim)
+	if (shading_mode == kWorldShadingTextured && g_diligent_num_world_dynamic_lights > 0)
 	{
 		auto* light_pipeline = diligent_get_world_pipeline(kWorldPipelineDynamicLight, kWorldBlendSolid, kWorldDepthEnabled, g_CV_Wireframe.m_Val != 0);
 		if (light_pipeline && light_pipeline->pipeline_state && light_pipeline->srb)
@@ -2068,6 +2071,7 @@ bool diligent_draw_render_blocks_with_constants(
 					continue;
 				}
 
+				// Prepare base light constants once per light (light params don't change per section)
 				DiligentWorldConstants light_constants = base_constants;
 				light_constants.dynamic_light_pos[0] = light->m_Pos.x;
 				light_constants.dynamic_light_pos[1] = light->m_Pos.y;
@@ -2078,6 +2082,8 @@ bool diligent_draw_render_blocks_with_constants(
 				light_constants.dynamic_light_color[2] = static_cast<float>(light->m_ColorB) / 255.0f;
 				light_constants.dynamic_light_color[3] = light->m_Intensity;
 
+				// Update constant buffer once per light (shader doesn't sample textures,
+				// so no per-section UV mode tracking is needed)
 				void* light_mapped_constants = nullptr;
 				g_diligent_state.immediate_context->MapBuffer(g_world_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, light_mapped_constants);
 				if (!light_mapped_constants)
@@ -2111,6 +2117,7 @@ bool diligent_draw_render_blocks_with_constants(
 					g_diligent_state.immediate_context->SetIndexBuffer(block->index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 					g_diligent_state.immediate_context->SetPipelineState(light_pipeline->pipeline_state);
+					g_diligent_state.immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 					for (const auto& section_ptr : block->sections)
 					{
@@ -2125,23 +2132,35 @@ bool diligent_draw_render_blocks_with_constants(
 							continue;
 						}
 
-						bool can_light = false;
+						// Filter by light_anim to match the current section_filter pass
+						const bool placeholder_light_anim =
+							section.light_anim && section.textures[0] && diligent_is_placeholder_texture(section.textures[0]);
+						if (section_filter == DiligentWorldSectionFilter::Normal)
+						{
+							if (section.light_anim && !placeholder_light_anim)
+							{
+								continue;
+							}
+						}
+						else if (section_filter == DiligentWorldSectionFilter::LightAnim)
+						{
+							if (!section.light_anim || placeholder_light_anim)
+							{
+								continue;
+							}
+						}
+
+						// Use blacklist - skip shader types that shouldn't receive dynamic lighting
+						bool can_light = true;
 						switch (static_cast<DiligentPCShaderType>(section.shader_code))
 						{
-							case kPcShaderGouraud:
-							case kPcShaderLightmap:
-							case kPcShaderLightmapTexture:
-							case kPcShaderDualTexture:
-							case kPcShaderLightmapDualTexture:
-								can_light = true;
-								break;
 							case kPcShaderSkypan:
 							case kPcShaderSkyPortal:
 							case kPcShaderOccluder:
 							case kPcShaderNone:
-							case kPcShaderUnknown:
-							default:
 								can_light = false;
+								break;
+							default:
 								break;
 						}
 
@@ -2149,23 +2168,6 @@ bool diligent_draw_render_blocks_with_constants(
 						{
 							continue;
 						}
-
-						// Get texture for this section and bind it so dynamic lights illuminate textured surfaces
-						Diligent::ITextureView* section_texture_view = nullptr;
-						if (section.textures[0])
-						{
-							SharedTexture* base_texture = diligent_resolve_effect_texture(section.textures[0]);
-							section_texture_view = diligent_get_texture_view(base_texture, false);
-						}
-						if (section_texture_view)
-						{
-							auto* texture_var = light_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Texture0");
-							if (texture_var)
-							{
-								texture_var->Set(section_texture_view);
-							}
-						}
-						g_diligent_state.immediate_context->CommitShaderResources(light_pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 						Diligent::DrawIndexedAttribs draw_attribs;
 						draw_attribs.NumIndices = section.tri_count * 3;

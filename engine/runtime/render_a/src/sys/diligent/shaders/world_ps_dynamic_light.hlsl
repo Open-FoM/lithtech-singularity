@@ -134,13 +134,11 @@ float4 PSMain(PSInput input) : SV_TARGET
     float atten = saturate(1.0f - dist / max(radius, 0.0001f));
     float light_strength = max(g_DynamicLightColor.w, 0.0f);
 
+    // Output light contribution without texture modulation
+    // This ensures uniform lighting across BSP section boundaries
+    // (texture sampling caused visible seams at polygon edges due to UV discontinuities)
     float3 light_linear = ToLinear(g_DynamicLightColor.xyz) * light_strength * atten;
-
-    // Sample texture and multiply with light to properly illuminate textured surfaces
-    float2 uv = (g_WorldParams.z > 0.5f) ? ResolveTexCoord(0, input.texcoord0) : input.uv0;
-    float4 tex = g_Texture0.Sample(g_Texture0_sampler, uv);
-    float3 color_linear = ToLinear(tex.rgb) * light_linear;
-    float4 fogged = ApplyFogLinear(float4(color_linear, tex.a), input.world_pos);
+    float4 fogged = ApplyFogLinear(float4(light_linear, 1.0f), input.world_pos);
 
     float3 color = EncodeOutput(fogged.rgb);
     int dither_offset = (int)g_WorldParams.w;
@@ -148,5 +146,5 @@ float4 PSMain(PSInput input) : SV_TARGET
     float dither = Dither4x4(input.position.xy, dither_offset) / 255.0f;
     color = saturate(color + dither);
 
-    return float4(color, fogged.a);
+    return float4(color, 1.0f);
 }
