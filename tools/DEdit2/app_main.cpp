@@ -48,6 +48,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -303,6 +304,86 @@ std::string LowerCopy(std::string value)
 		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 	}
 	return value;
+}
+
+std::string TrimLine(const std::string& value);
+
+struct DiligentContext;
+void BuildSkyWorldModels(
+	DiligentContext& ctx,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props);
+
+std::string TrimQuotes(const std::string& value)
+{
+	std::string trimmed = TrimLine(value);
+	if (trimmed.size() >= 2)
+	{
+		const char front = trimmed.front();
+		const char back = trimmed.back();
+		if ((front == '"' && back == '"') || (front == '\'' && back == '\''))
+		{
+			return trimmed.substr(1, trimmed.size() - 2);
+		}
+	}
+	return trimmed;
+}
+
+bool TryGetRawPropertyString(const NodeProperties& props, const char* key, std::string& out)
+{
+	if (!key || key[0] == '\0')
+	{
+		return false;
+	}
+	const std::string key_lower = LowerCopy(key);
+	for (const auto& entry : props.raw_properties)
+	{
+		if (LowerCopy(entry.first) == key_lower)
+		{
+			out = TrimQuotes(entry.second);
+			return !out.empty();
+		}
+	}
+	return false;
+}
+
+bool IsSkyNode(const NodeProperties& props)
+{
+	const std::string type = LowerCopy(props.type);
+	const std::string cls = LowerCopy(props.class_name);
+	return type == "sky" ||
+		cls == "sky" ||
+		type == "skyobject" ||
+		cls == "skyobject" ||
+		type == "demoskyworldmodel" ||
+		cls == "demoskyworldmodel" ||
+		type == "skypointer" ||
+		cls == "skypointer";
+}
+
+std::string GuessSkyWorldModelName(
+	const TreeNode& node,
+	const NodeProperties& props)
+{
+	std::string value;
+	if (TryGetRawPropertyString(props, "objectname", value) ||
+		TryGetRawPropertyString(props, "worldmodel", value) ||
+		TryGetRawPropertyString(props, "worldmodelname", value))
+	{
+		return value;
+	}
+
+	if (!props.resource.empty())
+	{
+		return TrimQuotes(props.resource);
+	}
+
+	if (!node.name.empty() && node.name != "Node" && node.name != "World")
+	{
+		return TrimQuotes(node.name);
+	}
+
+	return {};
 }
 
 struct RenderCategoryState
@@ -1171,10 +1252,17 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_SSAOBias = viewport_state.render_ssao_bias;
 	g_CV_SSAOIntensity = viewport_state.render_ssao_intensity;
 	g_CV_SSAOPower = viewport_state.render_ssao_power;
+	g_CV_SSAONoiseScale = viewport_state.render_ssao_noise_scale;
 	g_CV_SSAOSampleCount = viewport_state.render_ssao_sample_count;
 	g_CV_SSAODownscale = viewport_state.render_ssao_downscale;
 	g_CV_SSAOBlurEnable = viewport_state.render_ssao_blur_enable ? 1 : 0;
 	g_CV_SSAOBlurRadius = viewport_state.render_ssao_blur_radius;
+	g_CV_SSAOBlurDepthSigma = viewport_state.render_ssao_blur_depth_sigma;
+	g_CV_SSAOTemporalEnable = viewport_state.render_ssao_temporal_enable ? 1 : 0;
+	g_CV_SSAOTemporalBlend = viewport_state.render_ssao_temporal_blend;
+	g_CV_SSAOTemporalVelocityReject = viewport_state.render_ssao_temporal_velocity_reject;
+	g_CV_SSAOTemporalDepthReject = viewport_state.render_ssao_temporal_depth_reject;
+	g_CV_SSAOTemporalNormalReject = viewport_state.render_ssao_temporal_normal_reject;
 }
 
 std::string TrimLine(const std::string& value)
@@ -1346,7 +1434,106 @@ struct DiligentContext
 	bool viewport_visible = false;
 	ViewportGridRenderer grid_renderer;
 	bool grid_ready = false;
+	std::vector<std::unique_ptr<WorldModelInstance>> sky_world_models;
+	std::vector<LTObject*> sky_objects;
 };
+
+void BuildSkyWorldModels(
+	DiligentContext& ctx,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	ctx.sky_world_models.clear();
+	ctx.sky_objects.clear();
+
+	if (ctx.engine.world_bsp_model_ptrs.empty())
+	{
+		return;
+	}
+
+	std::unordered_map<std::string, WorldBsp*> world_by_name;
+	world_by_name.reserve(ctx.engine.world_bsp_model_ptrs.size());
+	for (auto* bsp : ctx.engine.world_bsp_model_ptrs)
+	{
+		if (!bsp)
+		{
+			continue;
+		}
+		const std::string name = TrimQuotes(bsp->m_WorldName);
+		if (!name.empty())
+		{
+			world_by_name.emplace(LowerCopy(name), bsp);
+		}
+	}
+
+	std::unordered_set<WorldBsp*> used;
+	used.reserve(world_by_name.size());
+
+	auto add_world_model = [&](WorldBsp* bsp, const NodeProperties* props_source)
+	{
+		if (!bsp || used.find(bsp) != used.end())
+		{
+			return;
+		}
+		auto instance = std::make_unique<WorldModelInstance>();
+		instance->InitWorldData(bsp, nullptr);
+		instance->m_Flags |= FLAG_VISIBLE;
+		instance->m_Flags2 |= FLAG2_SKYOBJECT;
+		if (props_source)
+		{
+			instance->m_Pos.Init(props_source->position[0], props_source->position[1], props_source->position[2]);
+		}
+		else
+		{
+			instance->m_Pos.Init();
+		}
+		instance->m_Rotation.Init();
+		obj_SetupWorldModelTransform(instance.get());
+		ctx.sky_objects.push_back(static_cast<LTObject*>(instance.get()));
+		ctx.sky_world_models.push_back(std::move(instance));
+		used.insert(bsp);
+	};
+
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		if (nodes[i].deleted)
+		{
+			continue;
+		}
+		if (!IsSkyNode(props[i]))
+		{
+			continue;
+		}
+
+		const std::string target = GuessSkyWorldModelName(nodes[i], props[i]);
+		if (target.empty())
+		{
+			continue;
+		}
+
+		const std::string target_lower = LowerCopy(target);
+		auto it = world_by_name.find(target_lower);
+		if (it != world_by_name.end())
+		{
+			add_world_model(it->second, &props[i]);
+		}
+	}
+
+	if (!ctx.sky_objects.empty())
+	{
+		return;
+	}
+
+	for (const auto& entry : world_by_name)
+	{
+		if (entry.first.find("sky") == std::string::npos)
+		{
+			continue;
+		}
+		add_world_model(entry.second, nullptr);
+	}
+}
 
 bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height)
 {
@@ -1490,8 +1677,8 @@ void RenderViewport(
 		scene.m_Rotation = LTRotation(
 			LTVector(cam_forward.x, cam_forward.y, cam_forward.z),
 			LTVector(cam_up.x, cam_up.y, cam_up.z));
-		scene.m_SkyObjects = nullptr;
-		scene.m_nSkyObjects = 0;
+		scene.m_SkyObjects = ctx.sky_objects.empty() ? nullptr : ctx.sky_objects.data();
+		scene.m_nSkyObjects = static_cast<int>(ctx.sky_objects.size());
 
 		std::vector<LTObject*> object_list;
 		if (!dynamic_lights.empty())
@@ -1728,6 +1915,8 @@ int main(int argc, char** argv)
 			if (!LoadRenderWorld(diligent.engine, compiled_path, render_error))
 			{
 				std::fprintf(stderr, "World render load failed: %s\n", render_error.c_str());
+				diligent.sky_world_models.clear();
+				diligent.sky_objects.clear();
 			}
 			else
 			{
@@ -1756,6 +1945,7 @@ int main(int argc, char** argv)
 		}
 
 		// Sync model instances with the scene tree for rendering
+		BuildSkyWorldModels(diligent, scene_nodes, scene_props);
 	};
 
 	if (!world_file.empty())
@@ -2308,11 +2498,18 @@ int main(int argc, char** argv)
 						ImGui::DragFloat("Bias##SSAO", &viewport_panel.render_ssao_bias, 0.05f, 0.0f, 50.0f);
 						ImGui::DragFloat("Intensity##SSAO", &viewport_panel.render_ssao_intensity, 0.05f, 0.0f, 4.0f);
 						ImGui::DragFloat("Power##SSAO", &viewport_panel.render_ssao_power, 0.05f, 0.1f, 4.0f);
+						ImGui::DragFloat("Noise Scale##SSAO", &viewport_panel.render_ssao_noise_scale, 0.001f, 0.001f, 0.2f);
 						ImGui::DragInt("Samples##SSAO", &viewport_panel.render_ssao_sample_count, 1.0f, 4, 16);
 						ImGui::DragInt("Downscale##SSAO", &viewport_panel.render_ssao_downscale, 1.0f, 1, 4);
 						ImGui::Checkbox("Blur##SSAO", &viewport_panel.render_ssao_blur_enable);
 						ImGui::SameLine();
 						ImGui::DragFloat("Radius##SSAOBlur", &viewport_panel.render_ssao_blur_radius, 0.1f, 0.5f, 4.0f);
+						ImGui::DragFloat("Depth Sigma##SSAOBlur", &viewport_panel.render_ssao_blur_depth_sigma, 1.0f, 1.0f, 200.0f);
+						ImGui::Checkbox("Temporal##SSAO", &viewport_panel.render_ssao_temporal_enable);
+						ImGui::DragFloat("Blend##SSAOTemporal", &viewport_panel.render_ssao_temporal_blend, 0.01f, 0.0f, 0.95f);
+						ImGui::DragFloat("Velocity Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_velocity_reject, 0.001f, 0.0f, 0.2f);
+						ImGui::DragFloat("Depth Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_depth_reject, 0.001f, 0.0f, 0.2f);
+						ImGui::DragFloat("Normal Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_normal_reject, 0.01f, 0.0f, 0.99f);
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Advanced"))

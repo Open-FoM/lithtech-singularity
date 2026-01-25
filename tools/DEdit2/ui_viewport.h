@@ -113,12 +113,19 @@ struct ViewportPanelState
 	float render_ssao_bias = 2.0f;
 	float render_ssao_intensity = 1.0f;
 	float render_ssao_power = 1.25f;
+	float render_ssao_noise_scale = 0.02f;
 	int render_ssao_sample_count = 8;
 	int render_ssao_downscale = 2;
 	bool render_ssao_blur_enable = true;
+	float render_ssao_blur_radius = 1.0f;
+	float render_ssao_blur_depth_sigma = 50.0f;
+	bool render_ssao_temporal_enable = false;
+	float render_ssao_temporal_blend = 0.1f;
+	float render_ssao_temporal_velocity_reject = 0.05f;
+	float render_ssao_temporal_depth_reject = 0.02f;
+	float render_ssao_temporal_normal_reject = 0.7f;
 	bool show_light_icons = true;
 	bool light_icon_occlusion = true;
-	float render_ssao_blur_radius = 1.0f;
 	bool lightmaps_autoloaded = false;
 };
 

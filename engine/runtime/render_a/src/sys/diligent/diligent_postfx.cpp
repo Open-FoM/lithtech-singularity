@@ -41,7 +41,9 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <random>
 #include <vector>
 
 struct DiligentGlowBlurPipeline
@@ -68,6 +70,10 @@ static_assert(kDiligentGlowBlurBatchSize == 8, "Update glow blur shader tap coun
 constexpr uint32 kDiligentSsaoKernelSize = 16;
 constexpr float kDiligentSsaoGoldenAngle = 2.39996323f;
 constexpr Diligent::TEXTURE_FORMAT kDiligentSsaoAoFormat = Diligent::TEX_FORMAT_R16_FLOAT;
+constexpr int kDiligentBlueNoiseSize = 32;
+constexpr int kDiligentBlueNoiseKernelRadius = 3;
+constexpr float kDiligentBlueNoiseKernelSigma = 1.5f;
+static_assert((kDiligentBlueNoiseSize & (kDiligentBlueNoiseSize - 1)) == 0, "Blue noise size must be power of two.");
 
 struct DiligentGlowElement
 {
@@ -100,6 +106,8 @@ struct DiligentGlowBlurResources
 DiligentGlowBlurResources g_diligent_glow_blur_resources;
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_debug_white_texture;
 Diligent::RefCntAutoPtr<Diligent::ITextureView> g_debug_white_texture_srv;
+Diligent::RefCntAutoPtr<Diligent::ITexture> g_blue_noise_texture;
+Diligent::RefCntAutoPtr<Diligent::ITextureView> g_blue_noise_texture_srv;
 
 struct DiligentSsaoConstants
 {
@@ -112,7 +120,11 @@ struct DiligentSsaoConstants
 	float far_z = 10000.0f;
 	int sample_count = 1;
 	float pad0 = 0.0f;
+	float pad1 = 0.0f;
 	float samples[kDiligentSsaoKernelSize][4]{};
+	float noise_scale = 0.02f;
+	float pad2[3] = {0.0f, 0.0f, 0.0f};
+	std::array<float, 16> inv_view{};
 };
 
 struct DiligentSsaoBlurConstants
@@ -120,7 +132,9 @@ struct DiligentSsaoBlurConstants
 	float texel_size[2] = {0.0f, 0.0f};
 	float direction[2] = {1.0f, 0.0f};
 	float radius = 1.0f;
-	float pad0 = 0.0f;
+	float near_z = 1.0f;
+	float far_z = 10000.0f;
+	float depth_sigma = 50.0f;
 };
 
 struct DiligentSsaoCompositeConstants
@@ -130,18 +144,36 @@ struct DiligentSsaoCompositeConstants
 	float pad1[2] = {0.0f, 0.0f};
 };
 
+struct DiligentSsaoTemporalConstants
+{
+	float inv_target_size[2] = {0.0f, 0.0f};
+	float proj_scale[2] = {0.0f, 0.0f};
+	float near_z = 1.0f;
+	float far_z = 10000.0f;
+	float blend_factor = 0.1f;
+	float velocity_reject = 0.05f;
+	float depth_reject = 0.02f;
+	float normal_reject = 0.7f;
+	float depth_texel_size[2] = {0.0f, 0.0f};
+	std::array<float, 16> inv_view{};
+	std::array<float, 16> prev_view_proj{};
+};
+
 struct DiligentSsaoResources
 {
 	Diligent::RefCntAutoPtr<Diligent::IShader> vertex_shader;
 	Diligent::RefCntAutoPtr<Diligent::IShader> ssao_pixel_shader;
 	Diligent::RefCntAutoPtr<Diligent::IShader> blur_pixel_shader;
 	Diligent::RefCntAutoPtr<Diligent::IShader> composite_pixel_shader;
+	Diligent::RefCntAutoPtr<Diligent::IShader> temporal_pixel_shader;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> ssao_constants;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> blur_constants;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> composite_constants;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> temporal_constants;
 	DiligentSsaoPipeline ssao_pipeline;
 	DiligentSsaoPipeline blur_pipeline;
 	DiligentSsaoPipeline composite_pipeline;
+	DiligentSsaoPipeline temporal_pipeline;
 	std::array<std::array<float, 4>, kDiligentSsaoKernelSize> kernel{};
 	bool kernel_ready = false;
 };
@@ -160,12 +192,17 @@ struct DiligentSsaoTargets
 	Diligent::RefCntAutoPtr<Diligent::ITexture> scene_depth;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_depth_dsv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_depth_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> scene_depth_history;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_depth_history_srv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> ao_texture;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_rtv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_srv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> ao_blur_texture;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_blur_rtv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_blur_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> ao_history_texture;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_history_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> ao_history_srv;
 };
 
 struct DiligentSsaoState
@@ -174,6 +211,9 @@ struct DiligentSsaoState
 	DiligentSsaoTargets targets;
 	float clear_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 	bool clear_color_set = false;
+	std::array<float, 16> prev_view_proj{};
+	bool has_prev_view_proj = false;
+	bool history_valid = false;
 };
 
 DiligentSsaoState g_diligent_ssao_state;
@@ -254,6 +294,228 @@ Diligent::ITextureView* diligent_get_debug_white_texture_view()
 	return g_debug_white_texture_srv;
 }
 
+struct DiligentBlueNoiseKernelEntry
+{
+	int dx = 0;
+	int dy = 0;
+	float weight = 0.0f;
+};
+
+void diligent_build_blue_noise_kernel(std::vector<DiligentBlueNoiseKernelEntry>& kernel)
+{
+	kernel.clear();
+	const int radius = kDiligentBlueNoiseKernelRadius;
+	const float sigma = kDiligentBlueNoiseKernelSigma;
+	for (int y = -radius; y <= radius; ++y)
+	{
+		for (int x = -radius; x <= radius; ++x)
+		{
+			const float dist_sq = static_cast<float>(x * x + y * y);
+			const float weight = std::exp(-dist_sq / (2.0f * sigma * sigma));
+			kernel.push_back({x, y, weight});
+		}
+	}
+}
+
+void diligent_compute_blue_noise_energy(
+	const std::vector<uint8_t>& mask,
+	int size,
+	const std::vector<DiligentBlueNoiseKernelEntry>& kernel,
+	std::vector<float>& energy)
+{
+	const int size_mask = size - 1;
+	energy.assign(mask.size(), 0.0f);
+
+	for (int y = 0; y < size; ++y)
+	{
+		for (int x = 0; x < size; ++x)
+		{
+			float sum = 0.0f;
+			for (const auto& entry : kernel)
+			{
+				const int sx = (x + entry.dx) & size_mask;
+				const int sy = (y + entry.dy) & size_mask;
+				sum += entry.weight * static_cast<float>(mask[sy * size + sx]);
+			}
+			energy[y * size + x] = sum;
+		}
+	}
+}
+
+int diligent_pick_blue_noise_index(
+	const std::vector<uint8_t>& mask,
+	const std::vector<float>& energy,
+	uint8_t target_value,
+	bool pick_max,
+	std::mt19937& rng)
+{
+	const float eps = 1e-6f;
+	float best_val = pick_max ? -std::numeric_limits<float>::infinity()
+		: std::numeric_limits<float>::infinity();
+	int best_index = -1;
+	int tie_count = 0;
+	std::uniform_int_distribution<int> dist;
+
+	for (size_t i = 0; i < mask.size(); ++i)
+	{
+		if (mask[i] != target_value)
+		{
+			continue;
+		}
+
+		const float val = energy[i];
+		const bool better = pick_max ? (val > best_val + eps) : (val < best_val - eps);
+		if (better)
+		{
+			best_val = val;
+			best_index = static_cast<int>(i);
+			tie_count = 1;
+		}
+		else if (std::fabs(val - best_val) <= eps)
+		{
+			++tie_count;
+			dist = std::uniform_int_distribution<int>(0, tie_count - 1);
+			if (dist(rng) == 0)
+			{
+				best_index = static_cast<int>(i);
+			}
+		}
+	}
+
+	return best_index;
+}
+
+void diligent_generate_blue_noise(std::vector<uint8_t>& out, int size)
+{
+	if (size <= 0)
+	{
+		out.clear();
+		return;
+	}
+
+	const int total = size * size;
+	const int ones_count = total / 2;
+	std::vector<uint8_t> mask(static_cast<size_t>(total), 0);
+
+	std::vector<int> indices(total);
+	for (int i = 0; i < total; ++i)
+	{
+		indices[i] = i;
+	}
+
+	std::mt19937 rng(1337);
+	std::shuffle(indices.begin(), indices.end(), rng);
+	for (int i = 0; i < ones_count; ++i)
+	{
+		mask[static_cast<size_t>(indices[i])] = 1;
+	}
+
+	std::vector<DiligentBlueNoiseKernelEntry> kernel;
+	diligent_build_blue_noise_kernel(kernel);
+	std::vector<float> energy(static_cast<size_t>(total), 0.0f);
+
+	const int relax_iterations = total;
+	for (int i = 0; i < relax_iterations; ++i)
+	{
+		diligent_compute_blue_noise_energy(mask, size, kernel, energy);
+		const int cluster_index = diligent_pick_blue_noise_index(mask, energy, 1, true, rng);
+		const int void_index = diligent_pick_blue_noise_index(mask, energy, 0, false, rng);
+		if (cluster_index < 0 || void_index < 0)
+		{
+			break;
+		}
+
+		if (energy[static_cast<size_t>(cluster_index)] <= energy[static_cast<size_t>(void_index)] + 1e-6f)
+		{
+			break;
+		}
+
+		mask[static_cast<size_t>(cluster_index)] = 0;
+		mask[static_cast<size_t>(void_index)] = 1;
+	}
+
+	std::vector<int> rank(static_cast<size_t>(total), -1);
+	std::vector<uint8_t> working_mask = mask;
+
+	for (int rank_value = ones_count - 1; rank_value >= 0; --rank_value)
+	{
+		diligent_compute_blue_noise_energy(working_mask, size, kernel, energy);
+		const int cluster_index = diligent_pick_blue_noise_index(working_mask, energy, 1, true, rng);
+		if (cluster_index < 0)
+		{
+			break;
+		}
+		working_mask[static_cast<size_t>(cluster_index)] = 0;
+		rank[static_cast<size_t>(cluster_index)] = rank_value;
+	}
+
+	for (int rank_value = ones_count; rank_value < total; ++rank_value)
+	{
+		diligent_compute_blue_noise_energy(working_mask, size, kernel, energy);
+		const int void_index = diligent_pick_blue_noise_index(working_mask, energy, 0, false, rng);
+		if (void_index < 0)
+		{
+			break;
+		}
+		working_mask[static_cast<size_t>(void_index)] = 1;
+		rank[static_cast<size_t>(void_index)] = rank_value;
+	}
+
+	out.resize(static_cast<size_t>(total));
+	const float denom = static_cast<float>(total - 1);
+	for (int i = 0; i < total; ++i)
+	{
+		const int value = std::clamp(rank[static_cast<size_t>(i)], 0, total - 1);
+		const float normalized = denom > 0.0f ? static_cast<float>(value) / denom : 0.0f;
+		out[static_cast<size_t>(i)] = static_cast<uint8_t>(std::round(normalized * 255.0f));
+	}
+}
+
+Diligent::ITextureView* diligent_get_blue_noise_texture_view()
+{
+	if (g_blue_noise_texture_srv)
+	{
+		return g_blue_noise_texture_srv;
+	}
+
+	if (!g_diligent_state.render_device)
+	{
+		return nullptr;
+	}
+
+	std::vector<uint8_t> noise_data;
+	diligent_generate_blue_noise(noise_data, kDiligentBlueNoiseSize);
+	if (noise_data.empty())
+	{
+		return nullptr;
+	}
+
+	Diligent::TextureDesc desc;
+	desc.Name = "ltjs_blue_noise";
+	desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	desc.Width = static_cast<uint32>(kDiligentBlueNoiseSize);
+	desc.Height = static_cast<uint32>(kDiligentBlueNoiseSize);
+	desc.MipLevels = 1;
+	desc.Format = Diligent::TEX_FORMAT_R8_UNORM;
+	desc.Usage = Diligent::USAGE_IMMUTABLE;
+	desc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+
+	Diligent::TextureSubResData subresource;
+	subresource.pData = noise_data.data();
+	subresource.Stride = kDiligentBlueNoiseSize * sizeof(uint8_t);
+	subresource.DepthStride = 0;
+
+	Diligent::TextureData init_data{&subresource, 1};
+	g_diligent_state.render_device->CreateTexture(desc, &init_data, &g_blue_noise_texture);
+	if (!g_blue_noise_texture)
+	{
+		return nullptr;
+	}
+
+	g_blue_noise_texture_srv = g_blue_noise_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	return g_blue_noise_texture_srv;
+}
+
 uint32 diligent_glow_truncate_to_power_of_two(uint32 value)
 {
 	uint32 nearest = 0x80000000u;
@@ -330,10 +592,11 @@ void diligent_ssao_build_kernel()
 		const float t = (static_cast<float>(index) + 0.5f) / static_cast<float>(kDiligentSsaoKernelSize);
 		const float radius = t * t;
 		const float angle = kDiligentSsaoGoldenAngle * static_cast<float>(index);
+		const float z = std::sqrt(std::max(0.0f, 1.0f - radius * radius));
 		g_diligent_ssao_state.resources.kernel[index] = {
 			std::cos(angle) * radius,
 			std::sin(angle) * radius,
-			0.0f,
+			z,
 			0.0f};
 	}
 	g_diligent_ssao_state.resources.kernel_ready = true;
@@ -395,6 +658,17 @@ bool diligent_ensure_ssao_resources()
 		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.composite_pixel_shader);
 	}
 
+	if (!g_diligent_ssao_state.resources.temporal_pixel_shader)
+	{
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.Name = "ltjs_ssao_temporal_ps";
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		shader_info.Desc = pixel_desc;
+		shader_info.EntryPoint = "PSMain";
+		shader_info.Source = diligent_get_ssao_temporal_pixel_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_diligent_ssao_state.resources.temporal_pixel_shader);
+	}
+
 	if (!g_diligent_ssao_state.resources.ssao_constants)
 	{
 		Diligent::BufferDesc desc;
@@ -428,15 +702,29 @@ bool diligent_ensure_ssao_resources()
 		g_diligent_state.render_device->CreateBuffer(desc, nullptr, &g_diligent_ssao_state.resources.composite_constants);
 	}
 
+	if (!g_diligent_ssao_state.resources.temporal_constants)
+	{
+		Diligent::BufferDesc desc;
+		desc.Name = "ltjs_ssao_temporal_constants";
+		desc.Size = sizeof(DiligentSsaoTemporalConstants);
+		desc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		desc.Usage = Diligent::USAGE_DYNAMIC;
+		desc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		g_diligent_state.render_device->CreateBuffer(desc, nullptr, &g_diligent_ssao_state.resources.temporal_constants);
+	}
+
 	return g_diligent_ssao_state.resources.vertex_shader && g_diligent_ssao_state.resources.ssao_pixel_shader &&
 		g_diligent_ssao_state.resources.blur_pixel_shader && g_diligent_ssao_state.resources.composite_pixel_shader &&
+		g_diligent_ssao_state.resources.temporal_pixel_shader &&
 		g_diligent_ssao_state.resources.ssao_constants && g_diligent_ssao_state.resources.blur_constants &&
-		g_diligent_ssao_state.resources.composite_constants;
+		g_diligent_ssao_state.resources.composite_constants && g_diligent_ssao_state.resources.temporal_constants;
 }
 
 void diligent_release_ssao_targets()
 {
 	g_diligent_ssao_state.targets = {};
+	g_diligent_ssao_state.history_valid = false;
+	g_diligent_ssao_state.has_prev_view_proj = false;
 }
 
 bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale, Diligent::TEXTURE_FORMAT color_format)
@@ -451,7 +739,8 @@ bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale,
 	const uint32 ao_height = std::max(1u, (height + downscale - 1) / downscale);
 
 	auto& targets = g_diligent_ssao_state.targets;
-	if (targets.scene_color && targets.scene_depth && targets.ao_texture && targets.ao_blur_texture &&
+	if (targets.scene_color && targets.scene_depth && targets.scene_depth_history &&
+		targets.ao_texture && targets.ao_blur_texture && targets.ao_history_texture &&
 		targets.scene_width == width && targets.scene_height == height &&
 		targets.ao_width == ao_width && targets.ao_height == ao_height &&
 		targets.downscale == downscale && targets.color_format == color_format)
@@ -509,6 +798,23 @@ bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale,
 		return false;
 	}
 
+	Diligent::TextureDesc depth_history_desc = depth_desc;
+	depth_history_desc.Name = "ltjs_ssao_scene_depth_history";
+	depth_history_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
+	g_diligent_state.render_device->CreateTexture(depth_history_desc, nullptr, &targets.scene_depth_history);
+	if (!targets.scene_depth_history)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.scene_depth_history_srv = targets.scene_depth_history->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.scene_depth_history_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
 	Diligent::TextureDesc ao_desc;
 	ao_desc.Name = "ltjs_ssao_ao";
 	ao_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
@@ -544,6 +850,22 @@ bool diligent_ensure_ssao_targets(uint32 width, uint32 height, uint32 downscale,
 	targets.ao_blur_rtv = targets.ao_blur_texture->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	targets.ao_blur_srv = targets.ao_blur_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	if (!targets.ao_blur_rtv || !targets.ao_blur_srv)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	ao_desc.Name = "ltjs_ssao_ao_history";
+	g_diligent_state.render_device->CreateTexture(ao_desc, nullptr, &targets.ao_history_texture);
+	if (!targets.ao_history_texture)
+	{
+		diligent_release_ssao_targets();
+		return false;
+	}
+
+	targets.ao_history_rtv = targets.ao_history_texture->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.ao_history_srv = targets.ao_history_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.ao_history_rtv || !targets.ao_history_srv)
 	{
 		diligent_release_ssao_targets();
 		return false;
@@ -717,7 +1039,8 @@ DiligentSsaoPipeline* diligent_get_ssao_pipeline(
 	const char* constants_name,
 	const Diligent::ShaderResourceVariableDesc* vars,
 	uint32 vars_count,
-	const Diligent::ImmutableSamplerDesc& sampler_desc,
+	const Diligent::ImmutableSamplerDesc* sampler_descs,
+	uint32 sampler_count,
 	Diligent::TEXTURE_FORMAT rtv_format,
 	Diligent::TEXTURE_FORMAT dsv_format)
 {
@@ -763,8 +1086,8 @@ DiligentSsaoPipeline* diligent_get_ssao_pipeline(
 	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 	pipeline_info.PSODesc.ResourceLayout.Variables = vars;
 	pipeline_info.PSODesc.ResourceLayout.NumVariables = vars_count;
-	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler_desc;
-	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = sampler_descs;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = sampler_count;
 
 	g_diligent_state.render_device->CreateGraphicsPipelineState(pipeline_info, &pipeline.pipeline_state);
 	if (!pipeline.pipeline_state)
@@ -855,6 +1178,28 @@ bool diligent_update_ssao_composite_constants(const DiligentSsaoCompositeConstan
 	}
 	std::memcpy(mapped_constants, &constants, sizeof(constants));
 	g_diligent_state.immediate_context->UnmapBuffer(g_diligent_ssao_state.resources.composite_constants, Diligent::MAP_WRITE);
+	return true;
+}
+
+bool diligent_update_ssao_temporal_constants(const DiligentSsaoTemporalConstants& constants)
+{
+	if (!g_diligent_state.immediate_context || !g_diligent_ssao_state.resources.temporal_constants)
+	{
+		return false;
+	}
+
+	void* mapped_constants = nullptr;
+	g_diligent_state.immediate_context->MapBuffer(
+		g_diligent_ssao_state.resources.temporal_constants,
+		Diligent::MAP_WRITE,
+		Diligent::MAP_FLAG_DISCARD,
+		mapped_constants);
+	if (!mapped_constants)
+	{
+		return false;
+	}
+	std::memcpy(mapped_constants, &constants, sizeof(constants));
+	g_diligent_state.immediate_context->UnmapBuffer(g_diligent_ssao_state.resources.temporal_constants, Diligent::MAP_WRITE);
 	return true;
 }
 
@@ -1177,6 +1522,8 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 	ssao_constants.near_z = g_diligent_state.view_params.m_NearZ;
 	ssao_constants.far_z = g_diligent_state.view_params.m_FarZ;
 	ssao_constants.sample_count = sample_count;
+	ssao_constants.noise_scale = std::max(0.0001f, g_CV_SSAONoiseScale.m_Val);
+	diligent_store_matrix_from_lt(g_diligent_state.view_params.m_mInvView, ssao_constants.inv_view);
 	for (int i = 0; i < sample_count; ++i)
 	{
 		const auto& sample = g_diligent_ssao_state.resources.kernel[static_cast<size_t>(i)];
@@ -1192,18 +1539,28 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 	}
 
 	Diligent::ShaderResourceVariableDesc ssao_vars[] = {
-		{Diligent::SHADER_TYPE_PIXEL, "g_DepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+		{Diligent::SHADER_TYPE_PIXEL, "g_DepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+		{Diligent::SHADER_TYPE_PIXEL, "g_BlueNoiseTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
 	};
 
-	Diligent::ImmutableSamplerDesc ssao_sampler;
-	ssao_sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
-	ssao_sampler.Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
-	ssao_sampler.Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
-	ssao_sampler.Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
-	ssao_sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-	ssao_sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	ssao_sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
-	ssao_sampler.SamplerOrTextureName = "g_DepthSampler";
+	Diligent::ImmutableSamplerDesc ssao_samplers[2];
+	ssao_samplers[0].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	ssao_samplers[0].Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[0].Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[0].Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_samplers[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_samplers[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	ssao_samplers[0].SamplerOrTextureName = "g_DepthSampler";
+
+	ssao_samplers[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	ssao_samplers[1].Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[1].Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[1].Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
+	ssao_samplers[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	ssao_samplers[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	ssao_samplers[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
+	ssao_samplers[1].SamplerOrTextureName = "g_BlueNoiseSampler";
 
 	auto* ssao_pipeline = diligent_get_ssao_pipeline(
 		g_diligent_ssao_state.resources.ssao_pipeline,
@@ -1213,12 +1570,27 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 		"SsaoConstants",
 		ssao_vars,
 		static_cast<uint32>(std::size(ssao_vars)),
-		ssao_sampler,
+		ssao_samplers,
+		static_cast<uint32>(std::size(ssao_samplers)),
 		kDiligentSsaoAoFormat,
 		Diligent::TEX_FORMAT_UNKNOWN);
 	if (!ssao_pipeline)
 	{
 		return false;
+	}
+
+	auto* noise_view = diligent_get_blue_noise_texture_view();
+	if (!noise_view)
+	{
+		noise_view = diligent_get_debug_white_texture_view();
+	}
+	if (noise_view)
+	{
+		auto* noise_var = ssao_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_BlueNoiseTex");
+		if (noise_var)
+		{
+			noise_var->Set(noise_view);
+		}
 	}
 
 	diligent_set_viewport(static_cast<float>(targets.ao_width), static_cast<float>(targets.ao_height));
@@ -1237,20 +1609,33 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 		blur_constants.texel_size[0] = targets.ao_width > 0 ? 1.0f / static_cast<float>(targets.ao_width) : 0.0f;
 		blur_constants.texel_size[1] = targets.ao_height > 0 ? 1.0f / static_cast<float>(targets.ao_height) : 0.0f;
 		blur_constants.radius = std::max(0.1f, g_CV_SSAOBlurRadius.m_Val);
+		blur_constants.near_z = g_diligent_state.view_params.m_NearZ;
+		blur_constants.far_z = g_diligent_state.view_params.m_FarZ;
+		blur_constants.depth_sigma = std::max(0.01f, g_CV_SSAOBlurDepthSigma.m_Val);
 
 		Diligent::ShaderResourceVariableDesc blur_vars[] = {
-			{Diligent::SHADER_TYPE_PIXEL, "g_AOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+			{Diligent::SHADER_TYPE_PIXEL, "g_AOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+			{Diligent::SHADER_TYPE_PIXEL, "g_DepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
 		};
 
-		Diligent::ImmutableSamplerDesc blur_sampler;
-		blur_sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
-		blur_sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
-		blur_sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
-		blur_sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		blur_sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-		blur_sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-		blur_sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
-		blur_sampler.SamplerOrTextureName = "g_AOSampler";
+		Diligent::ImmutableSamplerDesc blur_samplers[2];
+		blur_samplers[0].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+		blur_samplers[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_samplers[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_samplers[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+		blur_samplers[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[0].SamplerOrTextureName = "g_AOSampler";
+
+		blur_samplers[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+		blur_samplers[1].Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
+		blur_samplers[1].Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
+		blur_samplers[1].Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
+		blur_samplers[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+		blur_samplers[1].SamplerOrTextureName = "g_DepthSampler";
 
 		auto* blur_pipeline = diligent_get_ssao_pipeline(
 			g_diligent_ssao_state.resources.blur_pipeline,
@@ -1260,7 +1645,8 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 			"SsaoBlurConstants",
 			blur_vars,
 			static_cast<uint32>(std::size(blur_vars)),
-			blur_sampler,
+			blur_samplers,
+			static_cast<uint32>(std::size(blur_samplers)),
 			kDiligentSsaoAoFormat,
 			Diligent::TEX_FORMAT_UNKNOWN);
 		if (!blur_pipeline)
@@ -1275,6 +1661,12 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 			return false;
 		}
 
+		auto* blur_depth_var = blur_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_DepthTex");
+		if (blur_depth_var)
+		{
+			blur_depth_var->Set(targets.scene_depth_srv);
+		}
+
 		if (!diligent_draw_ssao_quad(blur_pipeline, "g_AOTex", ao_source_srv, ao_dest_rtv, nullptr))
 		{
 			return false;
@@ -1287,12 +1679,147 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 			return false;
 		}
 
+		if (blur_depth_var)
+		{
+			blur_depth_var->Set(targets.scene_depth_srv);
+		}
+
 		if (!diligent_draw_ssao_quad(blur_pipeline, "g_AOTex", targets.ao_blur_srv, targets.ao_rtv, nullptr))
 		{
 			return false;
 		}
 
 		ao_final_srv = targets.ao_srv;
+	}
+
+	const bool temporal_enabled = g_CV_SSAOTemporalEnable.m_Val != 0;
+	if (!temporal_enabled)
+	{
+		g_diligent_ssao_state.history_valid = false;
+	}
+
+	if (temporal_enabled && targets.ao_history_srv && targets.ao_history_rtv && targets.scene_depth_history_srv)
+	{
+		if (!g_diligent_ssao_state.history_valid || !g_diligent_ssao_state.has_prev_view_proj)
+		{
+			Diligent::CopyTextureAttribs copy_attribs;
+			copy_attribs.pSrcTexture = targets.ao_texture;
+			copy_attribs.pDstTexture = targets.ao_history_texture;
+			copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+			copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+			g_diligent_state.immediate_context->CopyTexture(copy_attribs);
+			g_diligent_ssao_state.history_valid = true;
+		}
+		else
+		{
+			DiligentSsaoTemporalConstants temporal_constants{};
+			temporal_constants.inv_target_size[0] = targets.ao_width > 0 ? 1.0f / static_cast<float>(targets.ao_width) : 0.0f;
+			temporal_constants.inv_target_size[1] = targets.ao_height > 0 ? 1.0f / static_cast<float>(targets.ao_height) : 0.0f;
+			temporal_constants.proj_scale[0] = proj_scale_x;
+			temporal_constants.proj_scale[1] = proj_scale_y;
+			temporal_constants.near_z = g_diligent_state.view_params.m_NearZ;
+			temporal_constants.far_z = g_diligent_state.view_params.m_FarZ;
+			temporal_constants.blend_factor = std::clamp(g_CV_SSAOTemporalBlend.m_Val, 0.0f, 0.95f);
+			temporal_constants.velocity_reject = std::max(0.0f, g_CV_SSAOTemporalVelocityReject.m_Val);
+			temporal_constants.depth_reject = std::max(0.0f, g_CV_SSAOTemporalDepthReject.m_Val);
+			temporal_constants.normal_reject = std::clamp(g_CV_SSAOTemporalNormalReject.m_Val, 0.0f, 0.99f);
+			temporal_constants.depth_texel_size[0] = targets.scene_width > 0
+				? 1.0f / static_cast<float>(targets.scene_width)
+				: 0.0f;
+			temporal_constants.depth_texel_size[1] = targets.scene_height > 0
+				? 1.0f / static_cast<float>(targets.scene_height)
+				: 0.0f;
+			diligent_store_matrix_from_lt(g_diligent_state.view_params.m_mInvView, temporal_constants.inv_view);
+			temporal_constants.prev_view_proj = g_diligent_ssao_state.prev_view_proj;
+
+			if (!diligent_update_ssao_temporal_constants(temporal_constants))
+			{
+				return false;
+			}
+
+			Diligent::ShaderResourceVariableDesc temporal_vars[] = {
+				{Diligent::SHADER_TYPE_PIXEL, "g_CurrentAOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+				{Diligent::SHADER_TYPE_PIXEL, "g_HistoryAOTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+				{Diligent::SHADER_TYPE_PIXEL, "g_DepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC},
+				{Diligent::SHADER_TYPE_PIXEL, "g_HistoryDepthTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+			};
+
+			Diligent::ImmutableSamplerDesc temporal_samplers[2];
+			temporal_samplers[0].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+			temporal_samplers[0].Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+			temporal_samplers[0].Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+			temporal_samplers[0].Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+			temporal_samplers[0].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[0].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[0].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[0].SamplerOrTextureName = "g_Sampler";
+
+			temporal_samplers[1].ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+			temporal_samplers[1].Desc.MinFilter = Diligent::FILTER_TYPE_POINT;
+			temporal_samplers[1].Desc.MagFilter = Diligent::FILTER_TYPE_POINT;
+			temporal_samplers[1].Desc.MipFilter = Diligent::FILTER_TYPE_POINT;
+			temporal_samplers[1].Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[1].Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[1].Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+			temporal_samplers[1].SamplerOrTextureName = "g_DepthSampler";
+
+			auto* temporal_pipeline = diligent_get_ssao_pipeline(
+				g_diligent_ssao_state.resources.temporal_pipeline,
+				"ltjs_ssao_temporal",
+				g_diligent_ssao_state.resources.temporal_pixel_shader,
+				g_diligent_ssao_state.resources.temporal_constants,
+				"SsaoTemporalConstants",
+				temporal_vars,
+				static_cast<uint32>(std::size(temporal_vars)),
+				temporal_samplers,
+				static_cast<uint32>(std::size(temporal_samplers)),
+				kDiligentSsaoAoFormat,
+				Diligent::TEX_FORMAT_UNKNOWN);
+			if (!temporal_pipeline)
+			{
+				return false;
+			}
+
+			auto* temporal_history_var = temporal_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_HistoryAOTex");
+			if (temporal_history_var)
+			{
+				temporal_history_var->Set(targets.ao_history_srv);
+			}
+			auto* temporal_history_depth_var = temporal_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_HistoryDepthTex");
+			if (temporal_history_depth_var)
+			{
+				temporal_history_depth_var->Set(targets.scene_depth_history_srv);
+			}
+			auto* temporal_depth_var = temporal_pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_DepthTex");
+			if (temporal_depth_var)
+			{
+				temporal_depth_var->Set(targets.scene_depth_srv);
+			}
+
+			if (!diligent_draw_ssao_quad(temporal_pipeline, "g_CurrentAOTex", ao_final_srv, targets.ao_blur_rtv, nullptr))
+			{
+				return false;
+			}
+
+			Diligent::CopyTextureAttribs copy_attribs;
+			copy_attribs.pSrcTexture = targets.ao_blur_texture;
+			copy_attribs.pDstTexture = targets.ao_history_texture;
+			copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+			copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+			g_diligent_state.immediate_context->CopyTexture(copy_attribs);
+
+			ao_final_srv = targets.ao_blur_srv;
+		}
+	}
+
+	if (temporal_enabled && targets.scene_depth && targets.scene_depth_history)
+	{
+		Diligent::CopyTextureAttribs depth_copy_attribs;
+		depth_copy_attribs.pSrcTexture = targets.scene_depth;
+		depth_copy_attribs.pDstTexture = targets.scene_depth_history;
+		depth_copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		depth_copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		g_diligent_state.immediate_context->CopyTexture(depth_copy_attribs);
 	}
 
 	Diligent::ShaderResourceVariableDesc composite_vars[] = {
@@ -1334,7 +1861,8 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 		"SsaoCompositeConstants",
 		composite_vars,
 		static_cast<uint32>(std::size(composite_vars)),
-		composite_sampler,
+		&composite_sampler,
+		1,
 		final_format,
 		final_depth_format);
 	if (!composite_pipeline)
@@ -1407,6 +1935,11 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 	draw_attribs.NumVertices = kVertexCount;
 	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 	g_diligent_state.immediate_context->Draw(draw_attribs);
+
+	LTMatrix current_view_proj = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView;
+	diligent_store_matrix_from_lt(current_view_proj, g_diligent_ssao_state.prev_view_proj);
+	g_diligent_ssao_state.has_prev_view_proj = true;
+
 	return true;
 }
 
@@ -2383,6 +2916,8 @@ void diligent_postfx_term()
 {
 	diligent_glow_free_targets();
 	g_diligent_glow_state.render_style_map.FreeList();
+	g_blue_noise_texture_srv.Release();
+	g_blue_noise_texture.Release();
 	g_debug_white_texture_srv.Release();
 	g_debug_white_texture.Release();
 	g_diligent_glow_blur_resources.vertex_shader.Release();
@@ -2397,14 +2932,18 @@ void diligent_postfx_term()
 	g_diligent_ssao_state.resources.ssao_pixel_shader.Release();
 	g_diligent_ssao_state.resources.blur_pixel_shader.Release();
 	g_diligent_ssao_state.resources.composite_pixel_shader.Release();
+	g_diligent_ssao_state.resources.temporal_pixel_shader.Release();
 	g_diligent_ssao_state.resources.ssao_constants.Release();
 	g_diligent_ssao_state.resources.blur_constants.Release();
 	g_diligent_ssao_state.resources.composite_constants.Release();
+	g_diligent_ssao_state.resources.temporal_constants.Release();
 	g_diligent_ssao_state.resources.ssao_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.ssao_pipeline.pipeline_state.Release();
 	g_diligent_ssao_state.resources.blur_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.blur_pipeline.pipeline_state.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
+	g_diligent_ssao_state.resources.temporal_pipeline.srb.Release();
+	g_diligent_ssao_state.resources.temporal_pipeline.pipeline_state.Release();
 	g_diligent_aa_targets = {};
 }

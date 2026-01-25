@@ -49,6 +49,7 @@ set (diligent_shader_sources
 	diligent_get_ssao_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_ps.hlsl
 	diligent_get_ssao_blur_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
 	diligent_get_ssao_composite_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
+	diligent_get_ssao_temporal_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
 	diligent_get_world_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	diligent_get_world_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	diligent_get_world_pixel_shader_glow_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
@@ -79,6 +80,7 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
