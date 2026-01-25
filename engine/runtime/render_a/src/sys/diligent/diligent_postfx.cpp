@@ -229,6 +229,7 @@ struct DiligentAaTargets
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> color_resolve_srv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> depth_resolve;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_resolve_dsv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_resolve_srv;
 	uint32 width = 0;
 	uint32 height = 0;
 	uint32 sample_count = 1;
@@ -986,20 +987,35 @@ bool diligent_ensure_aa_targets(
 	}
 
 	Diligent::TextureDesc depth_desc;
-	depth_desc.Name = "ltjs_aa_depth";
+	depth_desc.Name = "ltjs_aa_depth_resolve";
 	depth_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
 	depth_desc.Width = width;
 	depth_desc.Height = height;
 	depth_desc.MipLevels = 1;
 	depth_desc.Format = depth_format;
 	depth_desc.Usage = Diligent::USAGE_DEFAULT;
-	depth_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+	depth_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
+	depth_desc.SampleCount = 1;
+	g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.depth_resolve);
+	if (!targets.depth_resolve)
+	{
+		return false;
+	}
+
+	targets.depth_resolve_dsv = targets.depth_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	targets.depth_resolve_srv = targets.depth_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.depth_resolve_dsv || !targets.depth_resolve_srv)
+	{
+		return false;
+	}
 
 	if (sample_count > 1)
 	{
-		depth_desc.Name = "ltjs_aa_depth_msaa";
-		depth_desc.SampleCount = sample_count;
-		g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.depth_msaa);
+		Diligent::TextureDesc depth_msaa_desc = depth_desc;
+		depth_msaa_desc.Name = "ltjs_aa_depth_msaa";
+		depth_msaa_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+		depth_msaa_desc.SampleCount = sample_count;
+		g_diligent_state.render_device->CreateTexture(depth_msaa_desc, nullptr, &targets.depth_msaa);
 		if (!targets.depth_msaa)
 		{
 			return false;
@@ -1007,21 +1023,6 @@ bool diligent_ensure_aa_targets(
 
 		targets.depth_msaa_dsv = targets.depth_msaa->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 		if (!targets.depth_msaa_dsv)
-		{
-			return false;
-		}
-	}
-	else
-	{
-		depth_desc.SampleCount = 1;
-		g_diligent_state.render_device->CreateTexture(depth_desc, nullptr, &targets.depth_resolve);
-		if (!targets.depth_resolve)
-		{
-			return false;
-		}
-
-		targets.depth_resolve_dsv = targets.depth_resolve->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-		if (!targets.depth_resolve_dsv)
 		{
 			return false;
 		}
@@ -1373,6 +1374,22 @@ bool diligent_apply_antialiasing(const DiligentAaContext& ctx)
 			g_diligent_aa_targets.color_msaa,
 			g_diligent_aa_targets.color_resolve,
 			resolve_attribs);
+	}
+
+	if (ctx.msaa_active && g_diligent_aa_targets.depth_msaa && g_diligent_aa_targets.depth_resolve)
+	{
+		Diligent::ResolveTextureSubresourceAttribs resolve_attribs;
+		resolve_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		resolve_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		g_diligent_state.immediate_context->ResolveTextureSubresource(
+			g_diligent_aa_targets.depth_msaa,
+			g_diligent_aa_targets.depth_resolve,
+			resolve_attribs);
+	}
+
+	if (ctx.defer_copy)
+	{
+		return true;
 	}
 
 	if (ctx.msaa_active)
@@ -1941,6 +1958,77 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 	g_diligent_ssao_state.has_prev_view_proj = true;
 
 	return true;
+}
+
+bool diligent_apply_ssao_resolved(const DiligentAaContext& ctx)
+{
+	if (!ctx.active || !g_diligent_state.immediate_context)
+	{
+		return true;
+	}
+
+	auto* color_srv = g_diligent_aa_targets.color_resolve_srv.RawPtr();
+	auto* depth_srv = g_diligent_aa_targets.depth_resolve_srv.RawPtr();
+	if (!color_srv || !depth_srv)
+	{
+		return false;
+	}
+
+	auto* color_texture = color_srv->GetTexture();
+	auto* depth_texture = depth_srv->GetTexture();
+	if (!color_texture || !depth_texture)
+	{
+		return false;
+	}
+
+	const auto color_desc = color_texture->GetDesc();
+	const auto depth_desc = depth_texture->GetDesc();
+	if (color_desc.Width == 0 || color_desc.Height == 0 ||
+		color_desc.Width != depth_desc.Width || color_desc.Height != depth_desc.Height)
+	{
+		return false;
+	}
+
+	const uint32 downscale = static_cast<uint32>(std::max(1, g_CV_SSAODownscale.m_Val));
+	if (!diligent_ensure_ssao_resources() ||
+		!diligent_ensure_ssao_targets(color_desc.Width, color_desc.Height, downscale, color_desc.Format))
+	{
+		return false;
+	}
+
+	auto& targets = g_diligent_ssao_state.targets;
+	if (!targets.scene_color || !targets.scene_depth)
+	{
+		return false;
+	}
+
+	const auto scene_color_desc = targets.scene_color->GetDesc();
+	const auto scene_depth_desc = targets.scene_depth->GetDesc();
+	if (scene_color_desc.Format != color_desc.Format ||
+		scene_depth_desc.Format != depth_desc.Format)
+	{
+		return false;
+	}
+
+	Diligent::CopyTextureAttribs copy_color;
+	copy_color.pSrcTexture = color_texture;
+	copy_color.pDstTexture = targets.scene_color.RawPtr();
+	copy_color.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	copy_color.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	g_diligent_state.immediate_context->CopyTexture(copy_color);
+
+	Diligent::CopyTextureAttribs copy_depth;
+	copy_depth.pSrcTexture = depth_texture;
+	copy_depth.pDstTexture = targets.scene_depth.RawPtr();
+	copy_depth.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	copy_depth.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	g_diligent_state.immediate_context->CopyTexture(copy_depth);
+
+	DiligentSsaoContext ssao_ctx{};
+	ssao_ctx.active = true;
+	ssao_ctx.final_render_target = ctx.final_render_target;
+	ssao_ctx.final_depth_target = ctx.final_depth_target;
+	return diligent_apply_ssao(ssao_ctx);
 }
 
 /// \brief Restores render targets after SSAO capture/composite.

@@ -2,6 +2,7 @@
 
 #include "diligent_debug_draw.h"
 #include "diligent_device.h"
+#include "diligent_render.h"
 #include "diligent_state.h"
 #include "diligent_object_draw.h"
 #include "diligent_postfx.h"
@@ -95,8 +96,13 @@ int diligent_RenderScene(SceneDesc* desc)
 	}
 
 	const uint32 msaa_samples = diligent_get_msaa_samples();
+	const bool ssao_msaa = (msaa_samples > 0 && g_CV_SSAOEnable.m_Val != 0);
 	DiligentSsaoContext ssao_ctx{};
 	const bool ssao_active = (msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
+	if (aa_active && ssao_msaa)
+	{
+		aa_ctx.defer_copy = true;
+	}
 
 	diligent_collect_visible_render_blocks(g_diligent_state.view_params);
 
@@ -275,13 +281,36 @@ int diligent_RenderScene(SceneDesc* desc)
 		diligent_end_ssao(ssao_ctx);
 	}
 
-	diligent_render_screen_glow(desc);
-
-	if (aa_active)
+	if (ssao_msaa && aa_active)
 	{
 		if (!diligent_apply_antialiasing(aa_ctx))
 		{
 			return RENDER_ERROR;
+		}
+
+		if (!diligent_apply_ssao_resolved(aa_ctx))
+		{
+			DiligentAaContext copy_ctx = aa_ctx;
+			copy_ctx.defer_copy = false;
+			if (!diligent_apply_antialiasing(copy_ctx))
+			{
+				return RENDER_ERROR;
+			}
+		}
+
+		diligent_SetOutputTargets(aa_ctx.final_render_target, aa_ctx.final_depth_target);
+	}
+
+	diligent_render_screen_glow(desc);
+
+	if (aa_active)
+	{
+		if (!ssao_msaa)
+		{
+			if (!diligent_apply_antialiasing(aa_ctx))
+			{
+				return RENDER_ERROR;
+			}
 		}
 		diligent_end_antialiasing(aa_ctx);
 		aa_scope.Dismiss();

@@ -34,6 +34,7 @@ struct DiligentAaContext
 {
 	bool active = false;
 	bool msaa_active = false;
+	bool defer_copy = false;
 	Diligent::ITextureView* prev_render_target = nullptr;
 	Diligent::ITextureView* prev_depth_target = nullptr;
 	Diligent::ITextureView* final_render_target = nullptr;
@@ -55,6 +56,8 @@ bool diligent_begin_antialiasing(SceneDesc* desc, DiligentAaContext& ctx);
 bool diligent_apply_antialiasing(const DiligentAaContext& ctx);
 /// \brief Ends AA rendering and restores prior render targets.
 void diligent_end_antialiasing(const DiligentAaContext& ctx);
+/// \brief Applies SSAO using MSAA-resolved color/depth inputs.
+bool diligent_apply_ssao_resolved(const DiligentAaContext& ctx);
 /// \brief Begins SSAO rendering and redirects output to SSAO targets.
 /// \details On success, the caller should render the scene into the SSAO
 ///          targets and then call diligent_apply_ssao/diligent_end_ssao.
