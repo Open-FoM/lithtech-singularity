@@ -2,6 +2,8 @@
 
 #include "imgui.h"
 
+#include <string>
+
 struct ViewportPanelState
 {
 	bool initialized = false;
@@ -65,6 +67,7 @@ struct ViewportPanelState
 	bool render_draw_line_systems = true;
 	bool render_draw_canvases = true;
 	bool render_draw_sky = true;
+	std::string sky_world_model;
 	bool render_wireframe_world = false;
 	bool render_wireframe_models = false;
 	int render_world_shading_mode = 0;

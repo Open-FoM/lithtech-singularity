@@ -325,7 +325,14 @@ void CTextureScriptInterpreter::Evaluate(const CTextureScriptEvaluateVars& Vars,
 
 	//load the level offset variables into the appropriate slots
 	LTVector vSourceWorldOffset;
-	g_pILTClient->GetSourceWorldOffset(vSourceWorldOffset);
+	if (g_pILTClient)
+	{
+		g_pILTClient->GetSourceWorldOffset(vSourceWorldOffset);
+	}
+	else
+	{
+		vSourceWorldOffset.Init();
+	}
 
 	m_fVarList[TSVAR_LEVELOFFSETX]	= vSourceWorldOffset.x;
 	m_fVarList[TSVAR_LEVELOFFSETY]	= vSourceWorldOffset.y;

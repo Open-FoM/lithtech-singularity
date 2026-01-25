@@ -347,18 +347,71 @@ bool TryGetRawPropertyString(const NodeProperties& props, const char* key, std::
 	return false;
 }
 
+bool TryGetRawPropertyStringAny(
+	const NodeProperties& props,
+	const std::initializer_list<const char*>& keys,
+	std::string& out)
+{
+	for (const char* key : keys)
+	{
+		if (TryGetRawPropertyString(props, key, out))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool IsSkyNode(const NodeProperties& props)
 {
 	const std::string type = LowerCopy(props.type);
 	const std::string cls = LowerCopy(props.class_name);
-	return type == "sky" ||
+	if (type == "sky" ||
 		cls == "sky" ||
 		type == "skyobject" ||
 		cls == "skyobject" ||
 		type == "demoskyworldmodel" ||
 		cls == "demoskyworldmodel" ||
 		type == "skypointer" ||
-		cls == "skypointer";
+		cls == "skypointer")
+	{
+		return true;
+	}
+
+	if (type.find("sky") != std::string::npos || cls.find("sky") != std::string::npos)
+	{
+		return true;
+	}
+
+	std::string unused;
+	return TryGetRawPropertyStringAny(props, {"objectname", "skyobject", "skyobjectname"}, unused);
+}
+
+bool IsSkyPointerNode(const NodeProperties& props)
+{
+	const std::string type = LowerCopy(props.type);
+	const std::string cls = LowerCopy(props.class_name);
+	return type == "skypointer" || cls == "skypointer";
+}
+
+bool SkyTargetMatchesWorldName(const std::string& target, const std::string& world_name)
+{
+	const std::string target_lower = LowerCopy(target);
+	const std::string name_lower = LowerCopy(world_name);
+	if (target_lower.empty() || name_lower.empty())
+	{
+		return false;
+	}
+	if (name_lower == target_lower)
+	{
+		return true;
+	}
+	if (name_lower.rfind(target_lower, 0) != 0)
+	{
+		return false;
+	}
+	const char next = name_lower.size() > target_lower.size() ? name_lower[target_lower.size()] : '\0';
+	return next == '\0' || next == '_' || next == '-' || std::isspace(static_cast<unsigned char>(next));
 }
 
 std::string GuessSkyWorldModelName(
@@ -366,9 +419,10 @@ std::string GuessSkyWorldModelName(
 	const NodeProperties& props)
 {
 	std::string value;
-	if (TryGetRawPropertyString(props, "objectname", value) ||
-		TryGetRawPropertyString(props, "worldmodel", value) ||
-		TryGetRawPropertyString(props, "worldmodelname", value))
+	if (TryGetRawPropertyStringAny(
+			props,
+			{"objectname", "worldmodel", "worldmodelname", "model", "modelname", "filename"},
+			value))
 	{
 		return value;
 	}
@@ -379,6 +433,32 @@ std::string GuessSkyWorldModelName(
 	}
 
 	if (!node.name.empty() && node.name != "Node" && node.name != "World")
+	{
+		return TrimQuotes(node.name);
+	}
+
+	return {};
+}
+
+std::string GuessWorldModelNameForObject(
+	const TreeNode& node,
+	const NodeProperties& props)
+{
+	std::string value;
+	if (TryGetRawPropertyStringAny(
+			props,
+			{"worldmodel", "worldmodelname", "model", "modelname", "filename"},
+			value))
+	{
+		return value;
+	}
+
+	if (!props.resource.empty())
+	{
+		return TrimQuotes(props.resource);
+	}
+
+	if (!node.name.empty())
 	{
 		return TrimQuotes(node.name);
 	}
@@ -546,8 +626,8 @@ bool IsLightIconOccluded(
 	const Diligent::float3 dir(to_light.x * inv_dist, to_light.y * inv_dist, to_light.z * inv_dist);
 	const PickRay ray{cam_pos, dir};
 	const float occlusion_epsilon = 0.1f;
-
 	const size_t count = std::min(nodes.size(), props.size());
+
 	for (size_t i = 0; i < count; ++i)
 	{
 		if (static_cast<int>(i) == light_id)
@@ -1436,23 +1516,28 @@ struct DiligentContext
 	bool grid_ready = false;
 	std::vector<std::unique_ptr<WorldModelInstance>> sky_world_models;
 	std::vector<LTObject*> sky_objects;
+	std::vector<std::string> sky_world_model_names;
 };
 
 void BuildSkyWorldModels(
 	DiligentContext& ctx,
 	const std::vector<TreeNode>& nodes,
-	const std::vector<NodeProperties>& props)
+	const std::vector<NodeProperties>& props,
+	const std::string& selection)
 {
 	ctx.sky_world_models.clear();
 	ctx.sky_objects.clear();
+	ctx.sky_world_model_names.clear();
 
 	if (ctx.engine.world_bsp_model_ptrs.empty())
 	{
 		return;
 	}
 
-	std::unordered_map<std::string, WorldBsp*> world_by_name;
+	std::unordered_map<std::string, std::vector<WorldBsp*>> world_by_name;
 	world_by_name.reserve(ctx.engine.world_bsp_model_ptrs.size());
+	std::vector<std::string> world_model_names;
+	world_model_names.reserve(ctx.engine.world_bsp_model_ptrs.size());
 	for (auto* bsp : ctx.engine.world_bsp_model_ptrs)
 	{
 		if (!bsp)
@@ -1462,12 +1547,34 @@ void BuildSkyWorldModels(
 		const std::string name = TrimQuotes(bsp->m_WorldName);
 		if (!name.empty())
 		{
-			world_by_name.emplace(LowerCopy(name), bsp);
+			world_by_name[LowerCopy(name)].push_back(bsp);
+			world_model_names.push_back(name);
 		}
 	}
 
 	std::unordered_set<WorldBsp*> used;
 	used.reserve(world_by_name.size());
+
+	std::unordered_map<std::string, std::string> object_to_world;
+	object_to_world.reserve(nodes.size());
+	const size_t map_count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < map_count; ++i)
+	{
+		if (nodes[i].deleted)
+		{
+			continue;
+		}
+		if (nodes[i].name.empty())
+		{
+			continue;
+		}
+		const std::string target = GuessWorldModelNameForObject(nodes[i], props[i]);
+		if (target.empty())
+		{
+			continue;
+		}
+		object_to_world.emplace(LowerCopy(TrimQuotes(nodes[i].name)), LowerCopy(target));
+	}
 
 	auto add_world_model = [&](WorldBsp* bsp, const NodeProperties* props_source)
 	{
@@ -1495,6 +1602,104 @@ void BuildSkyWorldModels(
 	};
 
 	const size_t count = std::min(nodes.size(), props.size());
+	bool has_sky_pointer = false;
+	std::vector<std::string> sky_pointer_targets;
+	sky_pointer_targets.reserve(count);
+	std::unordered_set<std::string> sky_pointer_seen;
+	sky_pointer_seen.reserve(count);
+	for (size_t i = 0; i < count; ++i)
+	{
+		if (nodes[i].deleted)
+		{
+			continue;
+		}
+		if (!IsSkyPointerNode(props[i]))
+		{
+			continue;
+		}
+		has_sky_pointer = true;
+		std::string target;
+		if (!TryGetRawPropertyStringAny(props[i], {"objectname", "skyobject", "skyobjectname"}, target))
+		{
+			continue;
+		}
+		if (!target.empty())
+		{
+			const std::string normalized = LowerCopy(target);
+			if (sky_pointer_seen.insert(normalized).second)
+			{
+				sky_pointer_targets.push_back(target);
+			}
+		}
+	}
+	if (!sky_pointer_targets.empty())
+	{
+		DEdit2_Log("[Sky] SkyPointer targets: %zu", sky_pointer_targets.size());
+		for (const auto& target : sky_pointer_targets)
+		{
+			DEdit2_Log("[Sky]   target: %s", target.c_str());
+		}
+	}
+	for (const auto& entry : world_by_name)
+	{
+		if (entry.second.size() > 1)
+		{
+			DEdit2_Log("[Sky] Duplicate world model '%s': %zu", entry.first.c_str(), entry.second.size());
+		}
+	}
+	ctx.sky_world_model_names = sky_pointer_targets;
+	if (ctx.sky_world_model_names.empty())
+	{
+		ctx.sky_world_model_names = world_model_names;
+	}
+
+	auto resolve_target_to_world = [&](const std::string& target) -> WorldBsp*
+	{
+		for (const auto& name : world_model_names)
+		{
+			if (SkyTargetMatchesWorldName(target, name))
+			{
+				auto it = world_by_name.find(LowerCopy(name));
+				if (it != world_by_name.end() && !it->second.empty())
+				{
+					return it->second.front();
+				}
+			}
+		}
+		auto it = world_by_name.find(LowerCopy(target));
+		if (it != world_by_name.end() && !it->second.empty())
+		{
+			return it->second.front();
+		}
+		return nullptr;
+	};
+
+	DEdit2_Log("[Sky] Sky objects built: %zu (selection=%s)",
+		ctx.sky_objects.size(),
+		selection.empty() ? "Auto" : selection.c_str());
+
+	if (!selection.empty())
+	{
+		if (WorldBsp* selected = resolve_target_to_world(selection))
+		{
+			ctx.sky_world_models.clear();
+			ctx.sky_objects.clear();
+			add_world_model(selected, nullptr);
+		}
+		return;
+	}
+
+	if (has_sky_pointer && !sky_pointer_targets.empty())
+	{
+		if (WorldBsp* selected = resolve_target_to_world(sky_pointer_targets.front()))
+		{
+			ctx.sky_world_models.clear();
+			ctx.sky_objects.clear();
+			add_world_model(selected, nullptr);
+		}
+		return;
+	}
+
 	for (size_t i = 0; i < count; ++i)
 	{
 		if (nodes[i].deleted)
@@ -1506,17 +1711,89 @@ void BuildSkyWorldModels(
 			continue;
 		}
 
-		const std::string target = GuessSkyWorldModelName(nodes[i], props[i]);
-		if (target.empty())
+		std::string target = GuessSkyWorldModelName(nodes[i], props[i]);
+		if (!target.empty())
+		{
+			const std::string target_lower = LowerCopy(target);
+			if (WorldBsp* selected = resolve_target_to_world(target))
+			{
+				add_world_model(selected, &props[i]);
+				continue;
+			}
+			auto ref = object_to_world.find(target_lower);
+			if (ref != object_to_world.end())
+			{
+				if (WorldBsp* selected = resolve_target_to_world(ref->second))
+				{
+					add_world_model(selected, &props[i]);
+					continue;
+				}
+			}
+		}
+
+		std::string object_ref;
+		if (TryGetRawPropertyStringAny(props[i], {"objectname", "skyobject", "skyobjectname"}, object_ref))
+		{
+			const std::string object_lower = LowerCopy(object_ref);
+			auto ref = object_to_world.find(object_lower);
+			if (ref != object_to_world.end())
+			{
+				auto obj_it = world_by_name.find(ref->second);
+				if (obj_it != world_by_name.end())
+				{
+					for (auto* bsp : obj_it->second)
+					{
+						add_world_model(bsp, &props[i]);
+					}
+					continue;
+				}
+			}
+		}
+
+		if (!target.empty())
+		{
+			if (WorldBsp* selected = resolve_target_to_world(target))
+			{
+				add_world_model(selected, &props[i]);
+			}
+		}
+	}
+
+	if (!ctx.sky_objects.empty())
+	{
+		return;
+	}
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		if (nodes[i].deleted)
+		{
+			continue;
+		}
+		const std::string type = LowerCopy(props[i].type);
+		const std::string cls = LowerCopy(props[i].class_name);
+		const std::string name = LowerCopy(TrimQuotes(nodes[i].name));
+		const bool is_translucent_world_model =
+			type.find("translucentworldmodel") != std::string::npos ||
+			cls.find("translucentworldmodel") != std::string::npos;
+		const bool looks_like_sky_name = name.rfind("sl_", 0) == 0;
+		if (!is_translucent_world_model && !looks_like_sky_name)
 		{
 			continue;
 		}
 
-		const std::string target_lower = LowerCopy(target);
-		auto it = world_by_name.find(target_lower);
-		if (it != world_by_name.end())
+		std::string target = GuessWorldModelNameForObject(nodes[i], props[i]);
+		if (target.empty())
 		{
-			add_world_model(it->second, &props[i]);
+			target = nodes[i].name;
+		}
+		if (target.empty())
+		{
+			continue;
+		}
+		if (WorldBsp* selected = resolve_target_to_world(target))
+		{
+			add_world_model(selected, &props[i]);
 		}
 	}
 
@@ -1531,7 +1808,10 @@ void BuildSkyWorldModels(
 		{
 			continue;
 		}
-		add_world_model(entry.second, nullptr);
+		if (!entry.second.empty())
+		{
+			add_world_model(entry.second.front(), nullptr);
+		}
 	}
 }
 
@@ -1680,28 +1960,9 @@ void RenderViewport(
 		scene.m_SkyObjects = ctx.sky_objects.empty() ? nullptr : ctx.sky_objects.data();
 		scene.m_nSkyObjects = static_cast<int>(ctx.sky_objects.size());
 
-		std::vector<LTObject*> object_list;
-		if (!dynamic_lights.empty())
-		{
-			object_list.reserve(object_list.size() + dynamic_lights.size());
-			for (DynamicLight& light : dynamic_lights)
-			{
-				object_list.push_back(static_cast<LTObject*>(&light));
-			}
-		}
-
-		if (!object_list.empty())
-		{
-			scene.m_DrawMode = DRAWMODE_OBJECTLIST;
-			scene.m_pObjectList = object_list.data();
-			scene.m_ObjectListSize = static_cast<int>(object_list.size());
-		}
-		else
-		{
-			scene.m_DrawMode = DRAWMODE_NORMAL;
-			scene.m_pObjectList = nullptr;
-			scene.m_ObjectListSize = 0;
-		}
+		scene.m_DrawMode = DRAWMODE_NORMAL;
+		scene.m_pObjectList = nullptr;
+		scene.m_ObjectListSize = 0;
 
 		if (ctx.engine.render_struct->Start3D)
 		{
@@ -1945,7 +2206,7 @@ int main(int argc, char** argv)
 		}
 
 		// Sync model instances with the scene tree for rendering
-		BuildSkyWorldModels(diligent, scene_nodes, scene_props);
+		BuildSkyWorldModels(diligent, scene_nodes, scene_props, viewport_panel.sky_world_model);
 	};
 
 	if (!world_file.empty())
@@ -2356,6 +2617,44 @@ int main(int argc, char** argv)
 						ImGui::Checkbox("Line Systems", &viewport_panel.render_draw_line_systems);
 						ImGui::Checkbox("Canvases", &viewport_panel.render_draw_canvases);
 						ImGui::Checkbox("Sky", &viewport_panel.render_draw_sky);
+						if (!viewport_panel.render_draw_sky || diligent.sky_world_model_names.empty())
+						{
+							ImGui::BeginDisabled();
+						}
+						const char* current_sky = viewport_panel.sky_world_model.empty()
+							? "Auto"
+							: viewport_panel.sky_world_model.c_str();
+						if (ImGui::BeginCombo("Sky Model", current_sky))
+						{
+							const bool auto_selected = viewport_panel.sky_world_model.empty();
+							if (ImGui::Selectable("Auto", auto_selected))
+							{
+								viewport_panel.sky_world_model.clear();
+								BuildSkyWorldModels(diligent, scene_nodes, scene_props, viewport_panel.sky_world_model);
+							}
+							if (auto_selected)
+							{
+								ImGui::SetItemDefaultFocus();
+							}
+							for (const auto& name : diligent.sky_world_model_names)
+							{
+								const bool selected = (viewport_panel.sky_world_model == name);
+								if (ImGui::Selectable(name.c_str(), selected))
+								{
+									viewport_panel.sky_world_model = name;
+									BuildSkyWorldModels(diligent, scene_nodes, scene_props, viewport_panel.sky_world_model);
+								}
+								if (selected)
+								{
+									ImGui::SetItemDefaultFocus();
+								}
+							}
+							ImGui::EndCombo();
+						}
+						if (!viewport_panel.render_draw_sky || diligent.sky_world_model_names.empty())
+						{
+							ImGui::EndDisabled();
+						}
 						ImGui::EndTabItem();
 					}
 
