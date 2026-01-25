@@ -1496,6 +1496,12 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx)
 		return true;
 	}
 
+	g_diligent_state.immediate_context->SetRenderTargets(
+		0,
+		nullptr,
+		nullptr,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
+
 	auto& targets = g_diligent_ssao_state.targets;
 	if (!targets.scene_color_srv || !targets.scene_depth_srv || !targets.ao_rtv || !targets.ao_srv ||
 		!targets.ao_blur_rtv || !targets.ao_blur_srv)
@@ -2216,6 +2222,12 @@ bool diligent_draw_glow_blur_quad(
 	draw_attribs.NumVertices = kVertexCount;
 	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 	g_diligent_state.immediate_context->Draw(draw_attribs);
+
+	g_diligent_state.immediate_context->SetRenderTargets(
+		0,
+		nullptr,
+		nullptr,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
 	return true;
 }
 
