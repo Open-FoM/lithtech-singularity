@@ -152,7 +152,7 @@ functionality.
 
 class ILTServer : public ILTCSBase {
 public:
-    interface_version_derived(ILTServer, ILTCSBase, 4);
+    interface_version_derived(ILTServer, ILTCSBase, 5);
     
     
 
@@ -1117,6 +1117,19 @@ Used for: Object.
 /*!
 \param hObj Object to modify.
 
+\param pName New name. Use "" to clear the name.
+
+\return LT_INVALIDPARAMS if hObj or pName is invalid, else LT_OK
+
+Set the name of an object.
+
+Used for: Object.
+*/
+    virtual LTRESULT SetObjectName(HOBJECT hObj, const char *pName)=0;
+
+/*!
+\param hObj Object to modify.
+
 \param nextUpdate Next update time.
 
 This is a counter that controls when each object has its Update()
@@ -1920,7 +1933,6 @@ Used for: Special FX.
 };
 
 #endif  //! __ILTSERVER_H__
-
 
 
 

@@ -306,6 +306,7 @@ public:
 	virtual LTRESULT GetObjectPos(HOBJECT hObj, LTVector* pPos);
 	virtual LTRESULT GetObjectRotation(HOBJECT hObj, LTRotation* pRot);
 	virtual LTRESULT GetObjectName(HOBJECT pObj, char *pBuf, uint32 bufSize);
+	virtual LTRESULT SetObjectName(HOBJECT hObj, const char *pName);
 
 	virtual LTRESULT SendToClient(ILTMessage_Read *pMsg, HCLIENT hSendTo, uint32 flags);
 	virtual LTRESULT SendToObject(ILTMessage_Read *pMsg, HOBJECT hSender, HOBJECT hSendTo, uint32 flags);
@@ -1211,6 +1212,42 @@ LTRESULT CLTServer::GetObjectName(HOBJECT pObj, char *pBuf, uint32 bufSize)
 	else
 	{
 		pBuf[0] = 0;
+	}
+
+	return LT_OK;
+}
+
+LTRESULT CLTServer::SetObjectName(HOBJECT hObj, const char *pName)
+{
+	FN_NAME(CLTServer::SetObjectName);
+	CHECK_PARAMS2(hObj && pName);
+
+	if (pName[0] == '\0')
+	{
+		if (hObj->sd->m_hName)
+		{
+			hs_RemoveElement(g_pServerMgr->m_hNameTable, hObj->sd->m_hName);
+			hObj->sd->m_hName = LTNULL;
+		}
+		return LT_OK;
+	}
+
+	if (hObj->sd->m_hName)
+	{
+		const char *pExistingName = (const char*)hs_GetElementKey(hObj->sd->m_hName, LTNULL);
+		if (pExistingName && strcmp(pExistingName, pName) == 0)
+		{
+			return LT_OK;
+		}
+
+		hs_RemoveElement(g_pServerMgr->m_hNameTable, hObj->sd->m_hName);
+		hObj->sd->m_hName = LTNULL;
+	}
+
+	hObj->sd->m_hName = hs_AddElement(g_pServerMgr->m_hNameTable, pName, strlen(pName) + 1);
+	if (hObj->sd->m_hName)
+	{
+		hs_SetElementUserData(hObj->sd->m_hName, hObj);
 	}
 
 	return LT_OK;
@@ -3167,4 +3204,3 @@ void CLTServer::SetupFunctionPointers()
 	GetFileList = si_GetFileList;
 	FreeFileList = ic_FreeFileList;
 }
-
