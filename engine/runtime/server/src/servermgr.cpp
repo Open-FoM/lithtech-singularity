@@ -35,6 +35,7 @@
 #include "serverde_impl.h"
 #include "smoveabstract.h"
 #include "ltmessage_server.h"
+#include "ltnetwork_hooks.h"
 #include "server_filemgr.h"
 #include "s_client.h"
 #include "serverevent.h"
@@ -398,6 +399,15 @@ CServerMgr::CServerMgr() :
 { 
 } // CServerMgr constructor
 
+static void LTNet_ServerPacketInjector(const CPacket_Read &packet, const uint8 *senderAddr, uint16 senderPort)
+{
+	if (!g_pServerMgr)
+		return;
+
+	uint8 addrCopy[4] = {senderAddr[0], senderAddr[1], senderAddr[2], senderAddr[3]};
+	g_pServerMgr->HandleUnknownPacket(packet, addrCopy, senderPort);
+}
+
 bool CServerMgr::Init()
 {
 	LT_MEM_TRACK_ALLOC(m_MoveAbstract = new SMoveAbstract(),LT_MEM_TYPE_MISC);
@@ -417,6 +427,8 @@ bool CServerMgr::Init()
 
 	m_NetMgr.Init("SERVER_PLAYER");
 	m_NetMgr.SetNetHandler(this);
+	LTNet_SetServerPacketInjector(&LTNet_ServerPacketInjector);
+	LTNet_SetServerMessageWriteAllocator(&CLTMessage_Write_Server::Allocate_Server);
 
 	dl_TieOff(&m_RemovedObjectHead);
 	m_pServerAppHandler = LTNULL;

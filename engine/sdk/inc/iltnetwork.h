@@ -11,9 +11,19 @@
 
 #include "ltbasetypes.h"
 #include "ltcodes.h"
+#include "iltmessage.h"
 #include "ltmodule.h"
 
-class VariableSizedPacket;
+class VariableSizedPacket {
+public:
+  virtual ~VariableSizedPacket() = default;
+
+  // Serialize packet data into the provided message.
+  virtual void Write(ILTMessage_Write &message) const = 0;
+
+  // Deserialize packet data from the provided message.
+  virtual bool Read(ILTMessage_Read &message) = 0;
+};
 
 struct NetworkAddress {
   uint32 m_nIp = 0;

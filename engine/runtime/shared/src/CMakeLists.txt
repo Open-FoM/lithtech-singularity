@@ -89,4 +89,5 @@ target_link_libraries (
 		ltjs_lib_std_lith
 		ltjs_lib_rez_mgr
 		ltjs_lib_info
+		slikenet_lib
 )

@@ -16,6 +16,11 @@
 
 #include "iltnetwork.h"
 
+namespace SLNet {
+class RakPeerInterface;
+struct SystemAddress;
+} // namespace SLNet
+
 class CLTNetwork : public ILTNetwork {
 public:
   declare_interface(CLTNetwork);
@@ -50,6 +55,8 @@ public:
 
 private:
   static uint32 GetTimeMs();
+  static void ExtractSenderAddress(const SLNet::SystemAddress &address, uint8 senderAddr[4], uint16 &senderPort);
+  void ProcessIncomingPeer(SLNet::RakPeerInterface *peer, DispatchTarget source);
 
   bool m_initialized = false;
   bool m_masterConnected = false;
@@ -58,6 +65,8 @@ private:
   NetworkAddress m_masterAddress{};
   NetworkAddress m_worldAddress{};
   NetworkAddress m_lastMasterAddress{};
+  SLNet::SystemAddress m_masterSystem{};
+  SLNet::SystemAddress m_worldSystem{};
 
   uint32 m_flags = 0;
   std::array<uint32, 32> m_flagTimes{};
@@ -68,6 +77,9 @@ private:
   std::string m_token;
   std::vector<uint8_t> m_payload;
   int m_loginFlags = 0;
+
+  SLNet::RakPeerInterface *m_masterPeer = nullptr;
+  SLNet::RakPeerInterface *m_worldPeer = nullptr;
 };
 
 #endif // __CLTNETWORK_H__

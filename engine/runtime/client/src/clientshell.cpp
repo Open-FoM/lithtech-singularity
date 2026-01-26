@@ -33,6 +33,8 @@
 #include "ltobjectcreate.h"
 
 #include "client_ticks.h"
+#include "ltmessage_client.h"
+#include "ltnetwork_hooks.h"
 
 
 //------------------------------------------------------------------
@@ -60,6 +62,15 @@ define_holder(IClientFileMgr, client_file_mgr);
 #include "iclientshell.h"
 static IClientShell *i_client_shell;
 define_holder(IClientShell, i_client_shell);
+
+static void LTNet_ClientPacketInjector(const CPacket_Read &packet, const uint8 *senderAddr, uint16 senderPort)
+{
+    if (!g_pClientShell)
+        return;
+
+    uint8 addrCopy[4] = {senderAddr[0], senderAddr[1], senderAddr[2], senderAddr[3]};
+    g_pClientShell->HandleUnknownPacket(packet, addrCopy, senderPort);
+}
 
 
 //IWorldBlindObjectData holder
@@ -181,6 +192,8 @@ bool CClientShell::Init()
     InitHandlers();
     g_pClientMgr->m_NetMgr.SetNetHandler(this);
     g_pClientShell = this;
+    LTNet_SetClientPacketInjector(&LTNet_ClientPacketInjector);
+    LTNet_SetClientMessageWriteAllocator(&CLTMessage_Write_Client::Allocate_Client);
 
     // Initialize the fileid info list.  Some information sent to the client doesn't change based on fileid.
     // This is used to reduce the amount of info sent to the client, by just comparing the new info to what

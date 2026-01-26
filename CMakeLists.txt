@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
-project (ltjs VERSION 0.0.1 LANGUAGES CXX)
+project (ltjs VERSION 0.0.1 LANGUAGES C CXX)
 
 # Standardize runtime output to a top-level bin directory.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
@@ -77,6 +77,23 @@ else ()
 	set (BUILD_SHARED_LIBS "${_LTJS_BUILD_SHARED_LIBS}")
 endif ()
 
+if (NOT DILIGENT_DEAR_IMGUI_PATH)
+	set (DILIGENT_DEAR_IMGUI_PATH "${CMAKE_SOURCE_DIR}/libs/imgui" CACHE PATH "imgui source directory")
+endif ()
+add_subdirectory (libs/diligent/DiligentTools)
+add_subdirectory (libs/diligent/DiligentFX)
+
+if (TARGET Diligent-Imgui)
+	target_compile_definitions(
+		Diligent-Imgui
+		PRIVATE
+			ImGuiKey_ModCtrl=ImGuiKey_LeftCtrl
+			ImGuiKey_ModShift=ImGuiKey_LeftShift
+			ImGuiKey_ModAlt=ImGuiKey_LeftAlt
+			ImGuiKey_ModSuper=ImGuiKey_LeftSuper
+	)
+endif ()
+
 if (APPLE)
 	if (TARGET Diligent-GraphicsEngineVk-shared)
 		target_link_libraries (Diligent-GraphicsEngineVk-shared PRIVATE Diligent-ApplePlatform)
@@ -112,6 +129,7 @@ if (WIN32)
 	add_subdirectory (libs/regmgr)
 endif ()
 add_subdirectory (libs/stdlith)
+add_subdirectory (libs/slikenet/ltjs)
 
 add_subdirectory (engine/libs/ltmem)
 add_subdirectory (engine/libs/rezmgr)
