@@ -1960,9 +1960,28 @@ void RenderViewport(
 		scene.m_SkyObjects = ctx.sky_objects.empty() ? nullptr : ctx.sky_objects.data();
 		scene.m_nSkyObjects = static_cast<int>(ctx.sky_objects.size());
 
-		scene.m_DrawMode = DRAWMODE_NORMAL;
-		scene.m_pObjectList = nullptr;
-		scene.m_ObjectListSize = 0;
+		std::vector<LTObject*> object_list;
+		if (!dynamic_lights.empty())
+		{
+			object_list.reserve(dynamic_lights.size());
+			for (DynamicLight& light : dynamic_lights)
+			{
+				object_list.push_back(static_cast<LTObject*>(&light));
+			}
+		}
+
+		if (!object_list.empty())
+		{
+			scene.m_DrawMode = DRAWMODE_OBJECTLIST;
+			scene.m_pObjectList = object_list.data();
+			scene.m_ObjectListSize = static_cast<int>(object_list.size());
+		}
+		else
+		{
+			scene.m_DrawMode = DRAWMODE_NORMAL;
+			scene.m_pObjectList = nullptr;
+			scene.m_ObjectListSize = 0;
+		}
 
 		if (ctx.engine.render_struct->Start3D)
 		{
