@@ -25,6 +25,7 @@ target_include_directories (
 		../../../../../../libs/diligent/DiligentCore/Common/interface
 		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
 		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
+		../../../../../../libs/diligent/DiligentFX
 		../../../../../../libs/stdlith
 		../../../../../sdk/inc
 		../../../../../sdk/inc/physics
@@ -50,6 +51,8 @@ set (diligent_shader_sources
 	diligent_get_ssao_blur_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
 	diligent_get_ssao_composite_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	diligent_get_ssao_temporal_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
+	diligent_get_ssao_prepass_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_prepass_ps.hlsl
+	diligent_get_world_ssao_prepass_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ssao_prepass_vs.hlsl
 	diligent_get_world_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	diligent_get_world_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	diligent_get_world_pixel_shader_glow_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
@@ -81,6 +84,8 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_prepass_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ssao_prepass_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_glow.hlsl
@@ -126,44 +131,45 @@ add_custom_command (
 )
 
 
-	target_sources (
-		${PROJECT_NAME}
-		PRIVATE
-			diligent_render.cpp
-			diligent_render_entry.cpp
-			diligent_2d_draw.cpp
-			diligent_debug_draw.cpp
-			diligent_object_draw.cpp
-			diligent_postfx.cpp
-			diligent_scene_collect.cpp
-			diligent_shadow_draw.cpp
-			diligent_render_api.cpp
-			diligent_renderer_lifecycle.cpp
-			diligent_world_api.cpp
-			diligent_output_targets.cpp
-			diligent_scene_render.cpp
-			diligent_buffers.cpp
-			diligent_device.cpp
-			diligent_mesh_layout.cpp
-			diligent_model_draw.cpp
-			diligent_pipeline_cache.cpp
-			diligent_state.cpp
-			diligent_texture_cache.cpp
-			diligent_utils.cpp
-			diligent_world_data.cpp
-			diligent_world_draw.cpp
-			texturescriptmgr.cpp
-			texturescriptinstance.cpp
-			texturescriptinterpreter.cpp
-			texturescriptvarmgr.cpp
-			${diligent_shader_generated_cpp}
-			../rendererconsolevars.cpp
-		../renderstylemap.cpp
-		../aabb.cpp
-		../viewparams.cpp
-		../viewfrustum.cpp
-		rendertarget.cpp
-		rendertargetmgr.cpp
+target_sources (
+	${PROJECT_NAME}
+	PRIVATE
+		diligent_render.cpp
+		diligent_render_entry.cpp
+		diligent_2d_draw.cpp
+		diligent_debug_draw.cpp
+		diligent_object_draw.cpp
+		diligent_postfx.cpp
+		diligent_scene_collect.cpp
+		diligent_shadow_draw.cpp
+		diligent_render_api.cpp
+		diligent_renderer_lifecycle.cpp
+		diligent_world_api.cpp
+		diligent_output_targets.cpp
+		diligent_scene_render.cpp
+		diligent_buffers.cpp
+		diligent_device.cpp
+		diligent_mesh_layout.cpp
+		diligent_model_draw.cpp
+		diligent_pipeline_cache.cpp
+		diligent_state.cpp
+		diligent_texture_cache.cpp
+		diligent_utils.cpp
+		diligent_world_data.cpp
+		diligent_world_draw.cpp
+		diligent_ssao_fx.cpp
+		texturescriptmgr.cpp
+		texturescriptinstance.cpp
+		texturescriptinterpreter.cpp
+		texturescriptvarmgr.cpp
+		${diligent_shader_generated_cpp}
+		../rendererconsolevars.cpp
+	../renderstylemap.cpp
+	../aabb.cpp
+	../viewparams.cpp
+	../viewfrustum.cpp
+	rendertarget.cpp
+	rendertargetmgr.cpp
 )
 
 target_link_libraries (
@@ -172,4 +178,5 @@ target_link_libraries (
 		Diligent-GraphicsEngine
 		Diligent-GraphicsEngineVkInterface
 		Diligent-GraphicsEngineVk-static
+		DiligentFX
 )

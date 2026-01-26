@@ -1328,21 +1328,19 @@ void ApplySceneVisibilityToRenderer(
 	g_CV_ScreenGlowTextureSize = viewport_state.render_screen_glow_texture_size;
 	g_CV_ScreenGlowFilterSize = viewport_state.render_screen_glow_filter_size;
 	g_CV_SSAOEnable = viewport_state.render_ssao_enable ? 1 : 0;
-	g_CV_SSAORadius = viewport_state.render_ssao_radius;
-	g_CV_SSAOBias = viewport_state.render_ssao_bias;
+	g_CV_SSAOBackend = viewport_state.render_ssao_backend;
 	g_CV_SSAOIntensity = viewport_state.render_ssao_intensity;
-	g_CV_SSAOPower = viewport_state.render_ssao_power;
-	g_CV_SSAONoiseScale = viewport_state.render_ssao_noise_scale;
-	g_CV_SSAOSampleCount = viewport_state.render_ssao_sample_count;
-	g_CV_SSAODownscale = viewport_state.render_ssao_downscale;
-	g_CV_SSAOBlurEnable = viewport_state.render_ssao_blur_enable ? 1 : 0;
-	g_CV_SSAOBlurRadius = viewport_state.render_ssao_blur_radius;
-	g_CV_SSAOBlurDepthSigma = viewport_state.render_ssao_blur_depth_sigma;
-	g_CV_SSAOTemporalEnable = viewport_state.render_ssao_temporal_enable ? 1 : 0;
-	g_CV_SSAOTemporalBlend = viewport_state.render_ssao_temporal_blend;
-	g_CV_SSAOTemporalVelocityReject = viewport_state.render_ssao_temporal_velocity_reject;
-	g_CV_SSAOTemporalDepthReject = viewport_state.render_ssao_temporal_depth_reject;
-	g_CV_SSAOTemporalNormalReject = viewport_state.render_ssao_temporal_normal_reject;
+	g_CV_SSAOFxEffectRadius = viewport_state.render_ssao_fx_effect_radius;
+	g_CV_SSAOFxEffectFalloffRange = viewport_state.render_ssao_fx_effect_falloff_range;
+	g_CV_SSAOFxRadiusMultiplier = viewport_state.render_ssao_fx_radius_multiplier;
+	g_CV_SSAOFxDepthMipOffset = viewport_state.render_ssao_fx_depth_mip_offset;
+	g_CV_SSAOFxTemporalStability = viewport_state.render_ssao_fx_temporal_stability;
+	g_CV_SSAOFxSpatialReconstructionRadius = viewport_state.render_ssao_fx_spatial_reconstruction_radius;
+	g_CV_SSAOFxAlphaInterpolation = viewport_state.render_ssao_fx_alpha_interpolation;
+	g_CV_SSAOFxHalfResolution = viewport_state.render_ssao_fx_half_resolution ? 1 : 0;
+	g_CV_SSAOFxHalfPrecisionDepth = viewport_state.render_ssao_fx_half_precision_depth ? 1 : 0;
+	g_CV_SSAOFxUniformWeighting = viewport_state.render_ssao_fx_uniform_weighting ? 1 : 0;
+	g_CV_SSAOFxResetAccumulation = viewport_state.render_ssao_fx_reset_accumulation ? 1 : 0;
 }
 
 std::string TrimLine(const std::string& value)
@@ -2812,22 +2810,21 @@ int main(int argc, char** argv)
 						ImGui::Separator();
 						ImGui::TextUnformatted("SSAO");
 						ImGui::Checkbox("Enable##SSAO", &viewport_panel.render_ssao_enable);
-						ImGui::DragFloat("Radius##SSAO", &viewport_panel.render_ssao_radius, 1.0f, 1.0f, 300.0f);
-						ImGui::DragFloat("Bias##SSAO", &viewport_panel.render_ssao_bias, 0.05f, 0.0f, 50.0f);
-						ImGui::DragFloat("Intensity##SSAO", &viewport_panel.render_ssao_intensity, 0.05f, 0.0f, 4.0f);
-						ImGui::DragFloat("Power##SSAO", &viewport_panel.render_ssao_power, 0.05f, 0.1f, 4.0f);
-						ImGui::DragFloat("Noise Scale##SSAO", &viewport_panel.render_ssao_noise_scale, 0.001f, 0.001f, 0.2f);
-						ImGui::DragInt("Samples##SSAO", &viewport_panel.render_ssao_sample_count, 1.0f, 4, 16);
-						ImGui::DragInt("Downscale##SSAO", &viewport_panel.render_ssao_downscale, 1.0f, 1, 4);
-						ImGui::Checkbox("Blur##SSAO", &viewport_panel.render_ssao_blur_enable);
-						ImGui::SameLine();
-						ImGui::DragFloat("Radius##SSAOBlur", &viewport_panel.render_ssao_blur_radius, 0.1f, 0.5f, 4.0f);
-						ImGui::DragFloat("Depth Sigma##SSAOBlur", &viewport_panel.render_ssao_blur_depth_sigma, 1.0f, 1.0f, 200.0f);
-						ImGui::Checkbox("Temporal##SSAO", &viewport_panel.render_ssao_temporal_enable);
-						ImGui::DragFloat("Blend##SSAOTemporal", &viewport_panel.render_ssao_temporal_blend, 0.01f, 0.0f, 0.95f);
-						ImGui::DragFloat("Velocity Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_velocity_reject, 0.001f, 0.0f, 0.2f);
-						ImGui::DragFloat("Depth Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_depth_reject, 0.001f, 0.0f, 0.2f);
-						ImGui::DragFloat("Normal Reject##SSAOTemporal", &viewport_panel.render_ssao_temporal_normal_reject, 0.01f, 0.0f, 0.99f);
+						static const char* ssao_backend_labels[] = {"Legacy", "DiligentFX"};
+						ImGui::Combo("Backend##SSAO", &viewport_panel.render_ssao_backend, ssao_backend_labels, IM_ARRAYSIZE(ssao_backend_labels));
+						const ImGuiSliderFlags ssao_clamp_flags = ImGuiSliderFlags_AlwaysClamp;
+						ImGui::SliderFloat("Intensity##SSAO", &viewport_panel.render_ssao_intensity, 0.0f, 4.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Effect Radius##SSAO", &viewport_panel.render_ssao_fx_effect_radius, 1.0f, 300.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Falloff Range##SSAO", &viewport_panel.render_ssao_fx_effect_falloff_range, 0.1f, 10.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Radius Multiplier##SSAO", &viewport_panel.render_ssao_fx_radius_multiplier, 0.1f, 4.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Depth MIP Offset##SSAO", &viewport_panel.render_ssao_fx_depth_mip_offset, 0.0f, 8.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Temporal Stability##SSAO", &viewport_panel.render_ssao_fx_temporal_stability, 0.0f, 0.999f, "%.3f", ssao_clamp_flags);
+						ImGui::SliderFloat("Spatial Reconstruction##SSAO", &viewport_panel.render_ssao_fx_spatial_reconstruction_radius, 0.1f, 16.0f, "%.2f", ssao_clamp_flags);
+						ImGui::SliderFloat("Alpha Interp##SSAO", &viewport_panel.render_ssao_fx_alpha_interpolation, 0.0f, 1.0f, "%.2f", ssao_clamp_flags);
+						ImGui::Checkbox("Half Resolution##SSAO", &viewport_panel.render_ssao_fx_half_resolution);
+						ImGui::Checkbox("Half Precision Depth##SSAO", &viewport_panel.render_ssao_fx_half_precision_depth);
+						ImGui::Checkbox("Uniform Weighting##SSAO", &viewport_panel.render_ssao_fx_uniform_weighting);
+						ImGui::Checkbox("Reset Accumulation##SSAO", &viewport_panel.render_ssao_fx_reset_accumulation);
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Advanced"))

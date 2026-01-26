@@ -387,3 +387,69 @@ std::string diligent_build_model_vertex_shader_source(const DiligentMeshLayout& 
 	source += "}\n";
 	return source;
 }
+
+std::string diligent_build_model_ssao_prepass_vertex_shader_source(const DiligentMeshLayout& layout)
+{
+	std::string source;
+	source += "cbuffer SsaoPrepassConstants\n";
+	source += "{\n";
+	source += "    float4x4 g_ViewProj;\n";
+	source += "    float4x4 g_PrevViewProj;\n";
+	source += "    float4x4 g_World;\n";
+	source += "    float4x4 g_PrevWorld;\n";
+	source += "};\n";
+	source += "struct VSInput\n";
+	source += "{\n";
+	for (const auto& element : layout.elements)
+	{
+		source += "    ";
+		source += diligent_hlsl_type_for_element(element);
+		source += " attr";
+		source += std::to_string(element.InputIndex);
+		source += " : ATTRIB";
+		source += std::to_string(element.InputIndex);
+		source += ";\n";
+	}
+	source += "};\n";
+	source += "struct VSOutput\n";
+	source += "{\n";
+	source += "    float4 position : SV_POSITION;\n";
+	source += "    float3 world_normal : TEXCOORD0;\n";
+	source += "    float4 curr_clip : TEXCOORD1;\n";
+	source += "    float4 prev_clip : TEXCOORD2;\n";
+	source += "};\n";
+	source += "VSOutput VSMain(VSInput input)\n";
+	source += "{\n";
+	source += "    VSOutput output;\n";
+	source += "    float3 position = ";
+	if (layout.position_attrib >= 0)
+	{
+		source += diligent_attribute_ref(layout.position_attrib, ".xyz");
+	}
+	else
+	{
+		source += "float3(0.0f, 0.0f, 0.0f)";
+	}
+	source += ";\n";
+	source += "    float3 normal = ";
+	if (layout.normal_attrib >= 0)
+	{
+		source += diligent_attribute_ref(layout.normal_attrib, ".xyz");
+	}
+	else
+	{
+		source += "float3(0.0f, 0.0f, 1.0f)";
+	}
+	source += ";\n";
+	source += "    float4 world_pos = mul(g_World, float4(position, 1.0f));\n";
+	source += "    float4 prev_world_pos = mul(g_PrevWorld, float4(position, 1.0f));\n";
+	source += "    float4 curr_clip = mul(g_ViewProj, world_pos);\n";
+	source += "    float4 prev_clip = mul(g_PrevViewProj, prev_world_pos);\n";
+	source += "    output.position = curr_clip;\n";
+	source += "    output.curr_clip = curr_clip;\n";
+	source += "    output.prev_clip = prev_clip;\n";
+	source += "    output.world_normal = normalize(mul((float3x3)g_World, normal));\n";
+	source += "    return output;\n";
+	source += "}\n";
+	return source;
+}

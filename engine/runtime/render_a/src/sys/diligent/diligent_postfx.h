@@ -39,6 +39,7 @@ struct DiligentAaContext
 	Diligent::ITextureView* prev_depth_target = nullptr;
 	Diligent::ITextureView* final_render_target = nullptr;
 	Diligent::ITextureView* final_depth_target = nullptr;
+	Diligent::ITextureView* color_resolve_srv = nullptr;
 };
 
 /// \brief Returns 1.0f if tonemapping is enabled, otherwise 0.0f.
@@ -74,6 +75,16 @@ bool diligent_begin_ssao(SceneDesc* desc, DiligentSsaoContext& ctx);
 bool diligent_apply_ssao(const DiligentSsaoContext& ctx);
 /// \brief Ends SSAO rendering and restores prior render targets.
 void diligent_end_ssao(const DiligentSsaoContext& ctx);
+/// \brief Returns true when DiligentFX SSAO backend is active.
+bool diligent_ssao_fx_is_enabled();
+/// \brief Prepares DiligentFX SSAO resources and renders the prepass.
+bool diligent_prepare_ssao_fx(SceneDesc* desc);
+/// \brief Applies DiligentFX SSAO composite to the given render target.
+bool diligent_apply_ssao_fx(Diligent::ITextureView* render_target, Diligent::ITextureView* depth_target);
+/// \brief Applies DiligentFX SSAO composite after MSAA resolve.
+bool diligent_apply_ssao_fx_resolved(const DiligentAaContext& ctx);
+/// \brief Releases DiligentFX SSAO resources.
+void diligent_ssao_fx_term();
 
 /// \brief Updates the clear color used for SSAO scene capture.
 void diligent_ssao_set_clear_color(const LTRGBColor& clear_color);

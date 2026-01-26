@@ -316,6 +316,18 @@ RCONVAR(g_CV_SSAOTemporalBlend, "SSAOTemporalBlend", float, 0.1f);
 RCONVAR(g_CV_SSAOTemporalVelocityReject, "SSAOTemporalVelocityReject", float, 0.05f);
 RCONVAR(g_CV_SSAOTemporalDepthReject, "SSAOTemporalDepthReject", float, 0.02f);
 RCONVAR(g_CV_SSAOTemporalNormalReject, "SSAOTemporalNormalReject", float, 0.7f);
+RCONVAR(g_CV_SSAOBackend, "SSAOBackend", int, 1);
+RCONVAR(g_CV_SSAOFxEffectRadius, "SSAOFxEffectRadius", float, 60.0f);
+RCONVAR(g_CV_SSAOFxEffectFalloffRange, "SSAOFxEffectFalloffRange", float, 1.0f);
+RCONVAR(g_CV_SSAOFxRadiusMultiplier, "SSAOFxRadiusMultiplier", float, 2.5f);
+RCONVAR(g_CV_SSAOFxDepthMipOffset, "SSAOFxDepthMipOffset", float, 3.3f);
+RCONVAR(g_CV_SSAOFxTemporalStability, "SSAOFxTemporalStability", float, 0.9f);
+RCONVAR(g_CV_SSAOFxSpatialReconstructionRadius, "SSAOFxSpatialReconstructionRadius", float, 4.0f);
+RCONVAR(g_CV_SSAOFxHalfResolution, "SSAOFxHalfResolution", int, 0);
+RCONVAR(g_CV_SSAOFxHalfPrecisionDepth, "SSAOFxHalfPrecisionDepth", int, 0);
+RCONVAR(g_CV_SSAOFxUniformWeighting, "SSAOFxUniformWeighting", int, 0);
+RCONVAR(g_CV_SSAOFxResetAccumulation, "SSAOFxResetAccumulation", int, 0);
+RCONVAR(g_CV_SSAOFxAlphaInterpolation, "SSAOFxAlphaInterpolation", float, 1.0f);
 
 //------------------------------
 // Effect file settings

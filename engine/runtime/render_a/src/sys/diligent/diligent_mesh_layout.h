@@ -53,5 +53,7 @@ bool diligent_build_mesh_layout(
 bool diligent_get_layout_element_ref(const DiligentMeshLayout& layout, int32 attrib, DiligentVertexElementRef& ref);
 /// Builds a HLSL vertex shader string matching the input layout.
 std::string diligent_build_model_vertex_shader_source(const DiligentMeshLayout& layout);
+/// Builds a HLSL vertex shader string for SSAO prepass output.
+std::string diligent_build_model_ssao_prepass_vertex_shader_source(const DiligentMeshLayout& layout);
 
 #endif

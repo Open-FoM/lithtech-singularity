@@ -96,9 +96,12 @@ int diligent_RenderScene(SceneDesc* desc)
 	}
 
 	const uint32 msaa_samples = diligent_get_msaa_samples();
-	const bool ssao_msaa = (msaa_samples > 0 && g_CV_SSAOEnable.m_Val != 0);
+	const bool ssao_enabled = g_CV_SSAOEnable.m_Val != 0;
+	const bool use_ssao_fx = ssao_enabled && g_CV_SSAOBackend.m_Val != 0;
+	const bool ssao_msaa = (msaa_samples > 0 && ssao_enabled);
 	DiligentSsaoContext ssao_ctx{};
-	const bool ssao_active = (msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
+	const bool ssao_active = (!use_ssao_fx && msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
+	bool ssao_fx_active = false;
 	if (aa_active && ssao_msaa)
 	{
 		aa_ctx.defer_copy = true;
@@ -126,6 +129,12 @@ int diligent_RenderScene(SceneDesc* desc)
 	}
 
 	diligent_collect_world_models(desc);
+
+	if (use_ssao_fx)
+	{
+		ssao_fx_active = diligent_prepare_ssao_fx(desc);
+	}
+
 	diligent_collect_polygrids(desc);
 	diligent_collect_sprites(desc);
 	diligent_collect_line_systems(desc);
@@ -263,14 +272,6 @@ int diligent_RenderScene(SceneDesc* desc)
 		return RENDER_ERROR;
 	}
 
-	if (debug_lines_enabled)
-	{
-		if (!diligent_draw_debug_lines())
-		{
-			return RENDER_ERROR;
-		}
-	}
-
 	if (ssao_active)
 	{
 		if (!diligent_apply_ssao(ssao_ctx))
@@ -281,6 +282,14 @@ int diligent_RenderScene(SceneDesc* desc)
 		diligent_end_ssao(ssao_ctx);
 	}
 
+	if (ssao_fx_active && !ssao_msaa)
+	{
+		if (!diligent_apply_ssao_fx(diligent_get_active_render_target(), diligent_get_active_depth_target()))
+		{
+			return RENDER_ERROR;
+		}
+	}
+
 	if (ssao_msaa && aa_active)
 	{
 		if (!diligent_apply_antialiasing(aa_ctx))
@@ -288,7 +297,20 @@ int diligent_RenderScene(SceneDesc* desc)
 			return RENDER_ERROR;
 		}
 
-		if (!diligent_apply_ssao_resolved(aa_ctx))
+		bool ssao_resolved_ok = false;
+		if (use_ssao_fx)
+		{
+			if (ssao_fx_active)
+			{
+				ssao_resolved_ok = diligent_apply_ssao_fx_resolved(aa_ctx);
+			}
+		}
+		else
+		{
+			ssao_resolved_ok = diligent_apply_ssao_resolved(aa_ctx);
+		}
+
+		if (!ssao_resolved_ok)
 		{
 			DiligentAaContext copy_ctx = aa_ctx;
 			copy_ctx.defer_copy = false;
@@ -314,6 +336,14 @@ int diligent_RenderScene(SceneDesc* desc)
 		}
 		diligent_end_antialiasing(aa_ctx);
 		aa_scope.Dismiss();
+	}
+
+	if (debug_lines_enabled)
+	{
+		if (!diligent_draw_debug_lines())
+		{
+			return RENDER_ERROR;
+		}
 	}
 
 	return RENDER_OK;

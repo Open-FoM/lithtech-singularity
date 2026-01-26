@@ -19,7 +19,12 @@ struct PSInput
 float4 PSMain(PSInput input) : SV_TARGET
 {
     float4 color = g_ColorTex.SampleLevel(g_Sampler, input.uv, 0.0f);
-    float ao = g_AOTex.SampleLevel(g_Sampler, input.uv, 0.0f).r;
-    float occlusion = lerp(1.0f, ao, saturate(g_Intensity));
+    float ao = saturate(g_AOTex.SampleLevel(g_Sampler, input.uv, 0.0f).r);
+    float intensity = max(g_Intensity, 0.0f);
+    float occlusion = lerp(1.0f, ao, saturate(intensity));
+    if (intensity > 1.0f)
+    {
+        occlusion = pow(ao, intensity);
+    }
     return float4(color.rgb * occlusion, color.a);
 }

@@ -1316,6 +1316,7 @@ bool diligent_begin_antialiasing(SceneDesc* desc, DiligentAaContext& ctx)
 	ctx.prev_depth_target = g_diligent_state.output_depth_target_override;
 	ctx.final_render_target = final_rtv;
 	ctx.final_depth_target = final_dsv;
+	ctx.color_resolve_srv = g_diligent_aa_targets.color_resolve_srv.RawPtr();
 
 	Diligent::ITextureView* render_target = (sample_count > 1)
 		? g_diligent_aa_targets.color_msaa_rtv.RawPtr()
@@ -3043,6 +3044,7 @@ void diligent_postfx_term()
 	g_diligent_ssao_state.resources.blur_pipeline.pipeline_state.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
+	diligent_ssao_fx_term();
 	g_diligent_ssao_state.resources.temporal_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.temporal_pipeline.pipeline_state.Release();
 	g_diligent_aa_targets = {};
