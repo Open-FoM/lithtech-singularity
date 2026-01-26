@@ -12,21 +12,23 @@
 #include <cstring>
 #include <vector>
 
-#include "ltmodule.h"
 #include "ltmessage.h"
+#include "ltmodule.h"
 #include "ltnetwork_hooks.h"
 #include "packet.h"
 
 #include "slikenet/BitStream.h"
 #include "slikenet/MessageIdentifiers.h"
 #include "slikenet/RakPeerInterface.h"
-#include "slikenet/peerinterface.h"
 #include "slikenet/SocketLayer.h"
+#include "slikenet/peerinterface.h"
 #include "slikenet/types.h"
 
 namespace {
 constexpr int kNetNotInitialized = 73;
 constexpr uint32 kFlagTimeoutMs = 0x1388;
+constexpr uint32 kMasterRetryDelayInitialMs = 1000;
+constexpr uint32 kMasterRetryDelayMaxMs = 5000;
 
 LTNetPacketInjector g_clientPacketInjector = nullptr;
 LTNetPacketInjector g_serverPacketInjector = nullptr;
@@ -78,8 +80,6 @@ bool CLTNetwork::IsMasterConnected() { return m_masterConnected; }
 
 bool CLTNetwork::IsWorldConnected() { return m_worldConnected; }
 
-/// Decomp refs:
-/// - Docs/Notes/ClientNetworking.md (init sequence notes)
 LTRESULT CLTNetwork::InitNetwork(uint16 localPort) {
   if (m_initialized) {
     return LT_OK;
@@ -129,6 +129,9 @@ LTRESULT CLTNetwork::ShutdownNetwork() {
   m_lastMasterAddress = {};
   m_masterSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
   m_worldSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
+  m_hasMasterAddress = false;
+  m_masterRetryAtMs = 0;
+  m_masterRetryDelayMs = 0;
 
   m_flags = 0;
   m_flagTimes.fill(0);
@@ -136,12 +139,6 @@ LTRESULT CLTNetwork::ShutdownNetwork() {
   for (auto &slot : m_dataSlots) {
     slot = nullptr;
   }
-
-  m_user.clear();
-  m_password.clear();
-  m_token.clear();
-  m_payload.clear();
-  m_loginFlags = 0;
 
   return LT_OK;
 }
@@ -199,59 +196,34 @@ LTRESULT CLTNetwork::Disconnect() {
   m_lastMasterAddress = {};
   m_masterSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
   m_worldSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
+  m_hasMasterAddress = false;
+  m_masterRetryAtMs = 0;
+  m_masterRetryDelayMs = 0;
 
   return LT_OK;
 }
 
-bool CLTNetwork::PollMasterAddress() {
-  if (!m_initialized) {
-    return false;
-  }
-
-  // Pseudocode (RakNet):
-  // - If master peer connected, pull SystemAddress for master.
-  // - Update m_lastMasterAddress when it changes.
-  return m_masterConnected;
-}
-
-/// Decomp refs:
-/// - Docs/Notes/Login_Flow.md
-LTRESULT CLTNetwork::BeginLogin(const char *user, const char *password, uint16 port, int loginFlags, const char *token,
-                                bool hasPayload, const void *payload, int payloadSize) {
-  (void)port;
-
+LTRESULT CLTNetwork::ConnectMaster(const NetworkAddress &address) {
   if (!m_initialized) {
     return LT_ERROR;
   }
 
-  if (!user || !password || !token) {
+  if (!m_masterPeer) {
     return LT_ERROR;
   }
 
-  m_user = user;
-  m_password = password;
-  m_token = token;
-  m_loginFlags = loginFlags;
-
-  m_payload.clear();
-  if (hasPayload && payload && payloadSize > 0) {
-    const auto *bytes = static_cast<const uint8_t *>(payload);
-    m_payload.assign(bytes, bytes + payloadSize);
+  const char *hostAddress = SLNet::SocketLayer::InAddrToString(address.m_nIp);
+  if (m_masterPeer->Connect(hostAddress, address.m_nPort, nullptr, 0) != SLNet::CONNECTION_ATTEMPT_STARTED) {
+    return LT_ERROR;
   }
 
-  // Pseudocode (RakNet):
-  // - Build LOGIN_REQUEST packet (user, password, port, flags, token, payload).
-  // - Serialize to BitStream / VariableSizedPacket.
-  // - DispatchPacket(packet, kHigh, kReliableOrdered, channel=0, kMaster).
+  m_masterAddress = address;
+  m_hasMasterAddress = true;
+  m_masterRetryDelayMs = kMasterRetryDelayInitialMs;
+  m_masterRetryAtMs = GetTimeMs() + m_masterRetryDelayMs;
   return LT_OK;
 }
 
-/// Decomp refs:
-/// - IDA Object.lto: sub_74AF40 @ 0x74AF40
-/// - IDA Object.lto: sub_79B670 @ 0x79B670
-/// - IDA Object.lto: sub_7A1DF0 @ 0x7A1DF0
-/// - Source/Object.lto.c:92872 (RakPeer_Send)
-/// - Source/Object.lto.c:92933 (RakPeer_SendBitStream)
 LTRESULT CLTNetwork::DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
                                     uint8 orderingChannel, DispatchTarget destination) {
   if (!m_initialized) {
@@ -304,8 +276,8 @@ LTRESULT CLTNetwork::DispatchPacket(VariableSizedPacket *packet, PacketPriority 
     return LT_ERROR;
   }
 
-  peer->Send(&bitStream, ToSLikeNetPriority(priority), ToSLikeNetReliability(reliability), orderingChannel, systemAddress,
-             false);
+  peer->Send(&bitStream, ToSLikeNetPriority(priority), ToSLikeNetReliability(reliability), orderingChannel,
+             systemAddress, false);
 
   writer->Release();
   return LT_OK;
@@ -324,11 +296,19 @@ LTRESULT CLTNetwork::SendHandshake(const NetworkAddress &address) {
   return LT_OK;
 }
 
-/// Decomp refs:
-/// - Docs/AddressMaps/AddressMap.md (RakPeer recv loop)
 void CLTNetwork::UpdateNetwork() {
   if (!m_initialized) {
     return;
+  }
+
+  if (!m_masterConnected && m_hasMasterAddress && m_masterPeer) {
+    const auto now = GetTimeMs();
+    if (m_masterRetryAtMs != 0 && now >= m_masterRetryAtMs) {
+      const char *hostAddress = SLNet::SocketLayer::InAddrToString(m_masterAddress.m_nIp);
+      m_masterPeer->Connect(hostAddress, m_masterAddress.m_nPort, nullptr, 0);
+      m_masterRetryAtMs = now + m_masterRetryDelayMs;
+      m_masterRetryDelayMs = std::min(m_masterRetryDelayMs * 2u, kMasterRetryDelayMaxMs);
+    }
   }
 
   ProcessIncomingPeer(m_masterPeer, DispatchTarget::kMaster);
@@ -337,8 +317,6 @@ void CLTNetwork::UpdateNetwork() {
   TickFlags();
 }
 
-/// Decomp refs:
-/// - IDA Object.lto: 0x767F20 (write bitstream helper)
 int CLTNetwork::WriteBitStream(void *src, int maxBits, void *stream) {
   if (!m_initialized || !stream || !src || maxBits <= 0) {
     return kNetNotInitialized;
@@ -349,8 +327,6 @@ int CLTNetwork::WriteBitStream(void *src, int maxBits, void *stream) {
   return maxBits;
 }
 
-/// Decomp refs:
-/// - IDA Object.lto: 0x767F50 (read bitstream helper)
 int CLTNetwork::ReadBitStream(void *dst, int maxBits, void *stream) {
   if (!m_initialized || !stream || !dst || maxBits <= 0) {
     return kNetNotInitialized;
@@ -423,8 +399,6 @@ void CLTNetwork::TickFlags() {
   }
 }
 
-int CLTNetwork::GetFrameTime() { return static_cast<int>(GetTimeMs()); }
-
 void *CLTNetwork::GetDataSlot(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_dataSlots.size()) {
     return nullptr;
@@ -475,6 +449,8 @@ void CLTNetwork::ProcessIncomingPeer(SLNet::RakPeerInterface *peer, DispatchTarg
         m_masterConnected = true;
         m_masterAddress.m_nPort = packet->systemAddress.GetPort();
         m_masterSystem = packet->systemAddress;
+        m_masterRetryAtMs = 0;
+        m_masterRetryDelayMs = kMasterRetryDelayInitialMs;
       } else {
         m_worldConnected = true;
         m_worldAddress.m_nPort = packet->systemAddress.GetPort();
@@ -487,13 +463,20 @@ void CLTNetwork::ProcessIncomingPeer(SLNet::RakPeerInterface *peer, DispatchTarg
       if (source == DispatchTarget::kMaster) {
         m_masterConnected = false;
         m_masterSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
+        if (m_hasMasterAddress) {
+          const auto now = GetTimeMs();
+          if (m_masterRetryDelayMs == 0) {
+            m_masterRetryDelayMs = kMasterRetryDelayInitialMs;
+          }
+          m_masterRetryAtMs = now + m_masterRetryDelayMs;
+          m_masterRetryDelayMs = std::min(m_masterRetryDelayMs * 2u, kMasterRetryDelayMaxMs);
+        }
       } else {
         m_worldConnected = false;
         m_worldSystem = SLNet::UNASSIGNED_SYSTEM_ADDRESS;
       }
       break;
-    default:
-      break;
+    default: break;
     }
 
     if (ShouldForwardToUserland(packet)) {

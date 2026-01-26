@@ -11,9 +11,6 @@
 
 #include <array>
 #include <cstdint>
-#include <string>
-#include <vector>
-
 #include "iltnetwork.h"
 
 namespace SLNet {
@@ -34,9 +31,7 @@ public:
   bool SetNotificationFlag(int id, int group) override;
   LTRESULT ConnectWorld(const NetworkAddress &address) override;
   LTRESULT Disconnect() override;
-  bool PollMasterAddress() override;
-  LTRESULT BeginLogin(const char *user, const char *password, uint16 port, int loginFlags, const char *token,
-                      bool hasPayload, const void *payload, int payloadSize) override;
+  LTRESULT ConnectMaster(const NetworkAddress &address) override;
   LTRESULT DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
                           uint8 orderingChannel, DispatchTarget destination) override;
   LTRESULT SendHandshake(const NetworkAddress &address) override;
@@ -49,7 +44,6 @@ public:
   void SetFlags(int mask) override;
   void ClearFlags(int mask) override;
   void TickFlags() override;
-  int GetFrameTime() override;
   void *GetDataSlot(int index) override;
   void SetDataSlot(int index, void *value) override;
 
@@ -67,16 +61,13 @@ private:
   NetworkAddress m_lastMasterAddress{};
   SLNet::SystemAddress m_masterSystem{};
   SLNet::SystemAddress m_worldSystem{};
+  bool m_hasMasterAddress = false;
+  uint32 m_masterRetryAtMs = 0;
+  uint32 m_masterRetryDelayMs = 0;
 
   uint32 m_flags = 0;
   std::array<uint32, 32> m_flagTimes{};
   std::array<void *, 10> m_dataSlots{};
-
-  std::string m_user;
-  std::string m_password;
-  std::string m_token;
-  std::vector<uint8_t> m_payload;
-  int m_loginFlags = 0;
 
   SLNet::RakPeerInterface *m_masterPeer = nullptr;
   SLNet::RakPeerInterface *m_worldPeer = nullptr;

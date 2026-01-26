@@ -9,9 +9,9 @@
 #ifndef __ILTNETWORK_H__
 #define __ILTNETWORK_H__
 
+#include "iltmessage.h"
 #include "ltbasetypes.h"
 #include "ltcodes.h"
-#include "iltmessage.h"
 #include "ltmodule.h"
 
 class VariableSizedPacket {
@@ -72,15 +72,10 @@ public:
   // Disconnects active world/master connections.
   virtual LTRESULT Disconnect() = 0;
 
-  // Polls master address info and updates cached values.
-  virtual bool PollMasterAddress() = 0;
-
-  // Starts a login request to the master server.
-  virtual LTRESULT BeginLogin(const char *user, const char *password, uint16 port, int loginFlags, const char *token,
-                              bool hasPayload, const void *payload, int payloadSize) = 0;
+  // Connects to a master server address.
+  virtual LTRESULT ConnectMaster(const NetworkAddress &address) = 0;
 
   // Dispatches a packet to master or world (dest=1 master, dest=2 world).
-  /// Decomp refs: IDA Object.lto: sub_74AF40 @ 0x74AF40.
   virtual LTRESULT DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
                                   uint8 orderingChannel, DispatchTarget destination) = 0;
 
@@ -90,7 +85,7 @@ public:
   // Ticks internal connection state.
   virtual void UpdateNetwork() = 0;
 
-  // Bitstream helpers (FoM custom encoding).
+  // Bitstream helpers.
   virtual int WriteBitStream(void *src, int maxBits, void *stream) = 0;
   virtual int ReadBitStream(void *dst, int maxBits, void *stream) = 0;
 
@@ -106,10 +101,7 @@ public:
   virtual void ClearFlags(int mask) = 0;
   virtual void TickFlags() = 0;
 
-  // Returns engine frame time (ms).
-  virtual int GetFrameTime() = 0;
-
-  // Data slot access (FoM profile data pointers).
+  // Data slot access
   virtual void *GetDataSlot(int index) = 0;
   virtual void SetDataSlot(int index, void *value) = 0;
 };
