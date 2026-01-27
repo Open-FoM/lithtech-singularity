@@ -5,6 +5,7 @@
 .sisyphus/
 build/
 bin/
+game/
 !engine/runtime/build/
 !engine/runtime/build/**
 cmake-build-*/
