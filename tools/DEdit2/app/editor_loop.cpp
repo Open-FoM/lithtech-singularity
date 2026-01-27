@@ -11,6 +11,7 @@
 #include "viewport/render_settings.h"
 #include "viewport/world_settings.h"
 
+#include "transform/mirror.h"
 #include "ui_console.h"
 #include "ui_dock.h"
 #include "ui_project.h"
@@ -377,6 +378,20 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
             ClearSelection(session.scene_panel);
           }
         }
+        // Mirror commands: Ctrl+Shift+X/Y/Z
+        if (io.KeyCtrl && io.KeyShift && HasSelection(session.scene_panel))
+        {
+          if (ImGui::IsKeyPressed(ImGuiKey_X, false))
+          {
+            MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::X);
+          }
+          if (ImGui::IsKeyPressed(ImGuiKey_Y, false))
+          {
+            MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Y);
+          }
+          // Note: Ctrl+Shift+Z is also Redo shortcut on some systems, so mirror Z may conflict
+          // Users can still use the menu for Mirror Z
+        }
       }
     }
     if (trigger_undo)
@@ -420,6 +435,19 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (menu_actions.unfreeze_all)
       {
         UnfreezeAll(session.scene_props);
+      }
+      // Mirror operations
+      if (menu_actions.mirror_x && HasSelection(session.scene_panel))
+      {
+        MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::X);
+      }
+      if (menu_actions.mirror_y && HasSelection(session.scene_panel))
+      {
+        MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Y);
+      }
+      if (menu_actions.mirror_z && HasSelection(session.scene_panel))
+      {
+        MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Z);
       }
     }
 

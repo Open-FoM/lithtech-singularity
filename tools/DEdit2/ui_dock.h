@@ -31,6 +31,9 @@ struct MainMenuActions
 	bool unhide_all = false;
 	bool freeze_selected = false;
 	bool unfreeze_all = false;
+	bool mirror_x = false;
+	bool mirror_y = false;
+	bool mirror_z = false;
 };
 
 void DrawMainMenuBar(

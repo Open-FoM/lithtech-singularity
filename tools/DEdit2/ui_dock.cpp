@@ -86,6 +86,23 @@ void DrawMainMenuBar(
 			actions.unfreeze_all = true;
 		}
 		ImGui::Separator();
+		if (ImGui::BeginMenu("Mirror"))
+		{
+			if (ImGui::MenuItem("Mirror X", "Ctrl+Shift+X"))
+			{
+				actions.mirror_x = true;
+			}
+			if (ImGui::MenuItem("Mirror Y", "Ctrl+Shift+Y"))
+			{
+				actions.mirror_y = true;
+			}
+			if (ImGui::MenuItem("Mirror Z", "Ctrl+Shift+Z"))
+			{
+				actions.mirror_z = true;
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::Separator();
 		ImGui::MenuItem("Preferences...", nullptr, false, false);
 		ImGui::EndMenu();
 	}

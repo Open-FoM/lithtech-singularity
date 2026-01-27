@@ -132,6 +132,7 @@ target_sources (
 		app_main.cpp
 		app/editor_loop.cpp
 		brush/brush_primitive.cpp
+		transform/mirror.cpp
 		app/editor_paths.cpp
 		app/editor_session.h
 		app/project_utils.cpp
