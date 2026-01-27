@@ -293,6 +293,11 @@ void DrawScenePanel(
 		state.selected_ids.clear();
 		state.selected_ids.insert(state.primary_selection);
 	}
+	else if (state.primary_selection < 0 && !state.selected_ids.empty())
+	{
+		// Primary was cleared (e.g., by deletion), clear selection set to maintain invariants
+		state.selected_ids.clear();
+	}
 }
 
 void ClearSelection(ScenePanelState& state)

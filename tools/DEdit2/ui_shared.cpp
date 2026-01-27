@@ -360,8 +360,14 @@ void DrawTreeNodes(
 	const bool open = ImGui::TreeNodeEx(node.name.c_str(), flags);
 	if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
 	{
-		selected_id = node_id;
-		active_target = target;
+		// Block selection of frozen scene nodes (consistent with viewport picking)
+		const bool is_frozen = is_scene && props != nullptr && node_id >= 0 &&
+			static_cast<size_t>(node_id) < props->size() && (*props)[node_id].frozen;
+		if (!is_frozen)
+		{
+			selected_id = node_id;
+			active_target = target;
+		}
 	}
 
 	// Draw visibility/freeze icons for scene nodes
