@@ -656,7 +656,7 @@ ViewportPanelResult DrawViewportPanel(
     (void)cam_right;
     (void)cam_up;
     const size_t count = std::min(scene_nodes.size(), scene_props.size());
-    const int selected_id = scene_panel.selected_id;
+    const int selected_id = scene_panel.primary_selection;
 
     if (viewport_panel.show_light_icons)
     {

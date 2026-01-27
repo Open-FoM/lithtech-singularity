@@ -92,7 +92,8 @@ bool SceneNodeVisibleRecursive(
 		return false;
 	}
 
-	if (state.isolate_selected && state.selected_id >= 0 && node_id != state.selected_id)
+	if (state.isolate_selected && !state.selected_ids.empty() &&
+	    state.selected_ids.find(node_id) == state.selected_ids.end())
 	{
 		return false;
 	}
@@ -179,7 +180,7 @@ void DrawScenePanel(
 
 		if (ImGui::CollapsingHeader("Visibility Filters"))
 		{
-			const bool has_selection = state.selected_id >= 0 && static_cast<size_t>(state.selected_id) < nodes.size();
+			const bool has_selection = HasSelection(state);
 			ImGui::BeginDisabled(!has_selection);
 			ImGui::Checkbox("Isolate Selected", &state.isolate_selected);
 			ImGui::EndDisabled();
@@ -239,7 +240,7 @@ void DrawScenePanel(
 			DrawTreeNodes(
 				nodes,
 				0,
-				state.selected_id,
+				state.primary_selection,
 				state.filter,
 				expand_mode,
 				state.tree_ui,
@@ -276,7 +277,7 @@ void DrawScenePanel(
 		state.tree_ui,
 		nodes,
 		props,
-		state.selected_id,
+		state.primary_selection,
 		"New Folder",
 		"New Object",
 		"Folder",
@@ -284,4 +285,303 @@ void DrawScenePanel(
 		UndoTarget::Scene,
 		undo_stack);
 	HandleRenamePopup(state.tree_ui, nodes, "Rename Scene Item", UndoTarget::Scene, undo_stack);
+
+	// Sync primary_selection with selected_ids set
+	if (state.primary_selection >= 0 && state.selected_ids.find(state.primary_selection) == state.selected_ids.end())
+	{
+		// Primary was changed by tree widget, update the set
+		state.selected_ids.clear();
+		state.selected_ids.insert(state.primary_selection);
+	}
+}
+
+void ClearSelection(ScenePanelState& state)
+{
+	state.selected_ids.clear();
+	state.primary_selection = -1;
+}
+
+void SelectNode(ScenePanelState& state, int node_id)
+{
+	state.selected_ids.clear();
+	if (node_id >= 0)
+	{
+		state.selected_ids.insert(node_id);
+	}
+	state.primary_selection = node_id;
+}
+
+void ModifySelection(ScenePanelState& state, int node_id, SelectionMode mode)
+{
+	if (node_id < 0)
+	{
+		return;
+	}
+
+	switch (mode)
+	{
+	case SelectionMode::Replace:
+		state.selected_ids.clear();
+		state.selected_ids.insert(node_id);
+		state.primary_selection = node_id;
+		break;
+
+	case SelectionMode::Add:
+		state.selected_ids.insert(node_id);
+		state.primary_selection = node_id;
+		break;
+
+	case SelectionMode::Remove:
+		state.selected_ids.erase(node_id);
+		if (state.primary_selection == node_id)
+		{
+			state.primary_selection = state.selected_ids.empty() ? -1 : *state.selected_ids.begin();
+		}
+		break;
+
+	case SelectionMode::Toggle:
+		if (state.selected_ids.find(node_id) != state.selected_ids.end())
+		{
+			state.selected_ids.erase(node_id);
+			if (state.primary_selection == node_id)
+			{
+				state.primary_selection = state.selected_ids.empty() ? -1 : *state.selected_ids.begin();
+			}
+		}
+		else
+		{
+			state.selected_ids.insert(node_id);
+			state.primary_selection = node_id;
+		}
+		break;
+	}
+}
+
+bool IsNodeSelected(const ScenePanelState& state, int node_id)
+{
+	return state.selected_ids.find(node_id) != state.selected_ids.end();
+}
+
+bool HasSelection(const ScenePanelState& state)
+{
+	return !state.selected_ids.empty();
+}
+
+size_t SelectionCount(const ScenePanelState& state)
+{
+	return state.selected_ids.size();
+}
+
+void SelectAll(
+	ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	state.selected_ids.clear();
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		if (!SceneNodePassesFilters(state, static_cast<int>(i), nodes, props))
+		{
+			continue;
+		}
+		state.selected_ids.insert(static_cast<int>(i));
+	}
+	if (!state.selected_ids.empty())
+	{
+		state.primary_selection = *state.selected_ids.begin();
+	}
+	else
+	{
+		state.primary_selection = -1;
+	}
+}
+
+void SelectNone(ScenePanelState& state)
+{
+	ClearSelection(state);
+}
+
+void SelectInverse(
+	ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	std::unordered_set<int> new_selection;
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		if (!SceneNodePassesFilters(state, static_cast<int>(i), nodes, props))
+		{
+			continue;
+		}
+		if (state.selected_ids.find(static_cast<int>(i)) == state.selected_ids.end())
+		{
+			new_selection.insert(static_cast<int>(i));
+		}
+	}
+	state.selected_ids = std::move(new_selection);
+	if (!state.selected_ids.empty())
+	{
+		state.primary_selection = *state.selected_ids.begin();
+	}
+	else
+	{
+		state.primary_selection = -1;
+	}
+}
+
+std::array<float, 3> ComputeSelectionCenter(
+	const ScenePanelState& state,
+	const std::vector<NodeProperties>& props)
+{
+	if (state.selected_ids.empty())
+	{
+		return {0.0f, 0.0f, 0.0f};
+	}
+
+	float sum_x = 0.0f;
+	float sum_y = 0.0f;
+	float sum_z = 0.0f;
+	int valid_count = 0;
+
+	for (int id : state.selected_ids)
+	{
+		if (id < 0 || static_cast<size_t>(id) >= props.size())
+		{
+			continue;
+		}
+		const NodeProperties& p = props[id];
+		sum_x += p.position[0];
+		sum_y += p.position[1];
+		sum_z += p.position[2];
+		++valid_count;
+	}
+
+	if (valid_count == 0)
+	{
+		return {0.0f, 0.0f, 0.0f};
+	}
+
+	return {sum_x / valid_count, sum_y / valid_count, sum_z / valid_count};
+}
+
+bool ComputeSelectionBounds(
+	const ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	float out_min[3],
+	float out_max[3])
+{
+	bool has_valid = false;
+	float min_x = 1.0e30f, min_y = 1.0e30f, min_z = 1.0e30f;
+	float max_x = -1.0e30f, max_y = -1.0e30f, max_z = -1.0e30f;
+
+	for (int id : state.selected_ids)
+	{
+		if (id < 0 || static_cast<size_t>(id) >= props.size())
+		{
+			continue;
+		}
+		if (static_cast<size_t>(id) >= nodes.size() || nodes[id].deleted)
+		{
+			continue;
+		}
+		const NodeProperties& p = props[id];
+		min_x = std::min(min_x, p.position[0]);
+		min_y = std::min(min_y, p.position[1]);
+		min_z = std::min(min_z, p.position[2]);
+		max_x = std::max(max_x, p.position[0]);
+		max_y = std::max(max_y, p.position[1]);
+		max_z = std::max(max_z, p.position[2]);
+		has_valid = true;
+	}
+
+	if (has_valid)
+	{
+		out_min[0] = min_x;
+		out_min[1] = min_y;
+		out_min[2] = min_z;
+		out_max[0] = max_x;
+		out_max[1] = max_y;
+		out_max[2] = max_z;
+	}
+	return has_valid;
+}
+
+void HideSelected(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props)
+{
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			props[id].visible = false;
+		}
+	}
+}
+
+void UnhideAll(std::vector<NodeProperties>& props)
+{
+	for (NodeProperties& p : props)
+	{
+		p.visible = true;
+	}
+}
+
+void HideUnselected(
+	const ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	std::vector<NodeProperties>& props)
+{
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		if (state.selected_ids.find(static_cast<int>(i)) == state.selected_ids.end())
+		{
+			props[i].visible = false;
+		}
+	}
+}
+
+void FreezeSelected(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props)
+{
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			props[id].frozen = true;
+		}
+	}
+}
+
+void UnfreezeAll(std::vector<NodeProperties>& props)
+{
+	for (NodeProperties& p : props)
+	{
+		p.frozen = false;
+	}
+}
+
+bool IsNodePickable(const NodeProperties& props)
+{
+	return props.visible && !props.frozen;
 }

@@ -1,8 +1,10 @@
 #pragma once
 
+#include "brush/brush_primitive.h"
 #include "editor_state.h"
 #include "undo_stack.h"
 #include "ui_console.h"
+#include "ui_dock.h"
 #include "ui_project.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
@@ -11,6 +13,19 @@
 
 #include <string>
 #include <vector>
+
+/// State for the primitive creation dialog.
+struct PrimitiveDialogState {
+  bool open = false;
+  PrimitiveType type = PrimitiveType::None;
+
+  // Last-used parameters for each primitive type
+  BoxParams box_params;
+  CylinderParams cylinder_params;
+  PyramidParams pyramid_params;
+  SphereParams sphere_params;
+  PlaneParams plane_params;
+};
 
 struct EditorSession
 {
@@ -35,4 +50,6 @@ struct EditorSession
   WorldRenderSettingsCache world_settings_cache;
 
   UndoStack undo_stack;
+
+  PrimitiveDialogState primitive_dialog;
 };

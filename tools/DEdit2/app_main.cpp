@@ -4,6 +4,7 @@
 #include "app/project_utils.h"
 #include "app/recent_projects.h"
 #include "app/scene_loader.h"
+#include "ui_scene.h"
 #include "viewport/diligent_viewport.h"
 
 #include "dedit2_concommand.h"
@@ -98,7 +99,7 @@ int main(int argc, char** argv)
   session.project_panel.error = session.project_error;
   session.project_panel.selected_id = DefaultProjectSelection(session.project_nodes);
   session.scene_panel.error = session.scene_error;
-  session.scene_panel.selected_id = session.scene_nodes.empty() ? -1 : 0;
+  SelectNode(session.scene_panel, session.scene_nodes.empty() ? -1 : 0);
   session.active_target = SelectionTarget::Project;
 
   DEdit2_SetConsoleBindings({

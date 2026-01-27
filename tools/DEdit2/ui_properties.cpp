@@ -408,7 +408,7 @@ void DrawProjectProperties(
 	ImGui::TextUnformatted("Path");
 	ImGui::TextWrapped("%s", BuildNodePath(nodes, 0, selected_id).c_str());
 	ImGui::Spacing();
-	ImGui::Checkbox("Locked", &node_props.locked);
+	ImGui::Checkbox("Frozen", &node_props.frozen);
 	ImGui::BeginDisabled();
 	ImGui::Checkbox("Visible", &node_props.visible);
 	ImGui::EndDisabled();
@@ -472,7 +472,7 @@ void DrawSceneProperties(
 	ImGui::TextWrapped("%s", BuildNodePath(nodes, 0, selected_id).c_str());
 	ImGui::Checkbox("Visible", &node_props.visible);
 	ImGui::SameLine();
-	ImGui::Checkbox("Locked", &node_props.locked);
+	ImGui::Checkbox("Frozen", &node_props.frozen);
 	ImGui::Spacing();
 	ImGui::TextUnformatted("Transform");
 	ImGui::DragFloat3("Position", node_props.position, 0.1f);

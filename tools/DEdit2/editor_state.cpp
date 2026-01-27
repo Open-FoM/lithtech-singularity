@@ -415,7 +415,7 @@ void ApplyBinaryProperty(
 			}
 			else
 			{
-				props.locked = value;
+				props.frozen = value;
 			}
 		}
 		return;
@@ -956,7 +956,7 @@ void ApplyFlags(CLTANode* node, NodeProperties& props)
 		}
 		else if (flag == "frozen" || flag == "locked")
 		{
-			props.locked = true;
+			props.frozen = true;
 		}
 	}
 }
@@ -1360,7 +1360,7 @@ bool ApplyProperty(NodeProperties& props, TreeNode& node, const std::string& nam
 			}
 			else
 			{
-				props.locked = bool_value;
+				props.frozen = bool_value;
 			}
 		}
 		return true;

@@ -18,7 +18,8 @@ struct ViewportOverlayItem
 
 struct ViewportOverlayState
 {
-  ViewportOverlayItem items[2];
+  static constexpr int kMaxOverlays = 32;
+  ViewportOverlayItem items[kMaxOverlays];
   int count = 0;
 };
 

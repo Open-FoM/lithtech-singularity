@@ -31,13 +31,13 @@ ViewportInteractionResult UpdateViewportInteraction(
 
   if (hovered && active_target == SelectionTarget::Scene)
   {
-    const int selected_id = scene_panel.selected_id;
+    const int selected_id = scene_panel.primary_selection;
     const size_t count = std::min(scene_nodes.size(), scene_props.size());
     if (selected_id >= 0 && static_cast<size_t>(selected_id) < count)
     {
       const TreeNode& node = scene_nodes[selected_id];
       NodeProperties& props = scene_props[selected_id];
-      if (!node.deleted && !node.is_folder && !props.locked &&
+      if (!node.deleted && !node.is_folder && !props.frozen &&
         SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
       {
         const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
@@ -94,6 +94,11 @@ ViewportInteractionResult UpdateViewportInteraction(
         continue;
       }
       if (!NodePickableByRender(viewport_panel, scene_props[i]))
+      {
+        continue;
+      }
+      // Skip frozen nodes - they can't be selected
+      if (scene_props[i].frozen)
       {
         continue;
       }
@@ -161,25 +166,34 @@ ViewportInteractionResult UpdateViewportInteraction(
   }
 
   const size_t count = std::min(scene_nodes.size(), scene_props.size());
-  const int selected_id = scene_panel.selected_id;
+  const int selected_id = scene_panel.primary_selection;
   result.overlays.count = 0;
-  if (selected_id >= 0 && static_cast<size_t>(selected_id) < count)
+
+  // Add overlays for all selected nodes (primary selection gets brighter color)
+  for (int sel_id : scene_panel.selected_ids)
   {
-    const TreeNode& node = scene_nodes[selected_id];
-    const NodeProperties& props = scene_props[selected_id];
+    if (sel_id < 0 || static_cast<size_t>(sel_id) >= count)
+    {
+      continue;
+    }
+    const TreeNode& node = scene_nodes[sel_id];
+    const NodeProperties& props = scene_props[sel_id];
     if (!node.deleted && !node.is_folder &&
-      SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props) &&
+      SceneNodePassesFilters(scene_panel, sel_id, scene_nodes, scene_props) &&
       NodePickableByRender(viewport_panel, props))
     {
-      if (result.overlays.count < 2)
+      if (result.overlays.count < ViewportOverlayState::kMaxOverlays)
       {
-        result.overlays.items[result.overlays.count++] =
-          ViewportOverlayItem{&props, MakeOverlayColor(255, 200, 0, 255)};
+        // Primary selection gets brighter highlight
+        const bool is_primary = (sel_id == selected_id);
+        result.overlays.items[result.overlays.count++] = ViewportOverlayItem{
+          &props, MakeOverlayColor(255, is_primary ? 200 : 160, 0, is_primary ? 255 : 200)};
       }
     }
   }
 
-  if (result.hovered_scene_id >= 0 && result.hovered_scene_id != selected_id)
+  if (result.hovered_scene_id >= 0 &&
+    scene_panel.selected_ids.find(result.hovered_scene_id) == scene_panel.selected_ids.end())
   {
     const TreeNode& node = scene_nodes[result.hovered_scene_id];
     const NodeProperties& props = scene_props[result.hovered_scene_id];
@@ -187,7 +201,7 @@ ViewportInteractionResult UpdateViewportInteraction(
       SceneNodePassesFilters(scene_panel, result.hovered_scene_id, scene_nodes, scene_props) &&
       NodePickableByRender(viewport_panel, props))
     {
-      if (result.overlays.count < 2)
+      if (result.overlays.count < ViewportOverlayState::kMaxOverlays)
       {
         result.overlays.items[result.overlays.count++] =
           ViewportOverlayItem{&props, MakeOverlayColor(255, 255, 255, 180)};

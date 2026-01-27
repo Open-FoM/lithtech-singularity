@@ -5,6 +5,17 @@
 #include <string>
 #include <vector>
 
+/// Type of brush primitive to create.
+enum class PrimitiveType {
+  None,
+  Box,
+  Cylinder,
+  Pyramid,
+  Sphere,
+  Dome,
+  Plane
+};
+
 struct MainMenuActions
 {
 	bool open_project_folder = false;
@@ -12,6 +23,14 @@ struct MainMenuActions
 	std::string recent_project_path;
 	bool undo = false;
 	bool redo = false;
+	PrimitiveType create_primitive = PrimitiveType::None;
+	bool select_all = false;
+	bool select_none = false;
+	bool select_inverse = false;
+	bool hide_selected = false;
+	bool unhide_all = false;
+	bool freeze_selected = false;
+	bool unfreeze_all = false;
 };
 
 void DrawMainMenuBar(

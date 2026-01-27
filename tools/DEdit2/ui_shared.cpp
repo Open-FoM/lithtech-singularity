@@ -363,6 +363,32 @@ void DrawTreeNodes(
 		selected_id = node_id;
 		active_target = target;
 	}
+
+	// Draw visibility/freeze icons for scene nodes
+	if (is_scene && props != nullptr && node_id >= 0 && static_cast<size_t>(node_id) < props->size())
+	{
+		const NodeProperties& node_props = (*props)[node_id];
+		if (!node.is_folder)
+		{
+			ImGui::SameLine();
+			// Eye icon for visibility (gray = hidden)
+			if (node_props.visible)
+			{
+				ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.6f), "[V]");
+			}
+			else
+			{
+				ImGui::TextColored(ImVec4(0.5f, 0.3f, 0.3f, 0.8f), "[H]");
+			}
+			ImGui::SameLine();
+			// Lock icon for freeze (red = frozen)
+			if (node_props.frozen)
+			{
+				ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.1f, 1.0f), "[F]");
+			}
+		}
+	}
+
 	if (filter.IsActive() && !filter.PassFilter(node.name.c_str()))
 	{
 		ImGui::PopStyleColor();

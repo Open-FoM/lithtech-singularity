@@ -55,7 +55,71 @@ void DrawMainMenuBar(
 			actions.redo = true;
 		}
 		ImGui::Separator();
+		if (ImGui::MenuItem("Select All", "Cmd+A"))
+		{
+			actions.select_all = true;
+		}
+		if (ImGui::MenuItem("Select None", "Cmd+D"))
+		{
+			actions.select_none = true;
+		}
+		if (ImGui::MenuItem("Select Inverse", "Cmd+I"))
+		{
+			actions.select_inverse = true;
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Hide Selected", "H"))
+		{
+			actions.hide_selected = true;
+		}
+		if (ImGui::MenuItem("Unhide All", "Shift+H"))
+		{
+			actions.unhide_all = true;
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Freeze Selected", "F"))
+		{
+			actions.freeze_selected = true;
+		}
+		if (ImGui::MenuItem("Unfreeze All", "Shift+F"))
+		{
+			actions.unfreeze_all = true;
+		}
+		ImGui::Separator();
 		ImGui::MenuItem("Preferences...", nullptr, false, false);
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::BeginMenu("Brush"))
+	{
+		if (ImGui::BeginMenu("Create Primitive"))
+		{
+			if (ImGui::MenuItem("Box...", "Ctrl+Shift+B"))
+			{
+				actions.create_primitive = PrimitiveType::Box;
+			}
+			if (ImGui::MenuItem("Cylinder...", "Ctrl+Shift+C"))
+			{
+				actions.create_primitive = PrimitiveType::Cylinder;
+			}
+			if (ImGui::MenuItem("Pyramid...", "Ctrl+Shift+Y"))
+			{
+				actions.create_primitive = PrimitiveType::Pyramid;
+			}
+			if (ImGui::MenuItem("Sphere...", "Ctrl+Shift+S"))
+			{
+				actions.create_primitive = PrimitiveType::Sphere;
+			}
+			if (ImGui::MenuItem("Dome...", "Ctrl+Shift+D"))
+			{
+				actions.create_primitive = PrimitiveType::Dome;
+			}
+			if (ImGui::MenuItem("Plane...", "Ctrl+Shift+P"))
+			{
+				actions.create_primitive = PrimitiveType::Plane;
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::EndMenu();
 	}
 

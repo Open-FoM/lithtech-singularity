@@ -32,7 +32,7 @@ void LoadSceneWorld(
   viewport_panel.render_lightmaps_available = false;
   scene_nodes = BuildSceneTree(world_file, scene_props, scene_error);
   scene_panel.error = scene_error;
-  scene_panel.selected_id = scene_nodes.empty() ? -1 : 0;
+  SelectNode(scene_panel, scene_nodes.empty() ? -1 : 0);
   scene_panel.tree_ui = {};
   active_target = SelectionTarget::Scene;
 

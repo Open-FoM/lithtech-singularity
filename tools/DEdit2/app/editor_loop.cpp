@@ -31,6 +31,226 @@
 #include <filesystem>
 #include <cstdio>
 
+namespace {
+
+/// Creates a new brush node from primitive result and adds it to the scene.
+int CreateBrushFromPrimitive(
+  std::vector<TreeNode>& scene_nodes,
+  std::vector<NodeProperties>& scene_props,
+  const PrimitiveResult& primitive,
+  const char* name)
+{
+  if (!primitive.success || primitive.vertices.empty())
+  {
+    return -1;
+  }
+
+  // Find or create root node
+  if (scene_nodes.empty())
+  {
+    TreeNode root;
+    root.name = "World";
+    root.is_folder = true;
+    scene_nodes.push_back(root);
+    scene_props.push_back(MakeProps("World"));
+  }
+
+  const int new_id = static_cast<int>(scene_nodes.size());
+  TreeNode node;
+  node.name = name;
+  node.is_folder = false;
+  scene_nodes.push_back(node);
+
+  NodeProperties props = MakeProps("Brush");
+  props.brush_vertices = primitive.vertices;
+  props.brush_indices = primitive.indices;
+
+  // Compute centroid from vertices (consistent with loaded brushes)
+  if (primitive.vertices.size() >= 3)
+  {
+    const size_t vertex_count = primitive.vertices.size() / 3;
+    double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
+    for (size_t i = 0; i < primitive.vertices.size(); i += 3)
+    {
+      sum_x += primitive.vertices[i];
+      sum_y += primitive.vertices[i + 1];
+      sum_z += primitive.vertices[i + 2];
+    }
+    props.position[0] = static_cast<float>(sum_x / static_cast<double>(vertex_count));
+    props.position[1] = static_cast<float>(sum_y / static_cast<double>(vertex_count));
+    props.position[2] = static_cast<float>(sum_z / static_cast<double>(vertex_count));
+  }
+
+  scene_props.push_back(props);
+
+  // Add to root's children
+  scene_nodes[0].children.push_back(new_id);
+
+  return new_id;
+}
+
+/// Draws the primitive creation dialog and handles creation.
+void DrawPrimitiveDialog(EditorSession& session)
+{
+  PrimitiveDialogState& dialog = session.primitive_dialog;
+  if (!dialog.open)
+  {
+    return;
+  }
+
+  const char* title = "Create Primitive";
+  switch (dialog.type)
+  {
+  case PrimitiveType::Box:
+    title = "Create Box";
+    break;
+  case PrimitiveType::Cylinder:
+    title = "Create Cylinder";
+    break;
+  case PrimitiveType::Pyramid:
+    title = "Create Pyramid";
+    break;
+  case PrimitiveType::Sphere:
+    title = "Create Sphere";
+    break;
+  case PrimitiveType::Dome:
+    title = "Create Dome";
+    break;
+  case PrimitiveType::Plane:
+    title = "Create Plane";
+    break;
+  default:
+    dialog.open = false;
+    return;
+  }
+
+  ImGui::OpenPopup(title);
+  if (ImGui::BeginPopupModal(title, &dialog.open, ImGuiWindowFlags_AlwaysAutoResize))
+  {
+    bool create = false;
+
+    switch (dialog.type)
+    {
+    case PrimitiveType::Box:
+      ImGui::DragFloat3("Center", dialog.box_params.center, 1.0f);
+      ImGui::DragFloat3("Size", dialog.box_params.size, 1.0f, 1.0f, 10000.0f);
+      if (ImGui::Button("Create"))
+      {
+        create = true;
+      }
+      break;
+
+    case PrimitiveType::Cylinder:
+      ImGui::DragFloat3("Center", dialog.cylinder_params.center, 1.0f);
+      ImGui::DragFloat("Height", &dialog.cylinder_params.height, 1.0f, 1.0f, 10000.0f);
+      ImGui::DragFloat("Radius", &dialog.cylinder_params.radius, 1.0f, 1.0f, 10000.0f);
+      ImGui::SliderInt("Sides", &dialog.cylinder_params.sides, 3, 32);
+      if (ImGui::Button("Create"))
+      {
+        create = true;
+      }
+      break;
+
+    case PrimitiveType::Pyramid:
+      ImGui::DragFloat3("Center", dialog.pyramid_params.center, 1.0f);
+      ImGui::DragFloat("Height", &dialog.pyramid_params.height, 1.0f, 1.0f, 10000.0f);
+      ImGui::DragFloat("Base Radius", &dialog.pyramid_params.radius, 1.0f, 1.0f, 10000.0f);
+      ImGui::SliderInt("Sides", &dialog.pyramid_params.sides, 3, 32);
+      if (ImGui::Button("Create"))
+      {
+        create = true;
+      }
+      break;
+
+    case PrimitiveType::Sphere:
+    case PrimitiveType::Dome:
+      dialog.sphere_params.dome = (dialog.type == PrimitiveType::Dome);
+      ImGui::DragFloat3("Center", dialog.sphere_params.center, 1.0f);
+      ImGui::DragFloat("Radius", &dialog.sphere_params.radius, 1.0f, 1.0f, 10000.0f);
+      ImGui::SliderInt("H Subdivisions", &dialog.sphere_params.horizontal_subdivisions, 4, 32);
+      ImGui::SliderInt("V Subdivisions", &dialog.sphere_params.vertical_subdivisions, 2, 16);
+      if (ImGui::Button("Create"))
+      {
+        create = true;
+      }
+      break;
+
+    case PrimitiveType::Plane:
+      ImGui::DragFloat3("Center", dialog.plane_params.center, 1.0f);
+      ImGui::DragFloat("Width", &dialog.plane_params.width, 1.0f, 1.0f, 10000.0f);
+      ImGui::DragFloat("Height", &dialog.plane_params.height, 1.0f, 1.0f, 10000.0f);
+      ImGui::DragFloat3("Normal", dialog.plane_params.normal, 0.01f, -1.0f, 1.0f);
+      if (ImGui::Button("Create"))
+      {
+        create = true;
+      }
+      break;
+
+    default:
+      break;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+    {
+      dialog.open = false;
+    }
+
+    if (create)
+    {
+      PrimitiveResult result;
+      const char* name = "Brush";
+
+      switch (dialog.type)
+      {
+      case PrimitiveType::Box:
+        result = CreatePrimitiveBox(dialog.box_params);
+        name = "Box";
+        break;
+      case PrimitiveType::Cylinder:
+        result = CreatePrimitiveCylinder(dialog.cylinder_params);
+        name = "Cylinder";
+        break;
+      case PrimitiveType::Pyramid:
+        result = CreatePrimitivePyramid(dialog.pyramid_params);
+        name = "Pyramid";
+        break;
+      case PrimitiveType::Sphere:
+      case PrimitiveType::Dome:
+        result = CreatePrimitiveSphere(dialog.sphere_params);
+        name = dialog.type == PrimitiveType::Dome ? "Dome" : "Sphere";
+        break;
+      case PrimitiveType::Plane:
+        result = CreatePrimitivePlane(dialog.plane_params);
+        name = "Plane";
+        break;
+      default:
+        break;
+      }
+
+      if (result.success)
+      {
+        const int new_id = CreateBrushFromPrimitive(
+          session.scene_nodes,
+          session.scene_props,
+          result,
+          name);
+        if (new_id >= 0)
+        {
+          SelectNode(session.scene_panel, new_id);
+          session.active_target = SelectionTarget::Scene;
+        }
+      }
+
+      dialog.open = false;
+    }
+
+    ImGui::EndPopup();
+  }
+}
+
+}  // namespace
+
 void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession& session)
 {
   bool done = false;
@@ -112,6 +332,52 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         trigger_redo = true;
       }
+      // Selection commands (only when Scene is active)
+      if (session.active_target == SelectionTarget::Scene)
+      {
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false))
+        {
+          SelectAll(session.scene_panel, session.scene_nodes, session.scene_props);
+        }
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false))
+        {
+          SelectNone(session.scene_panel);
+        }
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_I, false))
+        {
+          SelectInverse(session.scene_panel, session.scene_nodes, session.scene_props);
+        }
+        // Visibility commands: H = Hide Selected, Shift+H = Unhide All, Alt+H = Hide Unselected
+        if (ImGui::IsKeyPressed(ImGuiKey_H, false))
+        {
+          if (io.KeyShift)
+          {
+            UnhideAll(session.scene_props);
+          }
+          else if (io.KeyAlt)
+          {
+            HideUnselected(session.scene_panel, session.scene_nodes, session.scene_props);
+          }
+          else if (HasSelection(session.scene_panel))
+          {
+            HideSelected(session.scene_panel, session.scene_props);
+            ClearSelection(session.scene_panel);
+          }
+        }
+        // Freeze commands: F = Freeze Selected, Shift+F = Unfreeze All
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false))
+        {
+          if (io.KeyShift)
+          {
+            UnfreezeAll(session.scene_props);
+          }
+          else if (HasSelection(session.scene_panel))
+          {
+            FreezeSelected(session.scene_panel, session.scene_props);
+            ClearSelection(session.scene_panel);
+          }
+        }
+      }
     }
     if (trigger_undo)
     {
@@ -121,6 +387,49 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     {
       session.undo_stack.Redo(session.project_nodes, session.scene_nodes);
     }
+
+    // Handle menu-triggered selection/visibility commands
+    if (session.active_target == SelectionTarget::Scene)
+    {
+      if (menu_actions.select_all)
+      {
+        SelectAll(session.scene_panel, session.scene_nodes, session.scene_props);
+      }
+      if (menu_actions.select_none)
+      {
+        SelectNone(session.scene_panel);
+      }
+      if (menu_actions.select_inverse)
+      {
+        SelectInverse(session.scene_panel, session.scene_nodes, session.scene_props);
+      }
+      if (menu_actions.hide_selected && HasSelection(session.scene_panel))
+      {
+        HideSelected(session.scene_panel, session.scene_props);
+        ClearSelection(session.scene_panel);
+      }
+      if (menu_actions.unhide_all)
+      {
+        UnhideAll(session.scene_props);
+      }
+      if (menu_actions.freeze_selected && HasSelection(session.scene_panel))
+      {
+        FreezeSelected(session.scene_panel, session.scene_props);
+        ClearSelection(session.scene_panel);
+      }
+      if (menu_actions.unfreeze_all)
+      {
+        UnfreezeAll(session.scene_props);
+      }
+    }
+
+    // Handle primitive creation menu action
+    if (menu_actions.create_primitive != PrimitiveType::None)
+    {
+      session.primitive_dialog.open = true;
+      session.primitive_dialog.type = menu_actions.create_primitive;
+    }
+
     if (menu_actions.open_project_folder)
     {
       std::string selected_path;
@@ -210,10 +519,13 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.project_panel.selected_id,
       session.scene_nodes,
       session.scene_props,
-      session.scene_panel.selected_id,
+      session.scene_panel.primary_selection,
       session.project_root);
 
     DrawConsolePanel(session.console_panel);
+
+    // Draw modal dialogs
+    DrawPrimitiveDialog(session);
 
     ViewportPanelResult viewport_result = DrawViewportPanel(
       diligent,
@@ -226,7 +538,21 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     overlay_state = viewport_result.overlays;
     if (viewport_result.clicked_scene_id >= 0)
     {
-      session.scene_panel.selected_id = viewport_result.clicked_scene_id;
+      // Determine selection mode based on modifier keys
+      SelectionMode sel_mode = SelectionMode::Replace;
+      if (io.KeyShift && io.KeyCtrl)
+      {
+        sel_mode = SelectionMode::Remove;
+      }
+      else if (io.KeyShift)
+      {
+        sel_mode = SelectionMode::Add;
+      }
+      else if (io.KeyCtrl)
+      {
+        sel_mode = SelectionMode::Toggle;
+      }
+      ModifySelection(session.scene_panel, viewport_result.clicked_scene_id, sel_mode);
       session.active_target = SelectionTarget::Scene;
     }
 
