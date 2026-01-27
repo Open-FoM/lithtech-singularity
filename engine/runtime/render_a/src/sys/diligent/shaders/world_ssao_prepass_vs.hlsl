@@ -4,6 +4,7 @@ cbuffer SsaoPrepassConstants
     float4x4 g_PrevViewProj;
     float4x4 g_World;
     float4x4 g_PrevWorld;
+    float4 g_PrepassParams;
 };
 
 struct VSInput

@@ -2030,6 +2030,7 @@ void RenderViewport(
 	}
 
 	diligent_SetOutputTargets(nullptr, nullptr);
+	ctx.engine.context->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
 }
 
 bool InitDiligent(SDL_Window* window, DiligentContext& ctx)

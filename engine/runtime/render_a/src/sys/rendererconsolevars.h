@@ -330,6 +330,29 @@ RCONVAR(g_CV_SSAOFxResetAccumulation, "SSAOFxResetAccumulation", int, 0);
 RCONVAR(g_CV_SSAOFxAlphaInterpolation, "SSAOFxAlphaInterpolation", float, 1.0f);
 
 //------------------------------
+// SSGI Settings
+RCONVAR(g_CV_SSGIEnable, "SSGIEnable", int, 0);
+RCONVAR(g_CV_SSGIIntensity, "SSGIIntensity", float, 1.0f);
+RCONVAR(g_CV_SSGIRadius, "SSGIRadius", float, 12.0f);
+RCONVAR(g_CV_SSGISampleCount, "SSGISampleCount", int, 8);
+RCONVAR(g_CV_SSGIDepthReject, "SSGIDepthReject", float, 0.02f);
+RCONVAR(g_CV_SSGINormalReject, "SSGINormalReject", float, 0.4f);
+RCONVAR(g_CV_SSGITemporalEnable, "SSGITemporalEnable", int, 1);
+RCONVAR(g_CV_SSGITemporalBlend, "SSGITemporalBlend", float, 0.85f);
+RCONVAR(g_CV_SSGITemporalDepthReject, "SSGITemporalDepthReject", float, 0.02f);
+RCONVAR(g_CV_SSGITemporalNormalReject, "SSGITemporalNormalReject", float, 0.4f);
+
+//------------------------------
+// SSR Settings
+RCONVAR(g_CV_SSREnable, "SSREnable", int, 0);
+RCONVAR(g_CV_SSRIntensity, "SSRIntensity", float, 1.0f);
+RCONVAR(g_CV_SSRRoughnessThreshold, "SSRRoughnessThreshold", float, 0.8f);
+RCONVAR(g_CV_SSRMaxTraversal, "SSRMaxTraversal", int, 32);
+RCONVAR(g_CV_SSRHalfResolution, "SSRHalfResolution", int, 1);
+RCONVAR(g_CV_SSRTemporalStability, "SSRTemporalStability", float, 0.9f);
+RCONVAR(g_CV_SSRDefaultRoughness, "SSRDefaultRoughness", float, 0.5f);
+
+//------------------------------
 // Effect file settings
 RCONVAR(g_CV_Effect_ForceSoftwareShaders, "Effect_ForceSoftwareShaders", int, 0);
 RCONVAR(g_CV_Effect_DebugEffectIncludes, "Effect_DebugEffectIncludes", int, 0);

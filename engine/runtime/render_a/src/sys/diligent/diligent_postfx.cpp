@@ -8,6 +8,8 @@
 #include "diligent_object_draw.h"
 #include "diligent_render.h"
 #include "diligent_scene_collect.h"
+#include "diligent_ssgi_fx.h"
+#include "diligent_ssr_fx.h"
 #include "diligent_utils.h"
 #include "diligent_world_data.h"
 #include "diligent_world_draw.h"
@@ -3045,6 +3047,8 @@ void diligent_postfx_term()
 	g_diligent_ssao_state.resources.composite_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
 	diligent_ssao_fx_term();
+	diligent_ssgi_term();
+	diligent_ssr_term();
 	g_diligent_ssao_state.resources.temporal_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.temporal_pipeline.pipeline_state.Release();
 	g_diligent_aa_targets = {};

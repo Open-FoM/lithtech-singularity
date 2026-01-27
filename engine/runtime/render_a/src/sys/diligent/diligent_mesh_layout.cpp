@@ -397,6 +397,7 @@ std::string diligent_build_model_ssao_prepass_vertex_shader_source(const Diligen
 	source += "    float4x4 g_PrevViewProj;\n";
 	source += "    float4x4 g_World;\n";
 	source += "    float4x4 g_PrevWorld;\n";
+	source += "    float4 g_PrepassParams;\n";
 	source += "};\n";
 	source += "struct VSInput\n";
 	source += "{\n";

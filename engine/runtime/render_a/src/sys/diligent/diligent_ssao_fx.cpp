@@ -60,6 +60,7 @@ namespace
 {
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxNormalFormat = Diligent::TEX_FORMAT_RGBA16_FLOAT;
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxMotionFormat = Diligent::TEX_FORMAT_RG16_FLOAT;
+constexpr Diligent::TEXTURE_FORMAT kSsaoFxRoughnessFormat = Diligent::TEX_FORMAT_R8_UNORM;
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxDepthFormat = Diligent::TEX_FORMAT_D32_FLOAT;
 
 struct DiligentSsaoPrepassConstants
@@ -68,6 +69,7 @@ struct DiligentSsaoPrepassConstants
 	std::array<float, 16> prev_view_proj{};
 	std::array<float, 16> world{};
 	std::array<float, 16> prev_world{};
+	float prepass_params[4] = {0.5f, 0.0f, 0.0f, 0.0f};
 };
 
 struct DiligentSsaoCompositeConstants
@@ -90,6 +92,9 @@ struct DiligentSsaoFxTargets
 	Diligent::RefCntAutoPtr<Diligent::ITexture> motion;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> motion_rtv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> motion_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> roughness;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> roughness_rtv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> roughness_srv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> depth;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_dsv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> depth_srv;
@@ -103,6 +108,7 @@ struct DiligentSsaoFxPrepassPipeline
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
 	Diligent::TEXTURE_FORMAT normal_format = Diligent::TEX_FORMAT_UNKNOWN;
 	Diligent::TEXTURE_FORMAT motion_format = Diligent::TEX_FORMAT_UNKNOWN;
+	Diligent::TEXTURE_FORMAT roughness_format = Diligent::TEX_FORMAT_UNKNOWN;
 	Diligent::TEXTURE_FORMAT depth_format = Diligent::TEX_FORMAT_UNKNOWN;
 };
 
@@ -118,6 +124,7 @@ struct DiligentSsaoFxModelPipelineKey
 	uint32 layout_hash = 0;
 	Diligent::TEXTURE_FORMAT normal_format = Diligent::TEX_FORMAT_UNKNOWN;
 	Diligent::TEXTURE_FORMAT motion_format = Diligent::TEX_FORMAT_UNKNOWN;
+	Diligent::TEXTURE_FORMAT roughness_format = Diligent::TEX_FORMAT_UNKNOWN;
 	Diligent::TEXTURE_FORMAT depth_format = Diligent::TEX_FORMAT_UNKNOWN;
 
 	bool operator==(const DiligentSsaoFxModelPipelineKey& other) const
@@ -125,6 +132,7 @@ struct DiligentSsaoFxModelPipelineKey
 		return layout_hash == other.layout_hash &&
 			normal_format == other.normal_format &&
 			motion_format == other.motion_format &&
+			roughness_format == other.roughness_format &&
 			depth_format == other.depth_format;
 	}
 };
@@ -137,6 +145,7 @@ struct DiligentSsaoFxModelPipelineKeyHash
 		hash = diligent_hash_combine(hash, key.layout_hash);
 		hash = diligent_hash_combine(hash, static_cast<uint64>(key.normal_format));
 		hash = diligent_hash_combine(hash, static_cast<uint64>(key.motion_format));
+		hash = diligent_hash_combine(hash, static_cast<uint64>(key.roughness_format));
 		hash = diligent_hash_combine(hash, static_cast<uint64>(key.depth_format));
 		return static_cast<size_t>(hash);
 	}
@@ -267,7 +276,7 @@ bool diligent_ssao_fx_ensure_targets(uint32 width, uint32 height, Diligent::TEXT
 {
 	auto& targets = g_ssao_fx_state.targets;
 	if (targets.width == width && targets.height == height && targets.color_format == color_format &&
-		targets.normal && targets.motion && targets.depth && targets.depth_history && targets.scene_color)
+		targets.normal && targets.motion && targets.roughness && targets.depth && targets.depth_history && targets.scene_color)
 	{
 		return true;
 	}
@@ -340,6 +349,23 @@ bool diligent_ssao_fx_ensure_targets(uint32 width, uint32 height, Diligent::TEXT
 	targets.motion_rtv = targets.motion->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	targets.motion_srv = targets.motion->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	if (!targets.motion_rtv || !targets.motion_srv)
+	{
+		diligent_ssao_fx_release_targets();
+		return false;
+	}
+
+	Diligent::TextureDesc roughness_desc = normal_desc;
+	roughness_desc.Name = "ltjs_ssao_fx_roughness";
+	roughness_desc.Format = kSsaoFxRoughnessFormat;
+	g_diligent_state.render_device->CreateTexture(roughness_desc, nullptr, &targets.roughness);
+	if (!targets.roughness)
+	{
+		diligent_ssao_fx_release_targets();
+		return false;
+	}
+	targets.roughness_rtv = targets.roughness->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	targets.roughness_srv = targets.roughness->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	if (!targets.roughness_rtv || !targets.roughness_srv)
 	{
 		diligent_ssao_fx_release_targets();
 		return false;
@@ -519,7 +545,8 @@ DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 {
 	auto& pipeline = g_ssao_fx_state.world_pipeline;
 	if (pipeline.pipeline_state && pipeline.normal_format == normal_format &&
-		pipeline.motion_format == motion_format && pipeline.depth_format == depth_format)
+		pipeline.motion_format == motion_format && pipeline.roughness_format == kSsaoFxRoughnessFormat &&
+		pipeline.depth_format == depth_format)
 	{
 		return &pipeline;
 	}
@@ -532,9 +559,10 @@ DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 	Diligent::GraphicsPipelineStateCreateInfo pipeline_info;
 	pipeline_info.PSODesc.Name = "ltjs_ssao_fx_world_prepass";
 	pipeline_info.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pipeline_info.GraphicsPipeline.NumRenderTargets = 2;
+	pipeline_info.GraphicsPipeline.NumRenderTargets = 3;
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = normal_format;
 	pipeline_info.GraphicsPipeline.RTVFormats[1] = motion_format;
+	pipeline_info.GraphicsPipeline.RTVFormats[2] = kSsaoFxRoughnessFormat;
 	pipeline_info.GraphicsPipeline.DSVFormat = depth_format;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pipeline_info.GraphicsPipeline.SmplDesc.Count = 1;
@@ -573,6 +601,11 @@ DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 	{
 		vs_constants->Set(g_ssao_fx_state.prepass_constants);
 	}
+	auto* ps_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SsaoPrepassConstants");
+	if (ps_constants)
+	{
+		ps_constants->Set(g_ssao_fx_state.prepass_constants);
+	}
 
 	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
 	if (!pipeline.srb)
@@ -582,6 +615,7 @@ DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 
 	pipeline.normal_format = normal_format;
 	pipeline.motion_format = motion_format;
+	pipeline.roughness_format = kSsaoFxRoughnessFormat;
 	pipeline.depth_format = depth_format;
 	return &pipeline;
 }
@@ -596,6 +630,7 @@ DiligentSsaoFxModelPipeline* diligent_ssao_fx_get_model_pipeline(
 	key.layout_hash = layout.hash;
 	key.normal_format = normal_format;
 	key.motion_format = motion_format;
+	key.roughness_format = kSsaoFxRoughnessFormat;
 	key.depth_format = depth_format;
 
 	auto it = g_ssao_fx_state.model_pipelines.find(key);
@@ -642,9 +677,10 @@ DiligentSsaoFxModelPipeline* diligent_ssao_fx_get_model_pipeline(
 	Diligent::GraphicsPipelineStateCreateInfo pipeline_info;
 	pipeline_info.PSODesc.Name = "ltjs_ssao_fx_model_prepass";
 	pipeline_info.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pipeline_info.GraphicsPipeline.NumRenderTargets = 2;
+	pipeline_info.GraphicsPipeline.NumRenderTargets = 3;
 	pipeline_info.GraphicsPipeline.RTVFormats[0] = normal_format;
 	pipeline_info.GraphicsPipeline.RTVFormats[1] = motion_format;
+	pipeline_info.GraphicsPipeline.RTVFormats[2] = kSsaoFxRoughnessFormat;
 	pipeline_info.GraphicsPipeline.DSVFormat = depth_format;
 	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pipeline_info.GraphicsPipeline.SmplDesc.Count = 1;
@@ -670,6 +706,11 @@ DiligentSsaoFxModelPipeline* diligent_ssao_fx_get_model_pipeline(
 	if (vs_constants)
 	{
 		vs_constants->Set(g_ssao_fx_state.prepass_constants);
+	}
+	auto* ps_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SsaoPrepassConstants");
+	if (ps_constants)
+	{
+		ps_constants->Set(g_ssao_fx_state.prepass_constants);
 	}
 
 	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
@@ -910,6 +951,8 @@ bool diligent_ssao_fx_draw_render_blocks(
 	diligent_store_matrix_from_lt(g_ssao_fx_state.prev_view_proj, constants.prev_view_proj);
 	diligent_store_matrix_from_lt(world_matrix, constants.world);
 	diligent_store_matrix_from_lt(prev_world_matrix, constants.prev_world);
+	const float roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
+	constants.prepass_params[0] = roughness;
 	if (!diligent_ssao_fx_update_prepass_constants(constants))
 	{
 		return false;
@@ -1019,6 +1062,8 @@ bool diligent_ssao_fx_draw_model_mesh_prepass(
 	diligent_store_matrix_from_lt(g_ssao_fx_state.prev_view_proj, constants.prev_view_proj);
 	diligent_store_matrix_from_lt(world_matrix, constants.world);
 	diligent_store_matrix_from_lt(prev_world_matrix, constants.prev_world);
+	const float roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
+	constants.prepass_params[0] = roughness;
 	if (!diligent_ssao_fx_update_prepass_constants(constants))
 	{
 		return false;
@@ -1479,7 +1524,8 @@ bool diligent_ssao_fx_render_prepass(SceneDesc* desc)
 	Diligent::ITextureView* render_targets[] =
 	{
 		g_ssao_fx_state.targets.normal_rtv,
-		g_ssao_fx_state.targets.motion_rtv
+		g_ssao_fx_state.targets.motion_rtv,
+		g_ssao_fx_state.targets.roughness_rtv
 	};
 	g_diligent_state.immediate_context->SetRenderTargets(
 		static_cast<uint32>(std::size(render_targets)),
@@ -1489,6 +1535,7 @@ bool diligent_ssao_fx_render_prepass(SceneDesc* desc)
 
 	const float normal_clear[4] = {0.0f, 0.0f, 1.0f, 0.0f};
 	const float motion_clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	const float roughness_clear[4] = {std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f};
 	g_diligent_state.immediate_context->ClearRenderTarget(
 		g_ssao_fx_state.targets.normal_rtv,
 		normal_clear,
@@ -1496,6 +1543,10 @@ bool diligent_ssao_fx_render_prepass(SceneDesc* desc)
 	g_diligent_state.immediate_context->ClearRenderTarget(
 		g_ssao_fx_state.targets.motion_rtv,
 		motion_clear,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->ClearRenderTarget(
+		g_ssao_fx_state.targets.roughness_rtv,
+		roughness_clear,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	g_diligent_state.immediate_context->ClearDepthStencil(
 		g_ssao_fx_state.targets.depth_dsv,
@@ -1556,7 +1607,7 @@ bool diligent_ssao_fx_render_prepass(SceneDesc* desc)
 	return true;
 }
 
-bool diligent_ssao_fx_execute(SceneDesc* desc)
+bool diligent_ssao_fx_execute(SceneDesc* desc, bool enable_ssao_fx)
 {
 	if (!desc || !g_diligent_state.immediate_context)
 	{
@@ -1593,28 +1644,31 @@ bool diligent_ssao_fx_execute(SceneDesc* desc)
 		Diligent::PostFXContext::FrameDesc{g_diligent_state.frame_counter, width, height, width, height},
 		postfx_flags);
 
-	Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS ssao_flags = Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_NONE;
-	if (g_CV_SSAOFxHalfPrecisionDepth.m_Val != 0)
+	if (enable_ssao_fx)
 	{
-		ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
-			ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_HALF_PRECISION_DEPTH);
-	}
-	if (g_CV_SSAOFxHalfResolution.m_Val != 0)
-	{
-		ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
-			ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_HALF_RESOLUTION);
-	}
-	if (g_CV_SSAOFxUniformWeighting.m_Val != 0)
-	{
-		ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
-			ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_UNIFORM_WEIGHTING);
-	}
+		Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS ssao_flags = Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_NONE;
+		if (g_CV_SSAOFxHalfPrecisionDepth.m_Val != 0)
+		{
+			ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
+				ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_HALF_PRECISION_DEPTH);
+		}
+		if (g_CV_SSAOFxHalfResolution.m_Val != 0)
+		{
+			ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
+				ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_HALF_RESOLUTION);
+		}
+		if (g_CV_SSAOFxUniformWeighting.m_Val != 0)
+		{
+			ssao_flags = static_cast<Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAGS>(
+				ssao_flags | Diligent::ScreenSpaceAmbientOcclusion::FEATURE_FLAG_UNIFORM_WEIGHTING);
+		}
 
-	g_ssao_fx_state.ssao->PrepareResources(
-		g_diligent_state.render_device,
-		g_diligent_state.immediate_context,
-		g_ssao_fx_state.post_fx.get(),
-		ssao_flags);
+		g_ssao_fx_state.ssao->PrepareResources(
+			g_diligent_state.render_device,
+			g_diligent_state.immediate_context,
+			g_ssao_fx_state.post_fx.get(),
+			ssao_flags);
+	}
 
 	diligent_ssao_fx_build_camera_attribs(
 		g_diligent_state.view_params,
@@ -1640,24 +1694,28 @@ bool diligent_ssao_fx_execute(SceneDesc* desc)
 	postfx_attribs.pPrevCamera = &g_ssao_fx_state.prev_camera;
 	g_ssao_fx_state.post_fx->Execute(postfx_attribs);
 
-	Diligent::HLSL::ScreenSpaceAmbientOcclusionAttribs ssao_attribs{};
-	ssao_attribs.EffectRadius = std::max(0.001f, g_CV_SSAOFxEffectRadius.m_Val);
-	ssao_attribs.EffectFalloffRange = std::max(0.001f, g_CV_SSAOFxEffectFalloffRange.m_Val);
-	ssao_attribs.RadiusMultiplier = std::max(0.001f, g_CV_SSAOFxRadiusMultiplier.m_Val);
-	ssao_attribs.DepthMIPSamplingOffset = std::max(0.0f, g_CV_SSAOFxDepthMipOffset.m_Val);
-	ssao_attribs.TemporalStabilityFactor = std::clamp(g_CV_SSAOFxTemporalStability.m_Val, 0.0f, 0.999f);
-	ssao_attribs.SpatialReconstructionRadius = std::max(0.1f, g_CV_SSAOFxSpatialReconstructionRadius.m_Val);
-	ssao_attribs.AlphaInterpolation = std::clamp(g_CV_SSAOFxAlphaInterpolation.m_Val, 0.0f, 1.0f);
-	ssao_attribs.ResetAccumulation = (!g_ssao_fx_state.history_valid || !g_ssao_fx_state.has_prev_camera || g_CV_SSAOFxResetAccumulation.m_Val != 0) ? TRUE : FALSE;
+	if (enable_ssao_fx)
+	{
+		Diligent::HLSL::ScreenSpaceAmbientOcclusionAttribs ssao_attribs{};
+		ssao_attribs.EffectRadius = std::max(0.001f, g_CV_SSAOFxEffectRadius.m_Val);
+		ssao_attribs.EffectFalloffRange = std::max(0.001f, g_CV_SSAOFxEffectFalloffRange.m_Val);
+		ssao_attribs.RadiusMultiplier = std::max(0.001f, g_CV_SSAOFxRadiusMultiplier.m_Val);
+		ssao_attribs.DepthMIPSamplingOffset = std::max(0.0f, g_CV_SSAOFxDepthMipOffset.m_Val);
+		ssao_attribs.TemporalStabilityFactor = std::clamp(g_CV_SSAOFxTemporalStability.m_Val, 0.0f, 0.999f);
+		ssao_attribs.SpatialReconstructionRadius = std::max(0.1f, g_CV_SSAOFxSpatialReconstructionRadius.m_Val);
+		ssao_attribs.AlphaInterpolation = std::clamp(g_CV_SSAOFxAlphaInterpolation.m_Val, 0.0f, 1.0f);
+		ssao_attribs.ResetAccumulation = (!g_ssao_fx_state.history_valid || !g_ssao_fx_state.has_prev_camera ||
+			g_CV_SSAOFxResetAccumulation.m_Val != 0) ? TRUE : FALSE;
 
-	Diligent::ScreenSpaceAmbientOcclusion::RenderAttributes ssao_render_attribs;
-	ssao_render_attribs.pDevice = g_diligent_state.render_device;
-	ssao_render_attribs.pDeviceContext = g_diligent_state.immediate_context;
-	ssao_render_attribs.pPostFXContext = g_ssao_fx_state.post_fx.get();
-	ssao_render_attribs.pDepthBufferSRV = g_ssao_fx_state.targets.depth_srv;
-	ssao_render_attribs.pNormalBufferSRV = g_ssao_fx_state.targets.normal_srv;
-	ssao_render_attribs.pSSAOAttribs = &ssao_attribs;
-	g_ssao_fx_state.ssao->Execute(ssao_render_attribs);
+		Diligent::ScreenSpaceAmbientOcclusion::RenderAttributes ssao_render_attribs;
+		ssao_render_attribs.pDevice = g_diligent_state.render_device;
+		ssao_render_attribs.pDeviceContext = g_diligent_state.immediate_context;
+		ssao_render_attribs.pPostFXContext = g_ssao_fx_state.post_fx.get();
+		ssao_render_attribs.pDepthBufferSRV = g_ssao_fx_state.targets.depth_srv;
+		ssao_render_attribs.pNormalBufferSRV = g_ssao_fx_state.targets.normal_srv;
+		ssao_render_attribs.pSSAOAttribs = &ssao_attribs;
+		g_ssao_fx_state.ssao->Execute(ssao_render_attribs);
+	}
 
 	g_ssao_fx_state.prev_camera = g_ssao_fx_state.curr_camera;
 	g_ssao_fx_state.has_prev_camera = true;
@@ -1789,6 +1847,11 @@ bool diligent_ssao_fx_is_enabled()
 	return diligent_ssao_fx_should_run();
 }
 
+bool diligent_postfx_prepass_needed()
+{
+	return diligent_ssao_fx_should_run() || g_CV_SSGIEnable.m_Val != 0 || g_CV_SSREnable.m_Val != 0;
+}
+
 bool diligent_prepare_ssao_fx(SceneDesc* desc)
 {
 	if (!diligent_ssao_fx_should_run())
@@ -1807,7 +1870,28 @@ bool diligent_prepare_ssao_fx(SceneDesc* desc)
 		return false;
 	}
 
-	return diligent_ssao_fx_execute(desc);
+	return diligent_ssao_fx_execute(desc, true);
+}
+
+bool diligent_prepare_postfx_prepass(SceneDesc* desc, bool enable_ssao_fx)
+{
+	if (!desc)
+	{
+		return false;
+	}
+
+	g_ssao_fx_state.current_view_proj = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView;
+	if (!g_ssao_fx_state.has_prev_view_proj)
+	{
+		g_ssao_fx_state.prev_view_proj = g_ssao_fx_state.current_view_proj;
+	}
+
+	if (!diligent_ssao_fx_render_prepass(desc))
+	{
+		return false;
+	}
+
+	return diligent_ssao_fx_execute(desc, enable_ssao_fx);
 }
 
 bool diligent_apply_ssao_fx(Diligent::ITextureView* render_target, Diligent::ITextureView* depth_target)
@@ -1828,4 +1912,60 @@ bool diligent_apply_ssao_fx_resolved(const DiligentAaContext& ctx)
 void diligent_ssao_fx_term()
 {
 	g_ssao_fx_state = {};
+}
+
+Diligent::ITextureView* diligent_get_postfx_normal_srv()
+{
+	return g_ssao_fx_state.targets.normal_srv;
+}
+
+Diligent::ITextureView* diligent_get_postfx_motion_srv()
+{
+	return g_ssao_fx_state.targets.motion_srv;
+}
+
+Diligent::ITextureView* diligent_get_postfx_depth_srv()
+{
+	return g_ssao_fx_state.targets.depth_srv;
+}
+
+Diligent::ITextureView* diligent_get_postfx_depth_history_srv()
+{
+	return g_ssao_fx_state.targets.depth_history_srv;
+}
+
+Diligent::ITextureView* diligent_get_postfx_roughness_srv()
+{
+	return g_ssao_fx_state.targets.roughness_srv;
+}
+
+Diligent::ITextureView* diligent_get_postfx_scene_color_srv()
+{
+	return g_ssao_fx_state.targets.scene_color_srv;
+}
+
+Diligent::PostFXContext* diligent_get_postfx_context()
+{
+	return g_ssao_fx_state.post_fx.get();
+}
+
+bool diligent_postfx_copy_scene_color(Diligent::ITextureView* source_color)
+{
+	if (!source_color || !source_color->GetTexture() || !g_diligent_state.immediate_context)
+	{
+		return false;
+	}
+
+	if (!g_ssao_fx_state.targets.scene_color)
+	{
+		return false;
+	}
+
+	Diligent::CopyTextureAttribs copy_attribs;
+	copy_attribs.pSrcTexture = source_color->GetTexture();
+	copy_attribs.pDstTexture = g_ssao_fx_state.targets.scene_color;
+	copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	g_diligent_state.immediate_context->CopyTexture(copy_attribs);
+	return true;
 }

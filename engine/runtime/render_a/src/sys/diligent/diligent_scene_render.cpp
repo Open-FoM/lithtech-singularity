@@ -8,6 +8,8 @@
 #include "diligent_postfx.h"
 #include "diligent_scene_collect.h"
 #include "diligent_shadow_draw.h"
+#include "diligent_ssgi_fx.h"
+#include "diligent_ssr_fx.h"
 #include "diligent_world_draw.h"
 #include "ltvector.h"
 #include "renderstruct.h"
@@ -98,6 +100,8 @@ int diligent_RenderScene(SceneDesc* desc)
 	const uint32 msaa_samples = diligent_get_msaa_samples();
 	const bool ssao_enabled = g_CV_SSAOEnable.m_Val != 0;
 	const bool use_ssao_fx = ssao_enabled && g_CV_SSAOBackend.m_Val != 0;
+	const bool ssgi_enabled = g_CV_SSGIEnable.m_Val != 0;
+	const bool ssr_enabled = g_CV_SSREnable.m_Val != 0;
 	const bool ssao_msaa = (msaa_samples > 0 && ssao_enabled);
 	DiligentSsaoContext ssao_ctx{};
 	const bool ssao_active = (!use_ssao_fx && msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
@@ -130,9 +134,12 @@ int diligent_RenderScene(SceneDesc* desc)
 
 	diligent_collect_world_models(desc);
 
-	if (use_ssao_fx)
+	const bool postfx_prepass_requested = diligent_postfx_prepass_needed();
+	bool postfx_prepass_active = false;
+	if (postfx_prepass_requested)
 	{
-		ssao_fx_active = diligent_prepare_ssao_fx(desc);
+		postfx_prepass_active = diligent_prepare_postfx_prepass(desc, use_ssao_fx);
+		ssao_fx_active = use_ssao_fx && postfx_prepass_active;
 	}
 
 	diligent_collect_polygrids(desc);
@@ -321,6 +328,24 @@ int diligent_RenderScene(SceneDesc* desc)
 		}
 
 		diligent_SetOutputTargets(aa_ctx.final_render_target, aa_ctx.final_depth_target);
+	}
+
+	if (postfx_prepass_active)
+	{
+		if (ssgi_enabled)
+		{
+			if (!diligent_apply_ssgi(diligent_get_active_render_target(), diligent_get_active_depth_target()))
+			{
+				return RENDER_ERROR;
+			}
+		}
+		if (ssr_enabled)
+		{
+			if (!diligent_apply_ssr(diligent_get_active_render_target(), diligent_get_active_depth_target()))
+			{
+				return RENDER_ERROR;
+			}
+		}
 	}
 
 	diligent_render_screen_glow(desc);
