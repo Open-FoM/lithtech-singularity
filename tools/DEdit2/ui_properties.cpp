@@ -2,14 +2,23 @@
 
 #include "ui_shared.h"
 #include "engine_render.h"
+#include "texture_effect_group.h"
 #include "diligent_drawprim_api.h"
 #include "diligent_render_debug.h"
 
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
 
+#include <algorithm>
+#include <filesystem>
+
 namespace
 {
+constexpr uint32_t kTextureScriptChannelBase = 1;
+constexpr uint32_t kRoughnessSourceVarIndex = 0;
+constexpr uint32_t kRoughnessValueVarIndex = 1;
+constexpr uint32_t kRoughnessOverrideVarIndex = 2;
+
 bool IsType(const NodeProperties& props, const char* type)
 {
 	return props.type == type;
@@ -68,7 +77,153 @@ void DrawTexturePreview(const char* texture_name, float max_size = 256.0f)
 	ImGui::Text("%s (%ux%u)", texture_name, info.width, info.height);
 }
 
-void DrawTextureProperties(NodeProperties& props)
+enum class RoughnessSource
+{
+	Default,
+	BaseAlpha,
+	Constant
+};
+
+struct TextureRoughnessUiState
+{
+	std::string texture_resource;
+	std::string effect_group_name;
+	std::string effect_group_path;
+	RoughnessSource source = RoughnessSource::Default;
+	float constant = 0.5f;
+	std::string status;
+};
+
+std::string BuildEffectGroupName(const std::string& texture_resource)
+{
+	if (texture_resource.empty())
+	{
+		return {};
+	}
+
+	std::filesystem::path path(texture_resource);
+	if (path.has_extension())
+	{
+		path.replace_extension();
+	}
+	return path.generic_string();
+}
+
+std::string BuildEffectGroupPath(const std::string& project_root, const std::string& effect_group_name)
+{
+	if (project_root.empty() || effect_group_name.empty())
+	{
+		return {};
+	}
+	std::filesystem::path root(project_root);
+	std::filesystem::path rel(effect_group_name + ".tfg");
+	return (root / "TextureEffectGroups" / rel).string();
+}
+
+bool LoadRoughnessFromGroup(const std::string& path, TextureRoughnessUiState& state)
+{
+	state.status.clear();
+	TextureEffectGroup group{};
+	std::string error;
+	if (!LoadTextureEffectGroup(path, group, error))
+	{
+		if (!error.empty())
+		{
+			state.status = error;
+		}
+		return false;
+	}
+
+	const TextureEffectGroupStage* base_stage = nullptr;
+	for (const auto& stage : group.stages)
+	{
+		if (stage.enabled && stage.channel == kTextureScriptChannelBase)
+		{
+			base_stage = &stage;
+			break;
+		}
+	}
+	if (!base_stage)
+	{
+		return false;
+	}
+
+	const float use_alpha = base_stage->defaults[kRoughnessSourceVarIndex];
+	const float use_constant = base_stage->defaults[kRoughnessOverrideVarIndex];
+	if (use_alpha > 0.5f)
+	{
+		state.source = RoughnessSource::BaseAlpha;
+	}
+	else if (use_constant > 0.5f)
+	{
+		state.source = RoughnessSource::Constant;
+		state.constant = std::clamp(base_stage->defaults[kRoughnessValueVarIndex], 0.0f, 1.0f);
+	}
+	else
+	{
+		state.source = RoughnessSource::Default;
+	}
+
+	return true;
+}
+
+bool ApplyRoughnessToGroup(const std::string& path, RoughnessSource source, float constant, std::string& out_status)
+{
+	out_status.clear();
+	TextureEffectGroup group{};
+	std::string error;
+	const bool loaded = LoadTextureEffectGroup(path, group, error);
+	if (!loaded)
+	{
+		group = TextureEffectGroup{};
+	}
+
+	TextureEffectGroupStage* base_stage = nullptr;
+	for (auto& stage : group.stages)
+	{
+		if (stage.enabled && stage.channel == kTextureScriptChannelBase)
+		{
+			base_stage = &stage;
+			break;
+		}
+	}
+
+	if (!base_stage)
+	{
+		base_stage = &group.stages[0];
+		base_stage->enabled = true;
+		base_stage->overridden = false;
+		base_stage->channel = kTextureScriptChannelBase;
+		base_stage->script = "Identity";
+		base_stage->defaults.fill(0.0f);
+	}
+	else if (base_stage->overridden && base_stage->override_stage < group.stages.size())
+	{
+		base_stage = &group.stages[base_stage->override_stage];
+		base_stage->enabled = true;
+		base_stage->overridden = false;
+		base_stage->channel = kTextureScriptChannelBase;
+		if (base_stage->script.empty())
+		{
+			base_stage->script = "Identity";
+		}
+	}
+
+	base_stage->defaults[kRoughnessSourceVarIndex] = (source == RoughnessSource::BaseAlpha) ? 1.0f : 0.0f;
+	base_stage->defaults[kRoughnessOverrideVarIndex] = (source == RoughnessSource::Constant) ? 1.0f : 0.0f;
+	base_stage->defaults[kRoughnessValueVarIndex] = std::clamp(constant, 0.0f, 1.0f);
+
+	if (!SaveTextureEffectGroup(path, group, error))
+	{
+		out_status = error.empty() ? "Failed to save effect group." : error;
+		return false;
+	}
+
+	out_status = "Saved.";
+	return true;
+}
+
+void DrawTextureProperties(NodeProperties& props, const std::string& project_root)
 {
 	ImGui::InputText("Texture", &props.resource);
 	ImGui::Checkbox("sRGB", &props.srgb);
@@ -76,6 +231,63 @@ void DrawTextureProperties(NodeProperties& props)
 	ImGui::Checkbox("Mipmaps", &props.mipmaps);
 	const char* compression_modes[] = {"None", "BC1", "BC3", "BC7"};
 	ImGui::Combo("Compression", &props.compression_mode, compression_modes, 4);
+
+	if (ImGui::CollapsingHeader("PBR Roughness", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		static TextureRoughnessUiState roughness_state{};
+		const std::string effect_group_name = BuildEffectGroupName(props.resource);
+		const std::string effect_group_path = BuildEffectGroupPath(project_root, effect_group_name);
+		const bool texture_changed = (roughness_state.texture_resource != props.resource) ||
+			(roughness_state.effect_group_path != effect_group_path);
+
+		if (texture_changed)
+		{
+			roughness_state.texture_resource = props.resource;
+			roughness_state.effect_group_name = effect_group_name;
+			roughness_state.effect_group_path = effect_group_path;
+			roughness_state.source = RoughnessSource::Default;
+			roughness_state.constant = 0.5f;
+			roughness_state.status.clear();
+			if (!effect_group_path.empty() && std::filesystem::exists(effect_group_path))
+			{
+				LoadRoughnessFromGroup(effect_group_path, roughness_state);
+			}
+		}
+
+		ImGui::TextUnformatted("Effect Group");
+		ImGui::TextWrapped("%s", effect_group_name.empty() ? "(none)" : effect_group_name.c_str());
+		if (project_root.empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Project root not set.");
+		}
+
+		const char* sources[] = {"Default", "Base Alpha", "Constant"};
+		int source_index = static_cast<int>(roughness_state.source);
+		if (ImGui::Combo("Roughness Source", &source_index, sources, 3))
+		{
+			roughness_state.source = static_cast<RoughnessSource>(source_index);
+			if (!effect_group_path.empty())
+			{
+				ApplyRoughnessToGroup(effect_group_path, roughness_state.source, roughness_state.constant, roughness_state.status);
+			}
+		}
+
+		const bool enable_constant = (roughness_state.source == RoughnessSource::Constant);
+		ImGui::BeginDisabled(!enable_constant);
+		if (ImGui::SliderFloat("Constant Roughness", &roughness_state.constant, 0.0f, 1.0f))
+		{
+			if (enable_constant && !effect_group_path.empty())
+			{
+				ApplyRoughnessToGroup(effect_group_path, roughness_state.source, roughness_state.constant, roughness_state.status);
+			}
+		}
+		ImGui::EndDisabled();
+
+		if (!roughness_state.status.empty())
+		{
+			ImGui::TextUnformatted(roughness_state.status.c_str());
+		}
+	}
 }
 
 void DrawModelProperties(NodeProperties& props)
@@ -163,7 +375,8 @@ void DrawEntityProperties(NodeProperties& props)
 void DrawProjectProperties(
 	std::vector<TreeNode>& nodes,
 	std::vector<NodeProperties>& props,
-	int selected_id)
+	int selected_id,
+	const std::string& project_root)
 {
 	if (selected_id < 0 || selected_id >= static_cast<int>(nodes.size()) || nodes[selected_id].deleted)
 	{
@@ -208,7 +421,7 @@ void DrawProjectProperties(
 
 	if (IsType(node_props, "Texture"))
 	{
-		DrawTextureProperties(node_props);
+		DrawTextureProperties(node_props, project_root);
 	}
 	else if (IsType(node_props, "Model"))
 	{
@@ -323,13 +536,14 @@ void DrawPropertiesPanel(
 	int project_selected_id,
 	std::vector<TreeNode>& scene_nodes,
 	std::vector<NodeProperties>& scene_props,
-	int scene_selected_id)
+	int scene_selected_id,
+	const std::string& project_root)
 {
 	if (ImGui::Begin("Properties"))
 	{
 		if (active_target == SelectionTarget::Project)
 		{
-			DrawProjectProperties(project_nodes, project_props, project_selected_id);
+			DrawProjectProperties(project_nodes, project_props, project_selected_id, project_root);
 		}
 		else
 		{

@@ -245,3 +245,32 @@ bool CTextureScriptInstance::GetStageData(ETextureScriptChannel eChannel, Textur
 
 	return false;
 }
+
+bool CTextureScriptInstance::GetStageVarID(ETextureScriptChannel eChannel, uint32& out_var_id) const
+{
+	out_var_id = 0;
+	if (eChannel == TSChannel_Null)
+	{
+		return false;
+	}
+
+	for (uint32 nCurrStage = 0; nCurrStage < NUM_STAGES; ++nCurrStage)
+	{
+		const CTextureScriptInstanceStage* stage = &m_Stages[nCurrStage];
+		if (!stage->m_bValid || stage->m_eChannel != eChannel)
+		{
+			continue;
+		}
+
+		const CTextureScriptInstanceStage* resolved = stage->m_pOverride ? stage->m_pOverride : stage;
+		if (!resolved->m_bValid)
+		{
+			return false;
+		}
+
+		out_var_id = resolved->m_nID;
+		return true;
+	}
+
+	return false;
+}

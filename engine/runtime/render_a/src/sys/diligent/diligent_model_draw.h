@@ -29,6 +29,7 @@ struct SceneDesc;
 struct ModelHookData;
 class ILTStream;
 struct LTB_Header;
+class SharedTexture;
 
 /// Rigid mesh implementation backed by Diligent vertex/index buffers.
 class DiligentRigidMesh : public CDIRigidMesh
@@ -200,6 +201,11 @@ bool diligent_draw_model_instance(ModelInstance* instance);
 /// \brief Draws a model instance using an explicit render-style map.
 /// \details Used by glow passes or editor overrides to remap render styles.
 bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map);
+
+bool diligent_get_model_piece_textures(
+	ModelInstance* instance,
+	ModelPiece* piece,
+	std::array<SharedTexture*, MAX_PIECE_TEXTURES>& textures);
 /// \brief Retrieves model hook data and invokes hook callbacks if present.
 bool diligent_get_model_hook_data(ModelInstance* instance, ModelHookData& hook_data);
 

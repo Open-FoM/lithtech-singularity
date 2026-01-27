@@ -78,7 +78,7 @@ bool diligent_apply_ssao(const DiligentSsaoContext& ctx);
 void diligent_end_ssao(const DiligentSsaoContext& ctx);
 /// \brief Returns true when DiligentFX SSAO backend is active.
 bool diligent_ssao_fx_is_enabled();
-/// \brief Returns true when any postfx prepass consumer is enabled (SSAO/SSGI/SSR).
+/// \brief Returns true when any postfx prepass consumer is enabled (SSAO/SSGI).
 bool diligent_postfx_prepass_needed();
 /// \brief Prepares DiligentFX SSAO resources and renders the prepass.
 bool diligent_prepare_ssao_fx(SceneDesc* desc);
@@ -92,22 +92,24 @@ bool diligent_apply_ssao_fx_resolved(const DiligentAaContext& ctx);
 /// \brief Releases DiligentFX SSAO resources.
 void diligent_ssao_fx_term();
 
-/// \brief Returns the postfx normal SRV (SSAO/SSR/SSGI).
+/// \brief Returns the postfx normal SRV (SSAO/SSGI).
 Diligent::ITextureView* diligent_get_postfx_normal_srv();
-/// \brief Returns the postfx motion SRV (SSAO/SSR/SSGI).
+/// \brief Returns the postfx motion SRV (SSAO/SSGI).
 Diligent::ITextureView* diligent_get_postfx_motion_srv();
-/// \brief Returns the postfx depth SRV (SSAO/SSR/SSGI).
+/// \brief Returns the postfx depth SRV (SSAO/SSGI).
 Diligent::ITextureView* diligent_get_postfx_depth_srv();
-/// \brief Returns the postfx depth history SRV (SSAO/SSR/SSGI).
+/// \brief Returns the postfx depth history SRV (SSAO/SSGI).
 Diligent::ITextureView* diligent_get_postfx_depth_history_srv();
-/// \brief Returns the postfx roughness SRV (SSR/SSGI).
+/// \brief Returns the postfx roughness SRV (SSGI).
 Diligent::ITextureView* diligent_get_postfx_roughness_srv();
-/// \brief Returns the postfx scene color SRV (SSR/SSGI).
+/// \brief Returns the postfx scene color SRV (SSGI).
 Diligent::ITextureView* diligent_get_postfx_scene_color_srv();
 /// \brief Returns the shared PostFX context.
 Diligent::PostFXContext* diligent_get_postfx_context();
 /// \brief Copies the current scene color into the shared postfx texture.
 bool diligent_postfx_copy_scene_color(Diligent::ITextureView* source_color);
+/// \brief Returns a 1x1 white texture SRV for debug rendering.
+Diligent::ITextureView* diligent_get_debug_white_texture_view();
 
 /// \brief Updates the clear color used for SSAO scene capture.
 void diligent_ssao_set_clear_color(const LTRGBColor& clear_color);

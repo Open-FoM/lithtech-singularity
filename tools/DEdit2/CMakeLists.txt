@@ -140,6 +140,7 @@ target_sources (
 		lt_stream.cpp
 		path_utils.cpp
 		texture_cache.cpp
+		texture_effect_group.cpp
 		ui_console.cpp
 		ui_dock.cpp
 		ui_project.cpp

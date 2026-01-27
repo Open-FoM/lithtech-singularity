@@ -93,6 +93,8 @@ public:
 	//Fetches the evaluated transform and evaluator data for the requested channel.
 	//Returns false if no stage maps to that channel or evaluation fails.
 	bool	GetStageData(ETextureScriptChannel eChannel, TextureScriptStageData& out, bool bForce = false);
+	//Returns the variable ID for the requested channel's stage.
+	bool	GetStageVarID(ETextureScriptChannel eChannel, uint32& out_var_id) const;
 
 	//reference counting functionality
 	void	AddRef()			{ m_nRefCount++; }

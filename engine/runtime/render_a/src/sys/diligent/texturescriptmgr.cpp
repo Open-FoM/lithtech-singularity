@@ -28,6 +28,26 @@ inline void NormalizeSlashes(char* path)
 		}
 	}
 }
+
+class IdentityTextureScriptEvaluator final : public ITextureScriptEvaluator
+{
+public:
+	void Evaluate(const CTextureScriptEvaluateVars&, LTMatrix& mMat) override
+	{
+		mMat.Identity();
+	}
+
+	uint32 GetFlags() const override
+	{
+		return 0;
+	}
+
+	EInputType GetInputType() const override
+	{
+		return INPUT_UV;
+	}
+};
+
 } // namespace
 
 //defines
@@ -86,9 +106,25 @@ CTextureScriptMgr& CTextureScriptMgr::GetSingleton()
 //with the function ReleaseInstance, and cannot be deleted
 CTextureScriptInstance* CTextureScriptMgr::GetInstance(const char* pszGroupName)
 {
+	return GetInstanceInternal(pszGroupName, true);
+}
+
+CTextureScriptInstance* CTextureScriptMgr::TryGetInstance(const char* pszGroupName)
+{
+	return GetInstanceInternal(pszGroupName, false);
+}
+
+CTextureScriptInstance* CTextureScriptMgr::GetInstanceInternal(const char* pszGroupName, bool log_fail)
+{
+	if(!pszGroupName)
+		return NULL;
+
 	if (!g_pIClientFileMgr)
 	{
-		dsi_ConsolePrint("Texture script manager: file manager not available for '%s'.", pszGroupName ? pszGroupName : "");
+		if (log_fail)
+		{
+			dsi_ConsolePrint("Texture script manager: file manager not available for '%s'.", pszGroupName ? pszGroupName : "");
+		}
 		return NULL;
 	}
 
@@ -131,7 +167,10 @@ CTextureScriptInstance* CTextureScriptMgr::GetInstance(const char* pszGroupName)
 	//see if the stream was successfully opened
 	if (!pStream)
 	{
-		dsi_ConsolePrint("Texture script manager: failed to open '%s'.", pszFileName);
+		if (log_fail)
+		{
+			dsi_ConsolePrint("Texture script manager: failed to open '%s'.", pszFileName);
+		}
 		delete pInst;
 		return NULL;
 	}
@@ -419,6 +458,11 @@ ITextureScriptEvaluator* CTextureScriptMgr::GetHardcodedEvaluator(const char* ps
 {
 	//this should check the name passed in with all the hard coded names that are currently
 	//implemented
+
+	if (pszName && stricmp(pszName, "Identity") == 0)
+	{
+		return new IdentityTextureScriptEvaluator();
+	}
 
 	//no matches
 	return NULL;

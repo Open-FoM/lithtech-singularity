@@ -1,9 +1,13 @@
+Texture2D g_BaseTexture;
+SamplerState g_BaseSampler;
+
 struct PSInput
 {
     float4 position : SV_POSITION;
     float3 world_normal : TEXCOORD0;
     float4 curr_clip : TEXCOORD1;
     float4 prev_clip : TEXCOORD2;
+    float2 uv : TEXCOORD3;
 };
 
 cbuffer SsaoPrepassConstants
@@ -40,6 +44,11 @@ PSOutput PSMain(PSInput input)
         SafeDiv(input.prev_clip.x, input.prev_clip.w),
         SafeDiv(input.prev_clip.y, input.prev_clip.w));
     output.motion = curr_ndc - prev_ndc;
-    output.roughness = saturate(g_PrepassParams.x);
+    float roughness = saturate(g_PrepassParams.x);
+    if (g_PrepassParams.y > 0.5f)
+    {
+        roughness = saturate(g_BaseTexture.Sample(g_BaseSampler, input.uv).a);
+    }
+    output.roughness = roughness;
     return output;
 }

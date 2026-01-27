@@ -52,10 +52,10 @@ set (diligent_shader_sources
 	diligent_get_ssao_composite_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	diligent_get_ssao_temporal_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
 	diligent_get_ssao_prepass_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_prepass_ps.hlsl
+	diligent_get_postfx_copy_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/postfx_copy_ps.hlsl
 	diligent_get_ssgi_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_ps.hlsl
 	diligent_get_ssgi_temporal_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_temporal_ps.hlsl
 	diligent_get_ssgi_apply_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_apply_ps.hlsl
-	diligent_get_ssr_composite_pixel_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_composite_ps.hlsl
 	diligent_get_world_ssao_prepass_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ssao_prepass_vs.hlsl
 	diligent_get_world_vertex_shader_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	diligent_get_world_pixel_shader_textured_source=${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
@@ -89,10 +89,10 @@ set (diligent_shader_files
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_composite_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_temporal_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_prepass_ps.hlsl
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/postfx_copy_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_temporal_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssgi_apply_ps.hlsl
-	${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_composite_ps.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ssao_prepass_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_vs.hlsl
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/world_ps_textured.hlsl
@@ -167,7 +167,6 @@ target_sources (
 		diligent_world_draw.cpp
 		diligent_ssao_fx.cpp
 		diligent_ssgi_fx.cpp
-		diligent_ssr_fx.cpp
 		texturescriptmgr.cpp
 		texturescriptinstance.cpp
 		texturescriptinterpreter.cpp

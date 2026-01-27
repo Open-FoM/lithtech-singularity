@@ -200,6 +200,8 @@ bool diligent_CreateSwapChain(uint32 width, uint32 height)
 	Diligent::SwapChainDesc swap_chain_desc{};
 	swap_chain_desc.Width = width;
 	swap_chain_desc.Height = height;
+	swap_chain_desc.Usage = static_cast<Diligent::SWAP_CHAIN_USAGE_FLAGS>(
+		swap_chain_desc.Usage | Diligent::SWAP_CHAIN_USAGE_COPY_SOURCE);
 
 	Diligent::NativeWindow window{g_diligent_state.native_window_handle};
 	g_diligent_state.engine_factory->CreateSwapChainVk(g_diligent_state.render_device, g_diligent_state.immediate_context, swap_chain_desc, window, &g_diligent_state.swap_chain);

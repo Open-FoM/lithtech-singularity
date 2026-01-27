@@ -7,14 +7,18 @@
 #include "diligent_model_draw.h"
 #include "diligent_render.h"
 #include "diligent_utils.h"
+#include "diligent_texture_cache.h"
 #include "diligent_world_data.h"
 #include "diligent_world_draw.h"
 #include "diligent_scene_collect.h"
+#include "texturescriptinstance.h"
+#include "texturescriptvarmgr.h"
 
 #include "bdefs.h"
 #include "de_objects.h"
 #include "de_world.h"
 #include "ltmatrix.h"
+#include "ltrenderstyle.h"
 #include "ltvector.h"
 #include "model.h"
 #include "renderstruct.h"
@@ -62,6 +66,9 @@ constexpr Diligent::TEXTURE_FORMAT kSsaoFxNormalFormat = Diligent::TEX_FORMAT_RG
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxMotionFormat = Diligent::TEX_FORMAT_RG16_FLOAT;
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxRoughnessFormat = Diligent::TEX_FORMAT_R8_UNORM;
 constexpr Diligent::TEXTURE_FORMAT kSsaoFxDepthFormat = Diligent::TEX_FORMAT_D32_FLOAT;
+constexpr uint32 kRoughnessSourceVarIndex = TSVAR_USER;
+constexpr uint32 kRoughnessValueVarIndex = TSVAR_USER + 1;
+constexpr uint32 kRoughnessOverrideVarIndex = TSVAR_USER + 2;
 
 struct DiligentSsaoPrepassConstants
 {
@@ -71,6 +78,62 @@ struct DiligentSsaoPrepassConstants
 	std::array<float, 16> prev_world{};
 	float prepass_params[4] = {0.5f, 0.0f, 0.0f, 0.0f};
 };
+
+bool diligent_section_get_roughness_override(
+	const DiligentRBSection& section,
+	float& out_roughness,
+	bool& out_use_alpha)
+{
+	out_roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
+	out_use_alpha = false;
+
+	if (!section.texture_effect)
+	{
+		return false;
+	}
+
+	uint32 var_id = 0;
+	if (!section.texture_effect->GetStageVarID(TSChannel_Base, var_id) || var_id == 0)
+	{
+		return false;
+	}
+
+	float* vars = CTextureScriptVarMgr::GetSingleton().GetVars(var_id);
+	if (!vars)
+	{
+		return false;
+	}
+
+	if (vars[kRoughnessSourceVarIndex] > 0.5f)
+	{
+		out_use_alpha = true;
+		return true;
+	}
+
+	if (vars[kRoughnessOverrideVarIndex] > 0.5f)
+	{
+		out_roughness = std::clamp(vars[kRoughnessValueVarIndex], 0.0f, 1.0f);
+		return true;
+	}
+
+	return false;
+}
+
+bool diligent_render_style_uses_alpha_roughness(CRenderStyle* render_style)
+{
+	if (!render_style)
+	{
+		return false;
+	}
+
+	LightingMaterial material{};
+	if (!render_style->GetLightingMaterial(&material))
+	{
+		return false;
+	}
+
+	return material.Specular.a > 0.5f;
+}
 
 struct DiligentSsaoCompositeConstants
 {
@@ -86,6 +149,7 @@ struct DiligentSsaoFxTargets
 	Diligent::TEXTURE_FORMAT color_format = Diligent::TEX_FORMAT_UNKNOWN;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> scene_color;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_color_srv;
+	Diligent::RefCntAutoPtr<Diligent::ITextureView> scene_color_rtv;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> normal;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> normal_rtv;
 	Diligent::RefCntAutoPtr<Diligent::ITextureView> normal_srv;
@@ -179,6 +243,9 @@ struct DiligentSsaoFxState
 	Diligent::RefCntAutoPtr<Diligent::IShader> composite_ps;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> composite_constants;
 	DiligentSsaoFxCompositePipeline composite_pipeline;
+	Diligent::RefCntAutoPtr<Diligent::IShader> copy_vs;
+	Diligent::RefCntAutoPtr<Diligent::IShader> copy_ps;
+	DiligentSsaoFxCompositePipeline copy_pipeline;
 	DiligentSsaoFxTargets targets;
 	LTMatrix current_view_proj;
 	LTMatrix prev_view_proj;
@@ -276,7 +343,8 @@ bool diligent_ssao_fx_ensure_targets(uint32 width, uint32 height, Diligent::TEXT
 {
 	auto& targets = g_ssao_fx_state.targets;
 	if (targets.width == width && targets.height == height && targets.color_format == color_format &&
-		targets.normal && targets.motion && targets.roughness && targets.depth && targets.depth_history && targets.scene_color)
+		targets.normal && targets.motion && targets.roughness && targets.depth && targets.depth_history &&
+		targets.scene_color && targets.scene_color_srv && targets.scene_color_rtv)
 	{
 		return true;
 	}
@@ -300,7 +368,8 @@ bool diligent_ssao_fx_ensure_targets(uint32 width, uint32 height, Diligent::TEXT
 	color_desc.MipLevels = 1;
 	color_desc.Format = color_format;
 	color_desc.Usage = Diligent::USAGE_DEFAULT;
-	color_desc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+	// Allow copy/resolve into the scene color on Vulkan by enabling RT usage.
+	color_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 	g_diligent_state.render_device->CreateTexture(color_desc, nullptr, &targets.scene_color);
 	if (!targets.scene_color)
 	{
@@ -309,6 +378,12 @@ bool diligent_ssao_fx_ensure_targets(uint32 width, uint32 height, Diligent::TEXT
 	}
 	targets.scene_color_srv = targets.scene_color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	if (!targets.scene_color_srv)
+	{
+		diligent_ssao_fx_release_targets();
+		return false;
+	}
+	targets.scene_color_rtv = targets.scene_color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	if (!targets.scene_color_rtv)
 	{
 		diligent_ssao_fx_release_targets();
 		return false;
@@ -426,7 +501,7 @@ bool diligent_ssao_fx_ensure_objects()
 	{
 		Diligent::PostFXContext::CreateInfo create_info{};
 		create_info.EnableAsyncCreation = false;
-		create_info.PackMatrixRowMajor = false;
+		create_info.PackMatrixRowMajor = true;
 		g_ssao_fx_state.post_fx = std::make_unique<Diligent::PostFXContext>(g_diligent_state.render_device, create_info);
 	}
 
@@ -538,6 +613,182 @@ bool diligent_ssao_fx_ensure_composite_resources()
 	return g_ssao_fx_state.composite_vs && g_ssao_fx_state.composite_ps && g_ssao_fx_state.composite_constants;
 }
 
+DiligentSsaoFxCompositePipeline* diligent_ssao_fx_get_copy_pipeline(Diligent::TEXTURE_FORMAT rtv_format)
+{
+	auto& pipeline = g_ssao_fx_state.copy_pipeline;
+	if (pipeline.pipeline_state && pipeline.rtv_format == rtv_format)
+	{
+		return &pipeline;
+	}
+
+	if (!g_diligent_state.render_device)
+	{
+		return nullptr;
+	}
+
+	if (!g_ssao_fx_state.copy_vs)
+	{
+		Diligent::ShaderCreateInfo shader_info;
+		shader_info.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_HLSL;
+		shader_info.EntryPoint = "VSMain";
+
+		Diligent::ShaderDesc vertex_desc;
+		vertex_desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+		vertex_desc.Name = "ltjs_postfx_copy_vs";
+		shader_info.Desc = vertex_desc;
+		shader_info.Source = diligent_get_optimized_2d_vertex_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_ssao_fx_state.copy_vs);
+	}
+
+	if (!g_ssao_fx_state.copy_ps)
+	{
+		Diligent::ShaderCreateInfo shader_info;
+		shader_info.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_HLSL;
+		shader_info.EntryPoint = "PSMain";
+
+		Diligent::ShaderDesc pixel_desc;
+		pixel_desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		pixel_desc.Name = "ltjs_postfx_copy_ps";
+		shader_info.Desc = pixel_desc;
+		shader_info.Source = diligent_get_postfx_copy_pixel_shader_source();
+		g_diligent_state.render_device->CreateShader(shader_info, &g_ssao_fx_state.copy_ps);
+	}
+
+	if (!g_ssao_fx_state.copy_vs || !g_ssao_fx_state.copy_ps)
+	{
+		return nullptr;
+	}
+
+	Diligent::GraphicsPipelineStateCreateInfo pipeline_info;
+	pipeline_info.PSODesc.Name = "ltjs_postfx_copy";
+	pipeline_info.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pipeline_info.GraphicsPipeline.NumRenderTargets = 1;
+	pipeline_info.GraphicsPipeline.RTVFormats[0] = rtv_format;
+	pipeline_info.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
+	pipeline_info.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+	pipeline_info.GraphicsPipeline.SmplDesc.Count = 1;
+
+	Diligent::LayoutElement layout_elements[] =
+	{
+		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false, 0, static_cast<uint32>(sizeof(DiligentOptimized2DVertex))},
+		Diligent::LayoutElement{1, 0, 4, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentOptimized2DVertex, color)), static_cast<uint32>(sizeof(DiligentOptimized2DVertex))},
+		Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false, static_cast<uint32>(offsetof(DiligentOptimized2DVertex, uv)), static_cast<uint32>(sizeof(DiligentOptimized2DVertex))}
+	};
+
+	pipeline_info.GraphicsPipeline.InputLayout.LayoutElements = layout_elements;
+	pipeline_info.GraphicsPipeline.InputLayout.NumElements = static_cast<uint32>(std::size(layout_elements));
+	pipeline_info.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pipeline_info.GraphicsPipeline.RasterizerDesc.FillMode = Diligent::FILL_MODE_SOLID;
+	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+
+	Diligent::ShaderResourceVariableDesc vars[] =
+	{
+		{Diligent::SHADER_TYPE_PIXEL, "g_ColorTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+
+	Diligent::ImmutableSamplerDesc sampler;
+	sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_CLAMP;
+	sampler.SamplerOrTextureName = "g_Sampler";
+
+	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	pipeline_info.PSODesc.ResourceLayout.Variables = vars;
+	pipeline_info.PSODesc.ResourceLayout.NumVariables = static_cast<uint32>(std::size(vars));
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+
+	pipeline_info.pVS = g_ssao_fx_state.copy_vs;
+	pipeline_info.pPS = g_ssao_fx_state.copy_ps;
+
+	pipeline.pipeline_state.Release();
+	pipeline.srb.Release();
+	g_diligent_state.render_device->CreateGraphicsPipelineState(pipeline_info, &pipeline.pipeline_state);
+	if (!pipeline.pipeline_state)
+	{
+		return nullptr;
+	}
+
+	pipeline.pipeline_state->CreateShaderResourceBinding(&pipeline.srb, true);
+	if (!pipeline.srb)
+	{
+		return nullptr;
+	}
+
+	pipeline.rtv_format = rtv_format;
+	return &pipeline;
+}
+
+bool diligent_ssao_fx_blit_scene_color(Diligent::ITextureView* source_srv, Diligent::ITextureView* dest_rtv)
+{
+	if (!source_srv || !dest_rtv || !g_diligent_state.immediate_context)
+	{
+		return false;
+	}
+
+	auto* dest_texture = dest_rtv->GetTexture();
+	if (!dest_texture)
+	{
+		return false;
+	}
+
+	auto* pipeline = diligent_ssao_fx_get_copy_pipeline(dest_texture->GetDesc().Format);
+	if (!pipeline || !pipeline->pipeline_state || !pipeline->srb)
+	{
+		return false;
+	}
+
+	auto* color_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_ColorTex");
+	if (color_var)
+	{
+		color_var->Set(source_srv);
+	}
+
+	const uint32 kVertexCount = 4;
+	DiligentOptimized2DVertex vertices[kVertexCount];
+	vertices[0] = {{-1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}};
+	vertices[1] = {{1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}};
+	vertices[2] = {{-1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}};
+	vertices[3] = {{1.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}};
+
+	Diligent::IBuffer* vertex_buffer = nullptr;
+	if (!diligent_upload_optimized_2d_vertices(vertices, kVertexCount, vertex_buffer))
+	{
+		return false;
+	}
+
+	const auto dest_desc = dest_texture->GetDesc();
+	diligent_set_viewport(static_cast<float>(dest_desc.Width), static_cast<float>(dest_desc.Height));
+
+	g_diligent_state.immediate_context->SetRenderTargets(
+		1,
+		&dest_rtv,
+		nullptr,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->SetPipelineState(pipeline->pipeline_state);
+
+	Diligent::IBuffer* buffers[] = {vertex_buffer};
+	Diligent::Uint64 offsets[] = {0};
+	g_diligent_state.immediate_context->SetVertexBuffers(
+		0,
+		1,
+		buffers,
+		offsets,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::DrawAttribs draw_attribs;
+	draw_attribs.NumVertices = kVertexCount;
+	draw_attribs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	g_diligent_state.immediate_context->Draw(draw_attribs);
+	return true;
+}
+
 DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 	Diligent::TEXTURE_FORMAT normal_format,
 	Diligent::TEXTURE_FORMAT motion_format,
@@ -584,6 +835,27 @@ DiligentSsaoFxPrepassPipeline* diligent_ssao_fx_get_world_pipeline(
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
+
+	Diligent::ShaderResourceVariableDesc vars[] =
+	{
+		{Diligent::SHADER_TYPE_PIXEL, "g_BaseTexture", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+
+	Diligent::ImmutableSamplerDesc sampler;
+	sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.SamplerOrTextureName = "g_BaseSampler";
+
+	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	pipeline_info.PSODesc.ResourceLayout.Variables = vars;
+	pipeline_info.PSODesc.ResourceLayout.NumVariables = static_cast<uint32>(std::size(vars));
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 
 	pipeline_info.pVS = g_ssao_fx_state.world_prepass_vs;
 	pipeline_info.pPS = g_ssao_fx_state.prepass_ps;
@@ -691,6 +963,27 @@ DiligentSsaoFxModelPipeline* diligent_ssao_fx_get_model_pipeline(
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
 	pipeline_info.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
+
+	Diligent::ShaderResourceVariableDesc vars[] =
+	{
+		{Diligent::SHADER_TYPE_PIXEL, "g_BaseTexture", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
+	};
+
+	Diligent::ImmutableSamplerDesc sampler;
+	sampler.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
+	sampler.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	sampler.Desc.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.Desc.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.Desc.AddressW = Diligent::TEXTURE_ADDRESS_WRAP;
+	sampler.SamplerOrTextureName = "g_BaseSampler";
+
+	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	pipeline_info.PSODesc.ResourceLayout.Variables = vars;
+	pipeline_info.PSODesc.ResourceLayout.NumVariables = static_cast<uint32>(std::size(vars));
+	pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers = &sampler;
+	pipeline_info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 
 	pipeline_info.pVS = vertex_shader;
 	pipeline_info.pPS = g_ssao_fx_state.prepass_ps;
@@ -854,15 +1147,28 @@ bool diligent_ssao_fx_update_composite_constants(float intensity)
 	return true;
 }
 
-void diligent_ssao_fx_store_matrix(const LTMatrix& matrix, Diligent::float4x4& out_matrix)
+void diligent_ssao_fx_store_matrix_column_major(const LTMatrix& matrix, Diligent::float4x4& out_matrix)
 {
-	// DiligentFX shaders use mul(vector, matrix) with column-major packing,
-	// so provide row-major matrices to produce the expected transforms.
+	// Our prepass shaders use mul(matrix, vector) with default column-major packing.
+	// Transpose the LTMatrix to column-major memory layout.
 	for (int row = 0; row < 4; ++row)
 	{
 		for (int col = 0; col < 4; ++col)
 		{
-			out_matrix.m[row][col] = matrix.m[row][col];
+			out_matrix.m[row][col] = matrix.m[col][row];
+		}
+	}
+}
+
+void diligent_ssao_fx_store_matrix_row_major(const LTMatrix& matrix, Diligent::float4x4& out_matrix)
+{
+	// DiligentFX uses mul(vector, matrix) with row-major packing.
+	// LTMatrix is column-vector based, so transpose to convert.
+	for (int row = 0; row < 4; ++row)
+	{
+		for (int col = 0; col < 4; ++col)
+		{
+			out_matrix.m[row][col] = matrix.m[col][row];
 		}
 	}
 }
@@ -899,12 +1205,12 @@ void diligent_ssao_fx_build_camera_attribs(
 	LTMatrix view_proj_inv = view_proj;
 	view_proj_inv.Inverse();
 
-	diligent_ssao_fx_store_matrix(view, camera.mView);
-	diligent_ssao_fx_store_matrix(proj, camera.mProj);
-	diligent_ssao_fx_store_matrix(view_proj, camera.mViewProj);
-	diligent_ssao_fx_store_matrix(view_inv, camera.mViewInv);
-	diligent_ssao_fx_store_matrix(proj_inv, camera.mProjInv);
-	diligent_ssao_fx_store_matrix(view_proj_inv, camera.mViewProjInv);
+	diligent_ssao_fx_store_matrix_row_major(view, camera.mView);
+	diligent_ssao_fx_store_matrix_row_major(proj, camera.mProj);
+	diligent_ssao_fx_store_matrix_row_major(view_proj, camera.mViewProj);
+	diligent_ssao_fx_store_matrix_row_major(view_inv, camera.mViewInv);
+	diligent_ssao_fx_store_matrix_row_major(proj_inv, camera.mProjInv);
+	diligent_ssao_fx_store_matrix_row_major(view_proj_inv, camera.mViewProjInv);
 }
 
 LTMatrix diligent_ssao_fx_get_prev_model_transform(const ModelInstance* instance, const LTMatrix& current)
@@ -951,15 +1257,15 @@ bool diligent_ssao_fx_draw_render_blocks(
 	diligent_store_matrix_from_lt(g_ssao_fx_state.prev_view_proj, constants.prev_view_proj);
 	diligent_store_matrix_from_lt(world_matrix, constants.world);
 	diligent_store_matrix_from_lt(prev_world_matrix, constants.prev_world);
-	const float roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
-	constants.prepass_params[0] = roughness;
+	const float default_roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
+	constants.prepass_params[0] = default_roughness;
+	constants.prepass_params[1] = 0.0f;
 	if (!diligent_ssao_fx_update_prepass_constants(constants))
 	{
 		return false;
 	}
 
 	g_diligent_state.immediate_context->SetPipelineState(pipeline->pipeline_state);
-	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	for (auto* block : blocks)
 	{
@@ -1011,6 +1317,33 @@ bool diligent_ssao_fx_draw_render_blocks(
 				continue;
 			}
 
+			float section_roughness = default_roughness;
+			bool wants_alpha_roughness = false;
+			diligent_section_get_roughness_override(section, section_roughness, wants_alpha_roughness);
+
+			Diligent::ITextureView* texture_view = nullptr;
+			if (wants_alpha_roughness && section.textures[0])
+			{
+				texture_view = diligent_get_texture_view(section.textures[0], false);
+			}
+
+			constants.prepass_params[0] = section_roughness;
+			constants.prepass_params[1] = texture_view ? 1.0f : 0.0f;
+			if (!diligent_ssao_fx_update_prepass_constants(constants))
+			{
+				return false;
+			}
+
+			auto* base_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_BaseTexture");
+			if (base_var)
+			{
+				base_var->Set(texture_view);
+			}
+
+			g_diligent_state.immediate_context->CommitShaderResources(
+				pipeline->srb,
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
 			Diligent::DrawIndexedAttribs draw_attribs;
 			draw_attribs.NumIndices = section.tri_count * 3;
 			draw_attribs.IndexType = Diligent::VT_UINT16;
@@ -1034,7 +1367,9 @@ bool diligent_ssao_fx_draw_model_mesh_prepass(
 	Diligent::IBuffer* index_buffer,
 	uint32 index_count,
 	const LTMatrix& world_matrix,
-	const LTMatrix& prev_world_matrix)
+	const LTMatrix& prev_world_matrix,
+	Diligent::ITextureView* base_texture_view,
+	bool use_alpha_roughness)
 {
 	if (!instance || !g_diligent_state.immediate_context || !vertex_buffers || !index_buffer)
 	{
@@ -1064,6 +1399,7 @@ bool diligent_ssao_fx_draw_model_mesh_prepass(
 	diligent_store_matrix_from_lt(prev_world_matrix, constants.prev_world);
 	const float roughness = std::clamp(g_CV_SSRDefaultRoughness.m_Val, 0.0f, 1.0f);
 	constants.prepass_params[0] = roughness;
+	constants.prepass_params[1] = use_alpha_roughness ? 1.0f : 0.0f;
 	if (!diligent_ssao_fx_update_prepass_constants(constants))
 	{
 		return false;
@@ -1076,8 +1412,16 @@ bool diligent_ssao_fx_draw_model_mesh_prepass(
 		bound_buffers[stream_index] = vertex_buffers[stream_index];
 	}
 
+	auto* base_var = pipeline->srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_BaseTexture");
+	if (base_var)
+	{
+		base_var->Set(use_alpha_roughness ? base_texture_view : nullptr);
+	}
+
 	g_diligent_state.immediate_context->SetPipelineState(pipeline->pipeline_state);
-	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->CommitShaderResources(
+		pipeline->srb,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	g_diligent_state.immediate_context->SetVertexBuffers(
 		0,
 		4,
@@ -1097,7 +1441,11 @@ bool diligent_ssao_fx_draw_model_mesh_prepass(
 	return true;
 }
 
-bool diligent_ssao_fx_draw_rigid_mesh_prepass(ModelInstance* instance, DiligentRigidMesh* mesh)
+bool diligent_ssao_fx_draw_rigid_mesh_prepass(
+	ModelInstance* instance,
+	DiligentRigidMesh* mesh,
+	Diligent::ITextureView* base_texture_view,
+	bool use_alpha_roughness)
 {
 	if (!instance || !mesh)
 	{
@@ -1122,10 +1470,16 @@ bool diligent_ssao_fx_draw_rigid_mesh_prepass(ModelInstance* instance, DiligentR
 		mesh->GetIndexBuffer(),
 		mesh->GetIndexCount(),
 		model_matrix,
-		prev_model_matrix);
+		prev_model_matrix,
+		base_texture_view,
+		use_alpha_roughness);
 }
 
-bool diligent_ssao_fx_draw_skel_mesh_prepass(ModelInstance* instance, DiligentSkelMesh* mesh)
+bool diligent_ssao_fx_draw_skel_mesh_prepass(
+	ModelInstance* instance,
+	DiligentSkelMesh* mesh,
+	Diligent::ITextureView* base_texture_view,
+	bool use_alpha_roughness)
 {
 	if (!instance || !mesh)
 	{
@@ -1156,10 +1510,16 @@ bool diligent_ssao_fx_draw_skel_mesh_prepass(ModelInstance* instance, DiligentSk
 		mesh->GetIndexBuffer(),
 		mesh->GetIndexCount(),
 		model_matrix,
-		prev_model_matrix);
+		prev_model_matrix,
+		base_texture_view,
+		use_alpha_roughness);
 }
 
-bool diligent_ssao_fx_draw_va_mesh_prepass(ModelInstance* instance, DiligentVAMesh* mesh)
+bool diligent_ssao_fx_draw_va_mesh_prepass(
+	ModelInstance* instance,
+	DiligentVAMesh* mesh,
+	Diligent::ITextureView* base_texture_view,
+	bool use_alpha_roughness)
 {
 	if (!instance || !mesh)
 	{
@@ -1195,7 +1555,9 @@ bool diligent_ssao_fx_draw_va_mesh_prepass(ModelInstance* instance, DiligentVAMe
 		mesh->GetIndexBuffer(),
 		mesh->GetIndexCount(),
 		model_matrix,
-		prev_model_matrix);
+		prev_model_matrix,
+		base_texture_view,
+		use_alpha_roughness);
 }
 
 bool diligent_ssao_fx_draw_model_instance_prepass(ModelInstance* instance)
@@ -1257,17 +1619,43 @@ bool diligent_ssao_fx_draw_model_instance_prepass(ModelInstance* instance)
 				break;
 		}
 
+		CRenderStyle* render_style = nullptr;
+		instance->GetRenderStyle(piece->m_iRenderStyle, &render_style);
+		const bool wants_alpha_roughness = diligent_render_style_uses_alpha_roughness(render_style);
+
+		std::array<SharedTexture*, MAX_PIECE_TEXTURES> piece_textures{};
+		diligent_get_model_piece_textures(instance, piece, piece_textures);
+
+		Diligent::ITextureView* base_texture_view = nullptr;
+		if (wants_alpha_roughness && piece_textures[0])
+		{
+			base_texture_view = diligent_get_texture_view(piece_textures[0], false);
+		}
+		const bool use_alpha_roughness = base_texture_view != nullptr;
+
 		if (rigid_mesh)
 		{
-			diligent_ssao_fx_draw_rigid_mesh_prepass(instance, rigid_mesh);
+			diligent_ssao_fx_draw_rigid_mesh_prepass(
+				instance,
+				rigid_mesh,
+				base_texture_view,
+				use_alpha_roughness);
 		}
 		else if (skel_mesh)
 		{
-			diligent_ssao_fx_draw_skel_mesh_prepass(instance, skel_mesh);
+			diligent_ssao_fx_draw_skel_mesh_prepass(
+				instance,
+				skel_mesh,
+				base_texture_view,
+				use_alpha_roughness);
 		}
 		else if (va_mesh)
 		{
-			diligent_ssao_fx_draw_va_mesh_prepass(instance, va_mesh);
+			diligent_ssao_fx_draw_va_mesh_prepass(
+				instance,
+				va_mesh,
+				base_texture_view,
+				use_alpha_roughness);
 		}
 	}
 
@@ -1849,7 +2237,7 @@ bool diligent_ssao_fx_is_enabled()
 
 bool diligent_postfx_prepass_needed()
 {
-	return diligent_ssao_fx_should_run() || g_CV_SSGIEnable.m_Val != 0 || g_CV_SSREnable.m_Val != 0;
+	return diligent_ssao_fx_should_run() || g_CV_SSGIEnable.m_Val != 0;
 }
 
 bool diligent_prepare_ssao_fx(SceneDesc* desc)
@@ -1956,13 +2344,44 @@ bool diligent_postfx_copy_scene_color(Diligent::ITextureView* source_color)
 		return false;
 	}
 
+	auto* src_texture = source_color->GetTexture();
+	const auto src_desc = src_texture->GetDesc();
+	if (!diligent_ssao_fx_ensure_targets(src_desc.Width, src_desc.Height, src_desc.Format))
+	{
+		return false;
+	}
+
 	if (!g_ssao_fx_state.targets.scene_color)
 	{
 		return false;
 	}
 
+	const auto dst_desc = g_ssao_fx_state.targets.scene_color->GetDesc();
+	if (dst_desc.Width != src_desc.Width || dst_desc.Height != src_desc.Height || dst_desc.Format != src_desc.Format)
+	{
+		return false;
+	}
+
+	g_diligent_state.immediate_context->SetRenderTargets(
+		0,
+		nullptr,
+		nullptr,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	if (src_desc.SampleCount > 1 && dst_desc.SampleCount == 1)
+	{
+		Diligent::ResolveTextureSubresourceAttribs resolve_attribs;
+		resolve_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		resolve_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		g_diligent_state.immediate_context->ResolveTextureSubresource(
+			src_texture,
+			g_ssao_fx_state.targets.scene_color,
+			resolve_attribs);
+		return true;
+	}
+
 	Diligent::CopyTextureAttribs copy_attribs;
-	copy_attribs.pSrcTexture = source_color->GetTexture();
+	copy_attribs.pSrcTexture = src_texture;
 	copy_attribs.pDstTexture = g_ssao_fx_state.targets.scene_color;
 	copy_attribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 	copy_attribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;

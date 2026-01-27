@@ -36,6 +36,8 @@ public:
 	//creates a script instance. Note that the returned pointer must be released
 	//with the function ReleaseInstance, and cannot be deleted
 	CTextureScriptInstance* GetInstance(const char* pszGroupName);
+	//tries to create a script instance without logging on failure
+	CTextureScriptInstance* TryGetInstance(const char* pszGroupName);
 
 	//releases a script instance, the pointer should not be used after this call
 	void ReleaseInstance(CTextureScriptInstance* pInstance);
@@ -54,6 +56,7 @@ private:
 
 	//find the instance with the specified name
 	CTextureScriptInstance* FindInstance(const char* pszGroupName);
+	CTextureScriptInstance* GetInstanceInternal(const char* pszGroupName, bool log_fail);
 
 	//prevent copying
 	CTextureScriptMgr(const CTextureScriptMgr&)		{}

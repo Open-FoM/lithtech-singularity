@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <string>
 
 #ifndef CPLANE_NEAR_INDEX
 #define CPLANE_NEAR_INDEX 0
@@ -56,6 +57,74 @@ bool diligent_is_sprite_texture(const char* filename)
 	}
 
 	return stricmp(&filename[name_length - 4], ".spr") == 0;
+}
+
+std::string diligent_normalize_texture_name(const char* name)
+{
+	if (!name)
+	{
+		return {};
+	}
+	std::string normalized(name);
+	for (auto& ch : normalized)
+	{
+		if (ch == '\\')
+		{
+			ch = '/';
+		}
+	}
+	return normalized;
+}
+
+std::string diligent_strip_extension(const std::string& name)
+{
+	const size_t dot = name.find_last_of('.');
+	if (dot == std::string::npos)
+	{
+		return name;
+	}
+	return name.substr(0, dot);
+}
+
+std::string diligent_basename(const std::string& name)
+{
+	const size_t slash = name.find_last_of("/\\");
+	if (slash == std::string::npos)
+	{
+		return name;
+	}
+	return name.substr(slash + 1);
+}
+
+CTextureScriptInstance* diligent_try_load_texture_effect(const char* texture_name)
+{
+	const std::string normalized = diligent_normalize_texture_name(texture_name);
+	if (normalized.empty())
+	{
+		return nullptr;
+	}
+
+	const std::string no_ext = diligent_strip_extension(normalized);
+	const std::string base = diligent_basename(no_ext);
+
+	CTextureScriptMgr& mgr = CTextureScriptMgr::GetSingleton();
+	if (!base.empty())
+	{
+		if (auto* inst = mgr.TryGetInstance(base.c_str()))
+		{
+			return inst;
+		}
+	}
+
+	if (!no_ext.empty() && no_ext != base)
+	{
+		if (auto* inst = mgr.TryGetInstance(no_ext.c_str()))
+		{
+			return inst;
+		}
+	}
+
+	return nullptr;
 }
 
 SharedTexture* diligent_load_sprite_data(DiligentRBSection& section, uint32 texture_index, const char* filename)
@@ -547,6 +616,14 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 			if (strstr(texture_effect, "LightAnim") != nullptr)
 			{
 				section.light_anim = true;
+			}
+		}
+		else if (section.textures[0] && g_diligent_state.render_struct && g_diligent_state.render_struct->GetTextureName)
+		{
+			const char* texture_name = g_diligent_state.render_struct->GetTextureName(section.textures[0]);
+			if (texture_name)
+			{
+				section.texture_effect = diligent_try_load_texture_effect(texture_name);
 			}
 		}
 	}

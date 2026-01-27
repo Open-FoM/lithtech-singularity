@@ -418,6 +418,7 @@ std::string diligent_build_model_ssao_prepass_vertex_shader_source(const Diligen
 	source += "    float3 world_normal : TEXCOORD0;\n";
 	source += "    float4 curr_clip : TEXCOORD1;\n";
 	source += "    float4 prev_clip : TEXCOORD2;\n";
+	source += "    float2 uv : TEXCOORD3;\n";
 	source += "};\n";
 	source += "VSOutput VSMain(VSInput input)\n";
 	source += "{\n";
@@ -442,6 +443,16 @@ std::string diligent_build_model_ssao_prepass_vertex_shader_source(const Diligen
 		source += "float3(0.0f, 0.0f, 1.0f)";
 	}
 	source += ";\n";
+	source += "    float2 uv = ";
+	if (layout.uv_attrib[0] >= 0)
+	{
+		source += diligent_attribute_ref(layout.uv_attrib[0], ".xy");
+	}
+	else
+	{
+		source += "float2(0.0f, 0.0f)";
+	}
+	source += ";\n";
 	source += "    float4 world_pos = mul(g_World, float4(position, 1.0f));\n";
 	source += "    float4 prev_world_pos = mul(g_PrevWorld, float4(position, 1.0f));\n";
 	source += "    float4 curr_clip = mul(g_ViewProj, world_pos);\n";
@@ -450,6 +461,7 @@ std::string diligent_build_model_ssao_prepass_vertex_shader_source(const Diligen
 	source += "    output.curr_clip = curr_clip;\n";
 	source += "    output.prev_clip = prev_clip;\n";
 	source += "    output.world_normal = normalize(mul((float3x3)g_World, normal));\n";
+	source += "    output.uv = uv;\n";
 	source += "    return output;\n";
 	source += "}\n";
 	return source;

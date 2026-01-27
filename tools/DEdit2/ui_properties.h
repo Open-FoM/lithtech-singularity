@@ -9,4 +9,5 @@ void DrawPropertiesPanel(
 	int project_selected_id,
 	std::vector<TreeNode>& scene_nodes,
 	std::vector<NodeProperties>& scene_props,
-	int scene_selected_id);
+	int scene_selected_id,
+	const std::string& project_root);

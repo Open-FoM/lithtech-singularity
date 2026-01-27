@@ -22,6 +22,7 @@ struct VSOutput
     float3 world_normal : TEXCOORD0;
     float4 curr_clip : TEXCOORD1;
     float4 prev_clip : TEXCOORD2;
+    float2 uv : TEXCOORD3;
 };
 
 VSOutput VSMain(VSInput input)
@@ -40,6 +41,7 @@ VSOutput VSMain(VSInput input)
 
     float3 world_normal = normalize(mul((float3x3)g_World, input.normal));
     output.world_normal = world_normal;
+    output.uv = input.uv0;
 
     return output;
 }

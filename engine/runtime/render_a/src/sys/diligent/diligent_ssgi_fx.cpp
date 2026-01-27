@@ -475,15 +475,14 @@ bool diligent_apply_ssgi(Diligent::ITextureView* render_target, Diligent::ITextu
 		return false;
 	}
 
-	if (!diligent_postfx_copy_scene_color(render_target))
+	auto* source_texture = render_target->GetTexture();
+	auto* source_srv = source_texture ? source_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+	if (!source_srv)
 	{
 		return false;
 	}
-	auto* color_srv = diligent_get_postfx_scene_color_srv();
-	if (!color_srv)
-	{
-		return false;
-	}
+
+	Diligent::ITextureView* color_srv = source_srv;
 
 	DiligentSsgiConstants constants{};
 	constants.inv_target_size[0] = 1.0f / std::max(1u, width);

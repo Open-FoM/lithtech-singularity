@@ -343,13 +343,7 @@ RCONVAR(g_CV_SSGITemporalDepthReject, "SSGITemporalDepthReject", float, 0.02f);
 RCONVAR(g_CV_SSGITemporalNormalReject, "SSGITemporalNormalReject", float, 0.4f);
 
 //------------------------------
-// SSR Settings
-RCONVAR(g_CV_SSREnable, "SSREnable", int, 0);
-RCONVAR(g_CV_SSRIntensity, "SSRIntensity", float, 1.0f);
-RCONVAR(g_CV_SSRRoughnessThreshold, "SSRRoughnessThreshold", float, 0.8f);
-RCONVAR(g_CV_SSRMaxTraversal, "SSRMaxTraversal", int, 32);
-RCONVAR(g_CV_SSRHalfResolution, "SSRHalfResolution", int, 1);
-RCONVAR(g_CV_SSRTemporalStability, "SSRTemporalStability", float, 0.9f);
+// Surface Roughness Settings
 RCONVAR(g_CV_SSRDefaultRoughness, "SSRDefaultRoughness", float, 0.5f);
 
 //------------------------------

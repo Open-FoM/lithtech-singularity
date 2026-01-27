@@ -2383,7 +2383,8 @@ int main(int argc, char** argv)
 			project_panel.selected_id,
 			scene_nodes,
 			scene_props,
-			scene_panel.selected_id);
+			scene_panel.selected_id,
+			project_root);
 
 		DrawConsolePanel(console_panel);
 		diligent.viewport_visible = false;
@@ -2882,13 +2883,14 @@ int main(int argc, char** argv)
 
 								ImGui::TableSetColumnIndex(1);
 								const float current = var->GetFloat();
+								const std::string var_name = var->m_pName;
 								const bool is_bool =
 									(current == 0.0f || current == 1.0f) &&
 									(var->m_DefaultVal == 0.0f || var->m_DefaultVal == 1.0f);
 								if (is_bool)
 								{
 									bool enabled = (current != 0.0f);
-									if (ImGui::Checkbox(("##val_" + std::string(var->m_pName)).c_str(), &enabled))
+									if (ImGui::Checkbox(("##val_" + var_name).c_str(), &enabled))
 									{
 										var->SetFloat(enabled ? 1.0f : 0.0f);
 									}
@@ -2896,14 +2898,14 @@ int main(int argc, char** argv)
 								else
 								{
 									float value = current;
-									if (ImGui::DragFloat(("##val_" + std::string(var->m_pName)).c_str(), &value, 0.1f))
+									if (ImGui::DragFloat(("##val_" + var_name).c_str(), &value, 0.1f))
 									{
 										var->SetFloat(value);
 									}
 								}
 
 								ImGui::TableSetColumnIndex(2);
-								if (ImGui::SmallButton(("Reset##" + std::string(var->m_pName)).c_str()))
+								if (ImGui::SmallButton(("Reset##" + var_name).c_str()))
 								{
 									var->SetFloat(var->m_DefaultVal);
 								}

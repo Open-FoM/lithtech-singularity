@@ -9,7 +9,6 @@
 #include "diligent_render.h"
 #include "diligent_scene_collect.h"
 #include "diligent_ssgi_fx.h"
-#include "diligent_ssr_fx.h"
 #include "diligent_utils.h"
 #include "diligent_world_data.h"
 #include "diligent_world_draw.h"
@@ -257,45 +256,6 @@ struct DiligentSceneDescScope
 		target = previous;
 	}
 };
-
-Diligent::ITextureView* diligent_get_debug_white_texture_view()
-{
-	if (g_debug_white_texture_srv)
-	{
-		return g_debug_white_texture_srv;
-	}
-
-	if (!g_diligent_state.render_device)
-	{
-		return nullptr;
-	}
-
-	Diligent::TextureDesc desc;
-	desc.Name = "ltjs_debug_white";
-	desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
-	desc.Width = 1;
-	desc.Height = 1;
-	desc.MipLevels = 1;
-	desc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
-	desc.Usage = Diligent::USAGE_IMMUTABLE;
-	desc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-
-	const uint32 white_pixel = 0xFFFFFFFFu;
-	Diligent::TextureSubResData subresource;
-	subresource.pData = &white_pixel;
-	subresource.Stride = sizeof(white_pixel);
-	subresource.DepthStride = 0;
-
-	Diligent::TextureData init_data{&subresource, 1};
-	g_diligent_state.render_device->CreateTexture(desc, &init_data, &g_debug_white_texture);
-	if (!g_debug_white_texture)
-	{
-		return nullptr;
-	}
-
-	g_debug_white_texture_srv = g_debug_white_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
-	return g_debug_white_texture_srv;
-}
 
 struct DiligentBlueNoiseKernelEntry
 {
@@ -1263,6 +1223,45 @@ bool diligent_draw_ssao_quad(
 }
 
 } // namespace
+
+Diligent::ITextureView* diligent_get_debug_white_texture_view()
+{
+	if (g_debug_white_texture_srv)
+	{
+		return g_debug_white_texture_srv;
+	}
+
+	if (!g_diligent_state.render_device)
+	{
+		return nullptr;
+	}
+
+	Diligent::TextureDesc desc;
+	desc.Name = "ltjs_debug_white";
+	desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	desc.Width = 1;
+	desc.Height = 1;
+	desc.MipLevels = 1;
+	desc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+	desc.Usage = Diligent::USAGE_IMMUTABLE;
+	desc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+
+	const uint32 white_pixel = 0xFFFFFFFFu;
+	Diligent::TextureSubResData subresource;
+	subresource.pData = &white_pixel;
+	subresource.Stride = sizeof(white_pixel);
+	subresource.DepthStride = 0;
+
+	Diligent::TextureData init_data{&subresource, 1};
+	g_diligent_state.render_device->CreateTexture(desc, &init_data, &g_debug_white_texture);
+	if (!g_debug_white_texture)
+	{
+		return nullptr;
+	}
+
+	g_debug_white_texture_srv = g_debug_white_texture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	return g_debug_white_texture_srv;
+}
 
 float diligent_get_tonemap_enabled()
 {
@@ -3048,7 +3047,6 @@ void diligent_postfx_term()
 	g_diligent_ssao_state.resources.composite_pipeline.pipeline_state.Release();
 	diligent_ssao_fx_term();
 	diligent_ssgi_term();
-	diligent_ssr_term();
 	g_diligent_ssao_state.resources.temporal_pipeline.srb.Release();
 	g_diligent_ssao_state.resources.temporal_pipeline.pipeline_state.Release();
 	g_diligent_aa_targets = {};

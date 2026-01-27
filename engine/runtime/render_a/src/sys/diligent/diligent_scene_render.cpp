@@ -9,7 +9,6 @@
 #include "diligent_scene_collect.h"
 #include "diligent_shadow_draw.h"
 #include "diligent_ssgi_fx.h"
-#include "diligent_ssr_fx.h"
 #include "diligent_world_draw.h"
 #include "ltvector.h"
 #include "renderstruct.h"
@@ -101,7 +100,6 @@ int diligent_RenderScene(SceneDesc* desc)
 	const bool ssao_enabled = g_CV_SSAOEnable.m_Val != 0;
 	const bool use_ssao_fx = ssao_enabled && g_CV_SSAOBackend.m_Val != 0;
 	const bool ssgi_enabled = g_CV_SSGIEnable.m_Val != 0;
-	const bool ssr_enabled = g_CV_SSREnable.m_Val != 0;
 	const bool ssao_msaa = (msaa_samples > 0 && ssao_enabled);
 	DiligentSsaoContext ssao_ctx{};
 	const bool ssao_active = (!use_ssao_fx && msaa_samples == 0) ? diligent_begin_ssao(desc, ssao_ctx) : false;
@@ -335,13 +333,6 @@ int diligent_RenderScene(SceneDesc* desc)
 		if (ssgi_enabled)
 		{
 			if (!diligent_apply_ssgi(diligent_get_active_render_target(), diligent_get_active_depth_target()))
-			{
-				return RENDER_ERROR;
-			}
-		}
-		if (ssr_enabled)
-		{
-			if (!diligent_apply_ssr(diligent_get_active_render_target(), diligent_get_active_depth_target()))
 			{
 				return RENDER_ERROR;
 			}
