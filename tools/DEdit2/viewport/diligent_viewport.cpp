@@ -205,14 +205,27 @@ void RenderViewport(
   {
     const float aspect = ctx.viewport.height > 0 ? static_cast<float>(ctx.viewport.width) /
       static_cast<float>(ctx.viewport.height) : 1.0f;
-    const float fov_y = Diligent::PI_F / 4.0f;
-    const float fov_x = 2.0f * std::atan(std::tan(fov_y * 0.5f) * aspect);
 
     Diligent::float3 cam_pos{};
     Diligent::float3 cam_forward{};
     Diligent::float3 cam_right{};
     Diligent::float3 cam_up{};
     ComputeCameraBasis(viewport_state, cam_pos, cam_forward, cam_right, cam_up);
+
+    // Calculate FOV - use very small FOV for ortho simulation
+    float fov_y = Diligent::PI_F / 4.0f;  // Default perspective FOV (45 degrees)
+    if (IsOrthographicView(viewport_state))
+    {
+      // Simulate orthographic with very small FOV and distant camera.
+      // The camera is already positioned far away by ComputeCameraBasis (10000 units).
+      // Using a tiny FOV (~0.06 degrees) gives nearly parallel rays.
+      // The visible half-height at 10000 units with FOV gives us ortho_zoom scaling.
+      const float ortho_half_height = viewport_state.ortho_zoom * 400.0f;
+      const float cam_dist = 10000.0f;
+      // FOV = 2 * atan(half_height / distance)
+      fov_y = 2.0f * std::atan(ortho_half_height / cam_dist);
+    }
+    const float fov_x = 2.0f * std::atan(std::tan(fov_y * 0.5f) * aspect);
 
     SceneDesc scene{};
     scene.m_FrameTime = ImGui::GetIO().DeltaTime;

@@ -257,6 +257,66 @@ void ComputeCameraBasis(
 	Diligent::float3& out_right,
 	Diligent::float3& out_up)
 {
+	// Handle orthographic views
+	if (IsOrthographicView(state))
+	{
+		// Very far camera distance for ortho simulation
+		const float cam_dist = 10000.0f;
+
+		// ortho_center[0] = horizontal screen axis, ortho_center[1] = vertical screen axis
+		// ortho_depth = depth coordinate along the view axis
+		switch (state.view_mode)
+		{
+		case ViewportPanelState::ViewMode::Top:
+			// Looking toward -Y from +Y position; X=right, Z=forward-on-screen
+			out_forward = Diligent::float3(0.0f, -1.0f, 0.0f);
+			out_up = Diligent::float3(0.0f, 0.0f, 1.0f);
+			out_right = Diligent::float3(1.0f, 0.0f, 0.0f);
+			out_pos = Diligent::float3(state.ortho_center[0], cam_dist + state.ortho_depth, state.ortho_center[1]);
+			break;
+		case ViewportPanelState::ViewMode::Bottom:
+			// Looking toward +Y from -Y position; X=right, -Z=forward-on-screen
+			out_forward = Diligent::float3(0.0f, 1.0f, 0.0f);
+			out_up = Diligent::float3(0.0f, 0.0f, -1.0f);
+			out_right = Diligent::float3(1.0f, 0.0f, 0.0f);
+			out_pos = Diligent::float3(state.ortho_center[0], -cam_dist + state.ortho_depth, state.ortho_center[1]);
+			break;
+		case ViewportPanelState::ViewMode::Front:
+			// Looking toward +Z from -Z position; X=right, Y=up
+			out_forward = Diligent::float3(0.0f, 0.0f, 1.0f);
+			out_up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			out_right = Diligent::float3(1.0f, 0.0f, 0.0f);
+			out_pos = Diligent::float3(state.ortho_center[0], state.ortho_center[1], -cam_dist + state.ortho_depth);
+			break;
+		case ViewportPanelState::ViewMode::Back:
+			// Looking toward -Z from +Z position; -X=right, Y=up
+			out_forward = Diligent::float3(0.0f, 0.0f, -1.0f);
+			out_up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			out_right = Diligent::float3(-1.0f, 0.0f, 0.0f);
+			out_pos = Diligent::float3(state.ortho_center[0], state.ortho_center[1], cam_dist + state.ortho_depth);
+			break;
+		case ViewportPanelState::ViewMode::Left:
+			// Looking toward +X from -X position; Z=right, Y=up
+			out_forward = Diligent::float3(1.0f, 0.0f, 0.0f);
+			out_up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			out_right = Diligent::float3(0.0f, 0.0f, 1.0f);
+			out_pos = Diligent::float3(-cam_dist + state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			break;
+		case ViewportPanelState::ViewMode::Right:
+			// Looking toward -X from +X position; -Z=right, Y=up
+			out_forward = Diligent::float3(-1.0f, 0.0f, 0.0f);
+			out_up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			out_right = Diligent::float3(0.0f, 0.0f, -1.0f);
+			out_pos = Diligent::float3(cam_dist + state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			break;
+		default:
+			// Fallback to perspective
+			break;
+		}
+		return;
+	}
+
+	// Perspective view
 	const float cp = std::cos(state.orbit_pitch);
 	const float sp = std::sin(state.orbit_pitch);
 	const float cy = std::cos(state.orbit_yaw);
@@ -293,10 +353,27 @@ PickRay BuildPickRay(
 	ComputeCameraBasis(panel, cam_pos, cam_forward, cam_right, cam_up);
 
 	const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
-	const float fov = Diligent::PI_F / 4.0f;
-	const float tan_half_fov = std::tan(fov * 0.5f);
 	const float ndc_x = (mouse_local.x / std::max(1.0f, viewport_size.x)) * 2.0f - 1.0f;
 	const float ndc_y = 1.0f - (mouse_local.y / std::max(1.0f, viewport_size.y)) * 2.0f;
+
+	// Orthographic views use parallel rays
+	if (IsOrthographicView(panel))
+	{
+		// Calculate visible world extent based on zoom
+		const float half_height = panel.ortho_zoom * 400.0f;
+		const float half_width = half_height * aspect;
+
+		// Ray origin varies with screen position, direction is constant (view direction)
+		const Diligent::float3 ray_origin = Add(
+			Add(cam_pos, Scale(cam_right, ndc_x * half_width)),
+			Scale(cam_up, ndc_y * half_height));
+
+		return PickRay{ray_origin, cam_forward};
+	}
+
+	// Perspective view uses diverging rays from camera position
+	const float fov = Diligent::PI_F / 4.0f;
+	const float tan_half_fov = std::tan(fov * 0.5f);
 
 	const Diligent::float3 ray_dir = Normalize(Add(
 		Add(cam_forward, Scale(cam_right, ndc_x * tan_half_fov * aspect)),
