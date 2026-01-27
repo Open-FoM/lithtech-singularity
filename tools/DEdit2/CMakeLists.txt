@@ -130,6 +130,23 @@ target_sources (
 	${PROJECT_NAME}
 	PRIVATE
 		app_main.cpp
+		app/editor_loop.cpp
+		app/editor_paths.cpp
+		app/editor_session.h
+		app/project_utils.cpp
+		app/recent_projects.cpp
+		app/scene_loader.cpp
+		app/string_utils.cpp
+		ui/viewport_panel.cpp
+		viewport/diligent_viewport.cpp
+		viewport/interaction.cpp
+		viewport/lighting.cpp
+		viewport/overlays.cpp
+		viewport/render_settings.cpp
+		viewport/scene_filters.cpp
+		viewport/sky_models.cpp
+		viewport/world_bounds.cpp
+		viewport/world_settings.cpp
 		bsp_view.cpp
 		dedit2_concommand.cpp
 		editor_state.cpp
@@ -193,6 +210,7 @@ target_sources (
 target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
+		${CMAKE_CURRENT_LIST_DIR}
 		${LTJS_ROOT}/libs/imgui
 		${LTJS_ROOT}/libs/imgui/backends
 		${LTJS_ROOT}/libs/diligent
