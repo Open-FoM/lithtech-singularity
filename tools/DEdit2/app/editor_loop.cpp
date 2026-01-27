@@ -393,6 +393,49 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           // Users can still use the menu for Mirror Z
         }
       }
+
+      // Viewport view mode shortcuts (numpad keys)
+      // Numpad 5: Toggle ortho/perspective
+      if (ImGui::IsKeyPressed(ImGuiKey_Keypad5, false))
+      {
+        ToggleOrthoPerspective(session.viewport_panel);
+      }
+      // Numpad 7: Top view (Ctrl+7: Bottom)
+      if (ImGui::IsKeyPressed(ImGuiKey_Keypad7, false))
+      {
+        if (io.KeyCtrl)
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Bottom);
+        }
+        else
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Top);
+        }
+      }
+      // Numpad 1: Front view (Ctrl+1: Back)
+      if (ImGui::IsKeyPressed(ImGuiKey_Keypad1, false))
+      {
+        if (io.KeyCtrl)
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Back);
+        }
+        else
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Front);
+        }
+      }
+      // Numpad 3: Right view (Ctrl+3: Left)
+      if (ImGui::IsKeyPressed(ImGuiKey_Keypad3, false))
+      {
+        if (io.KeyCtrl)
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Left);
+        }
+        else
+        {
+          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Right);
+        }
+      }
     }
     if (trigger_undo)
     {
@@ -449,6 +492,38 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Z);
       }
+    }
+
+    // Handle view mode changes from menu
+    switch (menu_actions.view_mode)
+    {
+    case ViewModeAction::Perspective:
+      session.viewport_panel.view_mode = ViewportPanelState::ViewMode::Perspective;
+      break;
+    case ViewModeAction::Top:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Top);
+      break;
+    case ViewModeAction::Bottom:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Bottom);
+      break;
+    case ViewModeAction::Front:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Front);
+      break;
+    case ViewModeAction::Back:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Back);
+      break;
+    case ViewModeAction::Left:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Left);
+      break;
+    case ViewModeAction::Right:
+      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Right);
+      break;
+    case ViewModeAction::ToggleOrthoPerspective:
+      ToggleOrthoPerspective(session.viewport_panel);
+      break;
+    case ViewModeAction::None:
+    default:
+      break;
     }
 
     // Handle primitive creation menu action

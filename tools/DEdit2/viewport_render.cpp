@@ -47,9 +47,8 @@ Diligent::float3 Normalize(const Diligent::float3& v)
 	return Diligent::float3(v.x * inv_len, v.y * inv_len, v.z * inv_len);
 }
 
-Diligent::float4x4 LookAtLH(const Diligent::float3& eye, const Diligent::float3& target)
+Diligent::float4x4 LookAtLH(const Diligent::float3& eye, const Diligent::float3& target, const Diligent::float3& up)
 {
-	const Diligent::float3 up(0.0f, 1.0f, 0.0f);
 	const Diligent::float3 zaxis = Normalize(Diligent::float3(target.x - eye.x, target.y - eye.y, target.z - eye.z));
 	const Diligent::float3 xaxis = Normalize(Cross(up, zaxis));
 	const Diligent::float3 yaxis = Cross(zaxis, xaxis);
@@ -59,6 +58,11 @@ Diligent::float4x4 LookAtLH(const Diligent::float3& eye, const Diligent::float3&
 		xaxis.y, yaxis.y, zaxis.y, 0.0f,
 		xaxis.z, yaxis.z, zaxis.z, 0.0f,
 		-Dot(xaxis, eye), -Dot(yaxis, eye), -Dot(zaxis, eye), 1.0f);
+}
+
+Diligent::float4x4 LookAtLH(const Diligent::float3& eye, const Diligent::float3& target)
+{
+	return LookAtLH(eye, target, Diligent::float3(0.0f, 1.0f, 0.0f));
 }
 
 void BuildGridVertices(
@@ -320,6 +324,72 @@ Diligent::float4x4 ComputeViewportViewProj(
 	const ViewportPanelState& state,
 	float aspect_ratio)
 {
+	const float near_z = 1.0f;
+	const float far_z = 20000.0f;
+
+	// Handle orthographic views
+	if (IsOrthographicView(state))
+	{
+		const float half_height = state.ortho_zoom * 400.0f;  // Base size scaled by zoom
+		const float half_width = half_height * std::max(0.01f, aspect_ratio);
+
+		Diligent::float3 eye(0.0f, 0.0f, 0.0f);
+		Diligent::float3 target(0.0f, 0.0f, 0.0f);
+		Diligent::float3 up(0.0f, 1.0f, 0.0f);
+
+		const float cam_dist = 10000.0f;  // Far enough to see everything
+
+		// ortho_center[0] = horizontal screen axis, ortho_center[1] = vertical screen axis
+		// ortho_depth = preserved depth along the view axis
+		switch (state.view_mode)
+		{
+		case ViewportPanelState::ViewMode::Top:
+			// Looking toward -Y from +Y position; X=right, Z=up on screen
+			eye = Diligent::float3(state.ortho_center[0], cam_dist + state.ortho_depth, state.ortho_center[1]);
+			target = Diligent::float3(state.ortho_center[0], state.ortho_depth, state.ortho_center[1]);
+			up = Diligent::float3(0.0f, 0.0f, 1.0f);
+			break;
+		case ViewportPanelState::ViewMode::Bottom:
+			// Looking toward +Y from -Y position; X=right, -Z=up on screen
+			eye = Diligent::float3(state.ortho_center[0], -cam_dist + state.ortho_depth, state.ortho_center[1]);
+			target = Diligent::float3(state.ortho_center[0], state.ortho_depth, state.ortho_center[1]);
+			up = Diligent::float3(0.0f, 0.0f, -1.0f);
+			break;
+		case ViewportPanelState::ViewMode::Front:
+			// Looking toward +Z from -Z position; X=right, Y=up on screen
+			eye = Diligent::float3(state.ortho_center[0], state.ortho_center[1], -cam_dist + state.ortho_depth);
+			target = Diligent::float3(state.ortho_center[0], state.ortho_center[1], state.ortho_depth);
+			up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			break;
+		case ViewportPanelState::ViewMode::Back:
+			// Looking toward -Z from +Z position; -X=right, Y=up on screen
+			eye = Diligent::float3(state.ortho_center[0], state.ortho_center[1], cam_dist + state.ortho_depth);
+			target = Diligent::float3(state.ortho_center[0], state.ortho_center[1], state.ortho_depth);
+			up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			break;
+		case ViewportPanelState::ViewMode::Left:
+			// Looking toward +X from -X position; Z=right, Y=up on screen
+			eye = Diligent::float3(-cam_dist + state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			target = Diligent::float3(state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			break;
+		case ViewportPanelState::ViewMode::Right:
+			// Looking toward -X from +X position; -Z=right, Y=up on screen
+			eye = Diligent::float3(cam_dist + state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			target = Diligent::float3(state.ortho_depth, state.ortho_center[1], state.ortho_center[0]);
+			up = Diligent::float3(0.0f, 1.0f, 0.0f);
+			break;
+		default:
+			break;
+		}
+
+		const Diligent::float4x4 view = LookAtLH(eye, target, up);
+		const Diligent::float4x4 proj = Diligent::float4x4::OrthoOffCenter(
+			-half_width, half_width, -half_height, half_height, near_z, far_z, false);
+		return view * proj;
+	}
+
+	// Perspective view
 	const float yaw = state.orbit_yaw;
 	const float pitch = state.orbit_pitch;
 	const float cp = std::cos(pitch);
@@ -346,8 +416,6 @@ Diligent::float4x4 ComputeViewportViewProj(
 
 	const Diligent::float4x4 view = LookAtLH(eye, target);
 	const float fov = Diligent::PI_F / 4.0f;
-	const float near_z = 1.0f;
-	const float far_z = 20000.0f;
 	const Diligent::float4x4 proj = Diligent::float4x4::Projection(fov, std::max(0.01f, aspect_ratio), near_z, far_z, false);
 	return view * proj;
 }

@@ -9,11 +9,32 @@ struct ViewportPanelState
 	bool initialized = false;
 	bool show_grid = true;
 	bool show_axes = true;
+
+	/// Viewport projection mode.
+	enum class ViewMode
+	{
+		Perspective,  ///< Standard perspective view with orbit/fly controls
+		Top,          ///< Orthographic looking down -Y axis
+		Bottom,       ///< Orthographic looking up +Y axis
+		Front,        ///< Orthographic looking down -Z axis
+		Back,         ///< Orthographic looking down +Z axis
+		Left,         ///< Orthographic looking down +X axis
+		Right         ///< Orthographic looking down -X axis
+	};
+	ViewMode view_mode = ViewMode::Perspective;
+
+	// Perspective mode state
 	float orbit_yaw = 0.0f;
 	float orbit_pitch = 0.0f;
 	float orbit_distance = 800.0f;
 	float target[3] = {0.0f, 0.0f, 0.0f};
 	bool fly_mode = false;
+
+	// Orthographic mode state
+	float ortho_zoom = 1.0f;            ///< Zoom level (smaller = zoomed in)
+	float ortho_center[2] = {0.0f, 0.0f}; ///< 2D pan center in world coordinates
+	float ortho_depth = 0.0f;           ///< Depth coordinate preserved when switching views
+	ViewMode last_ortho_view = ViewMode::Top; ///< Last used ortho view for toggle
 	float fly_pos[3] = {0.0f, 0.0f, 0.0f};
 	float fly_speed = 800.0f;
 	float grid_spacing = 64.0f;
@@ -135,3 +156,17 @@ void SyncFlyFromOrbit(ViewportPanelState& state);
 void SyncOrbitFromFly(ViewportPanelState& state);
 void UpdateViewportControls(ViewportPanelState& state, const ImVec2& origin, const ImVec2& size, bool hovered);
 void DrawViewportOverlay(const ViewportPanelState& state, ImDrawList* draw_list, const ImVec2& origin, const ImVec2& size);
+
+/// Returns true if the current view mode is orthographic.
+[[nodiscard]] inline bool IsOrthographicView(const ViewportPanelState& state) {
+	return state.view_mode != ViewportPanelState::ViewMode::Perspective;
+}
+
+/// Sets the view mode and initializes ortho center from current target.
+void SetViewMode(ViewportPanelState& state, ViewportPanelState::ViewMode mode);
+
+/// Toggles between perspective and the last-used orthographic view (default: Top).
+void ToggleOrthoPerspective(ViewportPanelState& state);
+
+/// Returns display name for view mode.
+[[nodiscard]] const char* ViewModeName(ViewportPanelState::ViewMode mode);

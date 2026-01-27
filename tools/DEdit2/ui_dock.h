@@ -16,6 +16,19 @@ enum class PrimitiveType {
   Plane
 };
 
+/// View mode for viewport. Matches ViewportPanelState::ViewMode.
+enum class ViewModeAction {
+	None = -1,
+	Perspective = 0,
+	Top,
+	Bottom,
+	Front,
+	Back,
+	Left,
+	Right,
+	ToggleOrthoPerspective  ///< Toggle between persp and last ortho view
+};
+
 struct MainMenuActions
 {
 	bool open_project_folder = false;
@@ -34,6 +47,7 @@ struct MainMenuActions
 	bool mirror_x = false;
 	bool mirror_y = false;
 	bool mirror_z = false;
+	ViewModeAction view_mode = ViewModeAction::None;
 };
 
 void DrawMainMenuBar(

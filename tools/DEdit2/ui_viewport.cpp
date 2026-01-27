@@ -81,6 +81,28 @@ void UpdateViewportControls(ViewportPanelState& state, const ImVec2& origin, con
 	}
 
 	ImGuiIO& io = ImGui::GetIO();
+
+	// Orthographic view controls
+	if (IsOrthographicView(state))
+	{
+		// Zoom with scroll wheel
+		if (io.MouseWheel != 0.0f)
+		{
+			const float zoom_factor = std::pow(1.1f, -io.MouseWheel);
+			state.ortho_zoom = Clamp(state.ortho_zoom * zoom_factor, 0.01f, 100.0f);
+		}
+
+		// Pan with middle mouse
+		if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f))
+		{
+			const float pan_speed = state.ortho_zoom;
+			state.ortho_center[0] -= io.MouseDelta.x * pan_speed;
+			state.ortho_center[1] += io.MouseDelta.y * pan_speed;  // Invert Y for natural feel
+		}
+		return;
+	}
+
+	// Perspective view controls
 	if (state.fly_mode)
 	{
 		float forward[3] = {0.0f, 0.0f, 1.0f};
@@ -207,7 +229,18 @@ void DrawViewportOverlay(const ViewportPanelState& state, ImDrawList* draw_list,
 	draw_list->PushClipRect(origin, max, true);
 
 	char status[128];
-	if (state.fly_mode)
+	if (IsOrthographicView(state))
+	{
+		std::snprintf(
+			status,
+			sizeof(status),
+			"%s | Zoom %.2f | Center %.0f %.0f | MMB pan, Scroll zoom",
+			ViewModeName(state.view_mode),
+			1.0f / state.ortho_zoom,
+			state.ortho_center[0],
+			state.ortho_center[1]);
+	}
+	else if (state.fly_mode)
 	{
 		std::snprintf(
 			status,
@@ -232,4 +265,76 @@ void DrawViewportOverlay(const ViewportPanelState& state, ImDrawList* draw_list,
 	draw_list->AddText(ImVec2(origin.x + 8.0f, origin.y + 8.0f), IM_COL32(220, 220, 220, 200), status);
 
 	draw_list->PopClipRect();
+}
+
+const char* ViewModeName(ViewportPanelState::ViewMode mode)
+{
+	switch (mode)
+	{
+	case ViewportPanelState::ViewMode::Perspective:
+		return "Perspective";
+	case ViewportPanelState::ViewMode::Top:
+		return "Top";
+	case ViewportPanelState::ViewMode::Bottom:
+		return "Bottom";
+	case ViewportPanelState::ViewMode::Front:
+		return "Front";
+	case ViewportPanelState::ViewMode::Back:
+		return "Back";
+	case ViewportPanelState::ViewMode::Left:
+		return "Left";
+	case ViewportPanelState::ViewMode::Right:
+		return "Right";
+	default:
+		return "Unknown";
+	}
+}
+
+void SetViewMode(ViewportPanelState& state, ViewportPanelState::ViewMode mode)
+{
+	// When switching to orthographic, initialize ortho center from current target
+	if (mode != ViewportPanelState::ViewMode::Perspective &&
+		state.view_mode == ViewportPanelState::ViewMode::Perspective)
+	{
+		// Map 3D target to appropriate 2D ortho center and depth based on view
+		switch (mode)
+		{
+		case ViewportPanelState::ViewMode::Top:
+		case ViewportPanelState::ViewMode::Bottom:
+			state.ortho_center[0] = state.target[0];  // X -> horizontal
+			state.ortho_center[1] = state.target[2];  // Z -> vertical
+			state.ortho_depth = state.target[1];      // Y preserved as depth
+			break;
+		case ViewportPanelState::ViewMode::Front:
+		case ViewportPanelState::ViewMode::Back:
+			state.ortho_center[0] = state.target[0];  // X -> horizontal
+			state.ortho_center[1] = state.target[1];  // Y -> vertical
+			state.ortho_depth = state.target[2];      // Z preserved as depth
+			break;
+		case ViewportPanelState::ViewMode::Left:
+		case ViewportPanelState::ViewMode::Right:
+			state.ortho_center[0] = state.target[2];  // Z -> horizontal
+			state.ortho_center[1] = state.target[1];  // Y -> vertical
+			state.ortho_depth = state.target[0];      // X preserved as depth
+			break;
+		default:
+			break;
+		}
+		// Set zoom based on orbit distance
+		state.ortho_zoom = state.orbit_distance / 800.0f;
+	}
+	state.view_mode = mode;
+}
+
+void ToggleOrthoPerspective(ViewportPanelState& state)
+{
+	if (state.view_mode == ViewportPanelState::ViewMode::Perspective)
+	{
+		SetViewMode(state, state.last_ortho_view);
+	}
+	else
+	{
+		state.last_ortho_view = state.view_mode;
+		state.view_mode = ViewportPanelState::ViewMode::Perspective;
+	}
 }

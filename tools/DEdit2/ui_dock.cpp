@@ -142,6 +142,42 @@ void DrawMainMenuBar(
 
 	if (ImGui::BeginMenu("View"))
 	{
+		if (ImGui::BeginMenu("Viewport"))
+		{
+			if (ImGui::MenuItem("Perspective", "Numpad 5"))
+			{
+				actions.view_mode = ViewModeAction::Perspective;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Top", "Numpad 7"))
+			{
+				actions.view_mode = ViewModeAction::Top;
+			}
+			if (ImGui::MenuItem("Bottom", "Ctrl+Numpad 7"))
+			{
+				actions.view_mode = ViewModeAction::Bottom;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Front", "Numpad 1"))
+			{
+				actions.view_mode = ViewModeAction::Front;
+			}
+			if (ImGui::MenuItem("Back", "Ctrl+Numpad 1"))
+			{
+				actions.view_mode = ViewModeAction::Back;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Right", "Numpad 3"))
+			{
+				actions.view_mode = ViewModeAction::Right;
+			}
+			if (ImGui::MenuItem("Left", "Ctrl+Numpad 3"))
+			{
+				actions.view_mode = ViewModeAction::Left;
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::Separator();
 		if (ImGui::MenuItem("Reset Layout"))
 		{
 			request_reset_layout = true;
