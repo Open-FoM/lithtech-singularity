@@ -158,55 +158,59 @@ void SyncOrthoViewportsToPerspective(MultiViewportState& state)
   }
 
   // Sync all orthographic viewports to this position
+  // Scale down depth offset to keep ortho views closer to ground level
+  // (prevents exceeding draw distance while still allowing zoom adjustment)
+  constexpr float kDepthScale = 0.2f;
+
   for (int i = 0; i < visible_count; ++i)
   {
     ViewportPanelState& vp = state.viewports[i].state;
 
     // Map 3D target to 2D ortho_center based on view mode
     // ortho_center[0] = horizontal axis, ortho_center[1] = vertical axis
-    // ortho_depth = depth into screen
+    // ortho_depth = depth into screen (scaled down to stay within draw distance)
     switch (vp.view_mode)
     {
     case ViewportPanelState::ViewMode::Top:
       // Looking down -Y: screen X = world X, screen Y = world -Z
       vp.ortho_center[0] = sync_target[0];
       vp.ortho_center[1] = -sync_target[2];
-      vp.ortho_depth = sync_target[1];
+      vp.ortho_depth = sync_target[1] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Bottom:
       // Looking up +Y: screen X = world X, screen Y = world Z
       vp.ortho_center[0] = sync_target[0];
       vp.ortho_center[1] = sync_target[2];
-      vp.ortho_depth = sync_target[1];
+      vp.ortho_depth = sync_target[1] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Front:
       // Looking down -Z: screen X = world X, screen Y = world Y
       vp.ortho_center[0] = sync_target[0];
       vp.ortho_center[1] = sync_target[1];
-      vp.ortho_depth = sync_target[2];
+      vp.ortho_depth = sync_target[2] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Back:
       // Looking down +Z: screen X = world -X, screen Y = world Y
       vp.ortho_center[0] = -sync_target[0];
       vp.ortho_center[1] = sync_target[1];
-      vp.ortho_depth = sync_target[2];
+      vp.ortho_depth = sync_target[2] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Left:
       // Looking down +X: screen X = world Z, screen Y = world Y
       vp.ortho_center[0] = sync_target[2];
       vp.ortho_center[1] = sync_target[1];
-      vp.ortho_depth = sync_target[0];
+      vp.ortho_depth = sync_target[0] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Right:
       // Looking down -X: screen X = world -Z, screen Y = world Y
       vp.ortho_center[0] = -sync_target[2];
       vp.ortho_center[1] = sync_target[1];
-      vp.ortho_depth = sync_target[0];
+      vp.ortho_depth = sync_target[0] * kDepthScale;
       break;
 
     case ViewportPanelState::ViewMode::Perspective:
