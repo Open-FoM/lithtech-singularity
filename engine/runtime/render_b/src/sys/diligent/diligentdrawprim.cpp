@@ -739,8 +739,17 @@ bool CDiligentDrawPrim::UpdateTransformMatrix()
 
 	if (m_eTransType == DRAWPRIM_TRANSFORM_SCREEN || !m_pCamera)
 	{
-		const float width = g_ScreenWidth > 0 ? static_cast<float>(g_ScreenWidth) : 1.0f;
-		const float height = g_ScreenHeight > 0 ? static_cast<float>(g_ScreenHeight) : 1.0f;
+		float width = g_ScreenWidth > 0 ? static_cast<float>(g_ScreenWidth) : 1.0f;
+		float height = g_ScreenHeight > 0 ? static_cast<float>(g_ScreenHeight) : 1.0f;
+		if (auto* swap_chain = r_GetSwapChain())
+		{
+			const auto& desc = swap_chain->GetDesc();
+			if (desc.Width > 0 && desc.Height > 0)
+			{
+				width = static_cast<float>(desc.Width);
+				height = static_cast<float>(desc.Height);
+			}
+		}
 		const float sx = 2.0f / width;
 		const float sy = -2.0f / height;
 		resources.mvp = {
@@ -823,6 +832,15 @@ void CDiligentDrawPrim::BuildViewport(Diligent::Viewport& viewport) const
 	viewport.TopLeftY = 0.0f;
 	viewport.Width = static_cast<float>(g_ScreenWidth);
 	viewport.Height = static_cast<float>(g_ScreenHeight);
+	if (auto* swap_chain = r_GetSwapChain())
+	{
+		const auto& desc = swap_chain->GetDesc();
+		if (desc.Width > 0 && desc.Height > 0)
+		{
+			viewport.Width = static_cast<float>(desc.Width);
+			viewport.Height = static_cast<float>(desc.Height);
+		}
+	}
 }
 
 void CDiligentDrawPrim::ApplyViewport()
