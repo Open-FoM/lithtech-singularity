@@ -31,6 +31,91 @@ void DrawViewportToolbar(ViewportPanelState& viewport_panel, DiligentContext& di
 /// Draw the render settings popup.
 void DrawRenderSettingsPopup(ViewportPanelState& viewport_panel, DiligentContext& diligent,
   std::vector<TreeNode>& scene_nodes, std::vector<NodeProperties>& scene_props);
+
+/// Sync render settings from source viewport to target viewport.
+/// Copies render flags and settings but NOT camera position, view mode, or gizmo state.
+void SyncViewportRenderSettings(ViewportPanelState& target, const ViewportPanelState& source)
+{
+  // Copy draw flags
+  target.render_draw_world = source.render_draw_world;
+  target.render_draw_world_models = source.render_draw_world_models;
+  target.render_draw_models = source.render_draw_models;
+  target.render_draw_sprites = source.render_draw_sprites;
+  target.render_draw_polygrids = source.render_draw_polygrids;
+  target.render_draw_particles = source.render_draw_particles;
+  target.render_draw_volume_effects = source.render_draw_volume_effects;
+  target.render_draw_line_systems = source.render_draw_line_systems;
+  target.render_draw_canvases = source.render_draw_canvases;
+  target.render_draw_sky = source.render_draw_sky;
+  target.sky_world_model = source.sky_world_model;
+
+  // Copy render modes
+  target.render_wireframe_world = source.render_wireframe_world;
+  target.render_wireframe_models = source.render_wireframe_models;
+  target.render_world_shading_mode = source.render_world_shading_mode;
+  target.render_wireframe_overlay = source.render_wireframe_overlay;
+  target.render_lightmap_mode = source.render_lightmap_mode;
+  target.render_lightmaps_available = source.render_lightmaps_available;
+  target.render_lightmap_intensity = source.render_lightmap_intensity;
+  target.render_fullbright = source.render_fullbright;
+  target.render_draw_sorted = source.render_draw_sorted;
+
+  // Copy model rendering settings
+  target.render_draw_solid_models = source.render_draw_solid_models;
+  target.render_draw_translucent_models = source.render_draw_translucent_models;
+  target.render_texture_models = source.render_texture_models;
+  target.render_light_models = source.render_light_models;
+  target.render_model_apply_ambient = source.render_model_apply_ambient;
+  target.render_model_apply_sun = source.render_model_apply_sun;
+  target.render_model_saturation = source.render_model_saturation;
+  target.render_model_lod_offset = source.render_model_lod_offset;
+
+  // Copy lighting settings
+  target.render_dynamic_lights = source.render_dynamic_lights;
+  target.render_dynamic_lights_world = source.render_dynamic_lights_world;
+  target.render_polygrid_env_map = source.render_polygrid_env_map;
+  target.render_polygrid_bump_map = source.render_polygrid_bump_map;
+
+  // Copy debug rendering settings
+  target.render_model_debug_boxes = source.render_model_debug_boxes;
+  target.render_model_debug_touching_lights = source.render_model_debug_touching_lights;
+  target.render_model_debug_skeleton = source.render_model_debug_skeleton;
+  target.render_model_debug_obbs = source.render_model_debug_obbs;
+  target.render_model_debug_vertex_normals = source.render_model_debug_vertex_normals;
+  target.render_world_debug_nodes = source.render_world_debug_nodes;
+  target.render_world_debug_leaves = source.render_world_debug_leaves;
+  target.render_world_debug_portals = source.render_world_debug_portals;
+
+  // Copy post-processing settings
+  target.render_screen_glow_enable = source.render_screen_glow_enable;
+  target.render_screen_glow_show_texture = source.render_screen_glow_show_texture;
+  target.render_screen_glow_show_filter = source.render_screen_glow_show_filter;
+  target.render_screen_glow_show_texture_scale = source.render_screen_glow_show_texture_scale;
+  target.render_screen_glow_show_filter_scale = source.render_screen_glow_show_filter_scale;
+  target.render_screen_glow_uv_scale = source.render_screen_glow_uv_scale;
+  target.render_screen_glow_texture_size = source.render_screen_glow_texture_size;
+  target.render_screen_glow_filter_size = source.render_screen_glow_filter_size;
+  target.render_ssao_enable = source.render_ssao_enable;
+  target.render_ssao_backend = source.render_ssao_backend;
+  target.render_ssao_intensity = source.render_ssao_intensity;
+  target.render_ssao_fx_effect_radius = source.render_ssao_fx_effect_radius;
+  target.render_ssao_fx_effect_falloff_range = source.render_ssao_fx_effect_falloff_range;
+  target.render_ssao_fx_radius_multiplier = source.render_ssao_fx_radius_multiplier;
+  target.render_ssao_fx_depth_mip_offset = source.render_ssao_fx_depth_mip_offset;
+  target.render_ssao_fx_temporal_stability = source.render_ssao_fx_temporal_stability;
+  target.render_ssao_fx_spatial_reconstruction_radius = source.render_ssao_fx_spatial_reconstruction_radius;
+  target.render_ssao_fx_alpha_interpolation = source.render_ssao_fx_alpha_interpolation;
+  target.render_ssao_fx_half_resolution = source.render_ssao_fx_half_resolution;
+  target.render_ssao_fx_half_precision_depth = source.render_ssao_fx_half_precision_depth;
+  target.render_ssao_fx_uniform_weighting = source.render_ssao_fx_uniform_weighting;
+  target.render_ssao_fx_reset_accumulation = source.render_ssao_fx_reset_accumulation;
+
+  // Copy UI overlay settings
+  target.show_light_icons = source.show_light_icons;
+  target.light_icon_occlusion = source.light_icon_occlusion;
+  target.show_grid = source.show_grid;
+  target.show_axes = source.show_axes;
+}
 } // namespace
 
 ViewportPanelResult DrawViewportPanel(
@@ -44,7 +129,11 @@ ViewportPanelResult DrawViewportPanel(
   // Get the active viewport for convenience
   ViewportPanelState& viewport_panel = multi_viewport.ActiveViewport();
   ViewportPanelResult result{};
-  diligent.viewport_visible = false;
+  // Clear all viewport visibility flags
+  for (int i = 0; i < kMaxViewportRenderSlots; ++i)
+  {
+    diligent.viewport_visible[i] = false;
+  }
   if (!ImGui::Begin("Viewport"))
   {
     ImGui::End();
@@ -631,35 +720,45 @@ ViewportPanelResult DrawViewportPanel(
       const ImVec2 child_pos = ImGui::GetCursorScreenPos();
       const ImVec2 child_avail = ImGui::GetContentRegionAvail();
 
-      if (is_active)
-      {
-        // Active viewport gets full 3D rendering
-        const uint32_t target_width = static_cast<uint32_t>(child_avail.x > 0.0f ? child_avail.x : 0.0f);
-        const uint32_t target_height = static_cast<uint32_t>(child_avail.y > 0.0f ? child_avail.y : 0.0f);
+      // ALL viewports render 3D content (not just the active one)
+      const uint32_t target_width = static_cast<uint32_t>(child_avail.x > 0.0f ? child_avail.x : 0.0f);
+      const uint32_t target_height = static_cast<uint32_t>(child_avail.y > 0.0f ? child_avail.y : 0.0f);
 
-        diligent.viewport_visible = (target_width > 0 && target_height > 0);
-        if (diligent.viewport_visible && CreateViewportTargets(diligent, target_width, target_height))
+      // Sync render settings from active viewport to this slot
+      SyncViewportRenderSettings(slot_state, viewport_panel);
+
+      diligent.viewport_visible[slot] = (target_width > 0 && target_height > 0);
+      bool slot_drew_image = false;
+      if (diligent.viewport_visible[slot] && CreateViewportTargets(diligent, slot, target_width, target_height))
+      {
+        ImTextureID view_id = reinterpret_cast<ImTextureID>(diligent.viewports[slot].color_srv.RawPtr());
+        ImGui::Image(view_id, child_avail);
+        slot_drew_image = true;
+
+        // Track active viewport for overlays/interaction
+        if (is_active)
         {
-          ImTextureID view_id = reinterpret_cast<ImTextureID>(diligent.viewport.color_srv.RawPtr());
-          ImGui::Image(view_id, child_avail);
           drew_image = true;
           rendered_slot = slot;
           rendered_pos = child_pos;
           rendered_size = child_avail;
+        }
 
-          // Handle input INSIDE the child window - use the Image's hover state
-          const bool hovered = ImGui::IsItemHovered();
-          UpdateViewportControls(viewport_panel, child_pos, child_avail, hovered);
+        // Handle input - active viewport gets full control, others just click-to-activate
+        const bool hovered = ImGui::IsItemHovered();
+        if (is_active)
+        {
+          UpdateViewportControls(slot_state, child_pos, child_avail, hovered);
 
           ViewportInteractionResult interaction = UpdateViewportInteraction(
-            viewport_panel,
+            slot_state,
             scene_panel,
             active_target,
             scene_nodes,
             scene_props,
             child_pos,
             child_avail,
-            drew_image,
+            slot_drew_image,
             hovered);
 
           result.overlays = interaction.overlays;
@@ -670,12 +769,23 @@ ViewportPanelResult DrawViewportPanel(
         }
         else
         {
-          ImGui::TextUnformatted("Viewport inactive.");
+          // Click on inactive viewport to activate it
+          if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+          {
+            SetActiveViewport(multi_viewport, slot);
+          }
         }
+      }
+      else
+      {
+        ImGui::TextUnformatted("Viewport inactive.");
+      }
 
-        // Texture view overlay (only on active viewport)
+      // Texture view overlay (only on active viewport)
+      if (is_active && slot_drew_image)
+      {
         const DEdit2TexViewState& texview = DEdit2_GetTexViewState();
-        if (drew_image && texview.enabled && texview.view != nullptr && texview.width > 0 && texview.height > 0)
+        if (texview.enabled && texview.view != nullptr && texview.width > 0 && texview.height > 0)
         {
           const float max_size = std::min(256.0f, child_avail.x * 0.35f);
           const float aspect = static_cast<float>(texview.height) / static_cast<float>(texview.width);
@@ -703,40 +813,6 @@ ViewportPanelResult DrawViewportPanel(
             ImVec2(pos.x, pos.y + size.y + 4.0f),
             IM_COL32(255, 255, 255, 200),
             texview.name.c_str());
-        }
-      }
-      else
-      {
-        // Inactive viewport: show placeholder with view mode label
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-        // Dark background
-        draw_list->AddRectFilled(
-          child_pos,
-          ImVec2(child_pos.x + child_avail.x, child_pos.y + child_avail.y),
-          IM_COL32(30, 30, 35, 255));
-
-        // View mode label centered in the viewport
-        const ImVec2 text_size = ImGui::CalcTextSize(view_mode_name);
-        const ImVec2 text_pos(
-          child_pos.x + (child_avail.x - text_size.x) * 0.5f,
-          child_pos.y + (child_avail.y - text_size.y) * 0.5f);
-        draw_list->AddText(text_pos, IM_COL32(150, 150, 160, 255), view_mode_name);
-
-        // "Click to activate" hint below the label
-        const char* hint = "Click to activate";
-        const ImVec2 hint_size = ImGui::CalcTextSize(hint);
-        const ImVec2 hint_pos(
-          child_pos.x + (child_avail.x - hint_size.x) * 0.5f,
-          text_pos.y + text_size.y + 8.0f);
-        draw_list->AddText(hint_pos, IM_COL32(100, 100, 110, 200), hint);
-
-        // Handle click to activate this viewport
-        ImGui::SetCursorScreenPos(child_pos);
-        ImGui::InvisibleButton("##activate", child_avail);
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-        {
-          SetActiveViewport(multi_viewport, slot);
         }
       }
     }

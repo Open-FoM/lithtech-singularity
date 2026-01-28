@@ -9,6 +9,7 @@
 #include "engine_render.h"
 #include "viewport_render.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -19,6 +20,9 @@ struct NodeProperties;
 struct ViewportPanelState;
 struct ViewportOverlayState;
 struct SDL_Window;
+
+/// Maximum number of simultaneous viewport render targets.
+constexpr int kMaxViewportRenderSlots = 4;
 
 struct ViewportRenderResources
 {
@@ -36,8 +40,12 @@ struct DiligentContext
 	EngineRenderContext engine;
 	std::unique_ptr<Diligent::ImGuiImplSDL3> imgui;
 	void* metal_view = nullptr;
-	ViewportRenderResources viewport;
-	bool viewport_visible = false;
+
+	/// Per-viewport render targets (one per visible viewport slot).
+	std::array<ViewportRenderResources, kMaxViewportRenderSlots> viewports;
+	/// Per-viewport visibility flags.
+	std::array<bool, kMaxViewportRenderSlots> viewport_visible{};
+
 	ViewportGridRenderer grid_renderer;
 	bool grid_ready = false;
 	std::vector<std::unique_ptr<WorldModelInstance>> sky_world_models;
@@ -48,9 +56,14 @@ struct DiligentContext
 };
 
 bool InitDiligent(SDL_Window* window, DiligentContext& ctx);
-bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height);
+
+/// Create/resize render targets for a specific viewport slot.
+bool CreateViewportTargets(DiligentContext& ctx, int slot, uint32_t width, uint32_t height);
+
+/// Render scene to a specific viewport slot's render target.
 void RenderViewport(
   DiligentContext& ctx,
+  int slot,
   const ViewportPanelState& viewport_state,
   const NodeProperties* world_props,
   const ViewportOverlayState& overlay_state,

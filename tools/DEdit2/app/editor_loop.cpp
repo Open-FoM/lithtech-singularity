@@ -738,7 +738,14 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.viewport_panel(),
       session.scene_nodes,
       session.scene_props);
-    RenderViewport(diligent, session.viewport_panel(), world_props, overlay_state, viewport_dynamic_lights);
+
+    // Render all visible viewport slots
+    const int visible_count = session.multi_viewport.VisibleViewportCount();
+    for (int slot = 0; slot < visible_count; ++slot)
+    {
+      ViewportPanelState& slot_state = session.multi_viewport.viewports[slot].state;
+      RenderViewport(diligent, slot, slot_state, world_props, overlay_state, viewport_dynamic_lights);
+    }
 
     Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
     Diligent::ITextureView* back_dsv = diligent.engine.swapchain->GetDepthBufferDSV();

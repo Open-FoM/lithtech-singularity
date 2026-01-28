@@ -198,6 +198,7 @@ target_sources (
 		${LTJS_ROOT}/engine/runtime/kernel/toport/src/stringmgr.cpp
 		${LTJS_ROOT}/engine/runtime/kernel/toport/src/stringhelper.cpp
 		${LTJS_ROOT}/engine/runtime/kernel/toport/src/bindmgr.cpp
+		${LTJS_ROOT}/engine/runtime/kernel/src/sys/linux/ltlibraryloader.cpp
 		dsys_stub.cpp
 		${LTJS_ROOT}/libs/imgui/imgui.cpp
 		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp

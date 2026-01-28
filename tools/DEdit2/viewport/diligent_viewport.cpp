@@ -91,24 +91,35 @@ bool InitDiligent(SDL_Window* window, DiligentContext& ctx)
   return true;
 }
 
-bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height)
+bool CreateViewportTargets(DiligentContext& ctx, int slot, uint32_t width, uint32_t height)
 {
+  if (slot < 0 || slot >= kMaxViewportRenderSlots)
+  {
+    return false;
+  }
   if (width == 0 || height == 0)
   {
     return false;
   }
-  if (ctx.viewport.width == width && ctx.viewport.height == height &&
-    ctx.viewport.color && ctx.viewport.depth)
+
+  ViewportRenderResources& vp = ctx.viewports[slot];
+  if (vp.width == width && vp.height == height && vp.color && vp.depth)
   {
     return true;
   }
 
-  ctx.viewport = {};
-  ctx.viewport.width = width;
-  ctx.viewport.height = height;
+  vp = {};
+  vp.width = width;
+  vp.height = height;
+
+  // Create unique names for each viewport slot's textures
+  char color_name[64];
+  char depth_name[64];
+  snprintf(color_name, sizeof(color_name), "DEdit2 Viewport %d Color", slot);
+  snprintf(depth_name, sizeof(depth_name), "DEdit2 Viewport %d Depth", slot);
 
   Diligent::TextureDesc color_desc;
-  color_desc.Name = "DEdit2 Viewport Color";
+  color_desc.Name = color_name;
   color_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
   color_desc.Width = width;
   color_desc.Height = height;
@@ -118,17 +129,17 @@ bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height
     ? ctx.engine.swapchain->GetDesc().ColorBufferFormat
     : Diligent::TEX_FORMAT_RGBA8_UNORM;
   color_desc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
-  ctx.engine.device->CreateTexture(color_desc, nullptr, &ctx.viewport.color);
-  if (!ctx.viewport.color)
+  ctx.engine.device->CreateTexture(color_desc, nullptr, &vp.color);
+  if (!vp.color)
   {
     return false;
   }
 
-  ctx.viewport.color_rtv = ctx.viewport.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-  ctx.viewport.color_srv = ctx.viewport.color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+  vp.color_rtv = vp.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+  vp.color_srv = vp.color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 
   Diligent::TextureDesc depth_desc;
-  depth_desc.Name = "DEdit2 Viewport Depth";
+  depth_desc.Name = depth_name;
   depth_desc.Type = Diligent::RESOURCE_DIM_TEX_2D;
   depth_desc.Width = width;
   depth_desc.Height = height;
@@ -136,30 +147,37 @@ bool CreateViewportTargets(DiligentContext& ctx, uint32_t width, uint32_t height
   depth_desc.ArraySize = 1;
   depth_desc.Format = Diligent::TEX_FORMAT_D32_FLOAT;
   depth_desc.BindFlags = Diligent::BIND_DEPTH_STENCIL;
-  ctx.engine.device->CreateTexture(depth_desc, nullptr, &ctx.viewport.depth);
-  if (!ctx.viewport.depth)
+  ctx.engine.device->CreateTexture(depth_desc, nullptr, &vp.depth);
+  if (!vp.depth)
   {
     return false;
   }
 
-  ctx.viewport.depth_dsv = ctx.viewport.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+  vp.depth_dsv = vp.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
   return true;
 }
 
 void RenderViewport(
   DiligentContext& ctx,
+  int slot,
   const ViewportPanelState& viewport_state,
   const NodeProperties* world_props,
   const ViewportOverlayState& overlay_state,
   std::vector<DynamicLight>& dynamic_lights)
 {
-  if (!ctx.viewport_visible || !ctx.viewport.color_rtv || !ctx.viewport.depth_dsv || !ctx.engine.context)
+  if (slot < 0 || slot >= kMaxViewportRenderSlots)
   {
     return;
   }
 
-  Diligent::ITextureView* render_target = ctx.viewport.color_rtv;
-  Diligent::ITextureView* depth_target = ctx.viewport.depth_dsv;
+  const ViewportRenderResources& vp = ctx.viewports[slot];
+  if (!ctx.viewport_visible[slot] || !vp.color_rtv || !vp.depth_dsv || !ctx.engine.context)
+  {
+    return;
+  }
+
+  Diligent::ITextureView* render_target = vp.color_rtv;
+  Diligent::ITextureView* depth_target = vp.depth_dsv;
   diligent_SetOutputTargets(render_target, depth_target);
 
   ctx.engine.context->SetRenderTargets(
@@ -203,8 +221,8 @@ void RenderViewport(
 
   if (ctx.engine.world_loaded && ctx.engine.render_struct && ctx.engine.render_struct->RenderScene)
   {
-    const float aspect = ctx.viewport.height > 0 ? static_cast<float>(ctx.viewport.width) /
-      static_cast<float>(ctx.viewport.height) : 1.0f;
+    const float aspect = vp.height > 0 ? static_cast<float>(vp.width) /
+      static_cast<float>(vp.height) : 1.0f;
 
     Diligent::float3 cam_pos{};
     Diligent::float3 cam_forward{};
@@ -235,8 +253,8 @@ void RenderViewport(
     scene.m_GlobalModelLightAdd.Init(0.0f, 0.0f, 0.0f);
     scene.m_Rect.left = 0;
     scene.m_Rect.top = 0;
-    scene.m_Rect.right = static_cast<int>(ctx.viewport.width);
-    scene.m_Rect.bottom = static_cast<int>(ctx.viewport.height);
+    scene.m_Rect.right = static_cast<int>(vp.width);
+    scene.m_Rect.bottom = static_cast<int>(vp.height);
     scene.m_xFov = fov_x;
     scene.m_yFov = fov_y;
     scene.m_Pos.Init(cam_pos.x, cam_pos.y, cam_pos.z);
@@ -291,23 +309,23 @@ void RenderViewport(
 
   if (ctx.grid_ready)
   {
-    const float aspect = ctx.viewport.height > 0 ? static_cast<float>(ctx.viewport.width) /
-      static_cast<float>(ctx.viewport.height) : 1.0f;
-    const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_state, aspect);
+    const float grid_aspect = vp.height > 0 ? static_cast<float>(vp.width) /
+      static_cast<float>(vp.height) : 1.0f;
+    const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_state, grid_aspect);
     const Diligent::float3 grid_origin{
       viewport_state.grid_origin[0],
       viewport_state.grid_origin[1],
       viewport_state.grid_origin[2]};
     UpdateViewportGridConstants(ctx.engine.context, ctx.grid_renderer, view_proj, grid_origin);
 
-    Diligent::Viewport vp;
-    vp.TopLeftX = 0.0f;
-    vp.TopLeftY = 0.0f;
-    vp.Width = static_cast<float>(ctx.viewport.width);
-    vp.Height = static_cast<float>(ctx.viewport.height);
-    vp.MinDepth = 0.0f;
-    vp.MaxDepth = 1.0f;
-    ctx.engine.context->SetViewports(1, &vp, 0, 0);
+    Diligent::Viewport diligent_vp;
+    diligent_vp.TopLeftX = 0.0f;
+    diligent_vp.TopLeftY = 0.0f;
+    diligent_vp.Width = static_cast<float>(vp.width);
+    diligent_vp.Height = static_cast<float>(vp.height);
+    diligent_vp.MinDepth = 0.0f;
+    diligent_vp.MaxDepth = 1.0f;
+    ctx.engine.context->SetViewports(1, &diligent_vp, 0, 0);
 
     DrawViewportGrid(ctx.engine.context, ctx.grid_renderer, viewport_state.show_grid, viewport_state.show_axes);
   }
