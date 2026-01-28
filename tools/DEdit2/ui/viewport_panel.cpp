@@ -646,6 +646,27 @@ ViewportPanelResult DrawViewportPanel(
           rendered_slot = slot;
           rendered_pos = child_pos;
           rendered_size = child_avail;
+
+          // Handle input INSIDE the child window - use the Image's hover state
+          const bool hovered = ImGui::IsItemHovered();
+          UpdateViewportControls(viewport_panel, child_pos, child_avail, hovered);
+
+          ViewportInteractionResult interaction = UpdateViewportInteraction(
+            viewport_panel,
+            scene_panel,
+            active_target,
+            scene_nodes,
+            scene_props,
+            child_pos,
+            child_avail,
+            drew_image,
+            hovered);
+
+          result.overlays = interaction.overlays;
+          result.hovered_scene_id = interaction.hovered_scene_id;
+          result.hovered_hit_valid = interaction.hovered_hit_valid;
+          result.hovered_hit_pos = interaction.hovered_hit_pos;
+          result.clicked_scene_id = interaction.clicked_scene_id;
         }
         else
         {
@@ -741,35 +762,11 @@ ViewportPanelResult DrawViewportPanel(
     }
   }
 
-  // Process input and overlays for the active viewport (if rendered)
+  // Draw light icons and overlays for the active viewport (if rendered)
   if (drew_image && rendered_slot >= 0)
   {
     const ImVec2 viewport_pos = rendered_pos;
     const ImVec2 avail = rendered_size;
-
-    // Set cursor back to rendered viewport area for hover detection
-    ImGui::SetCursorScreenPos(viewport_pos);
-    ImGui::InvisibleButton("##viewport_input", avail);
-    const bool hovered = ImGui::IsItemHovered();
-
-    UpdateViewportControls(viewport_panel, viewport_pos, avail, hovered);
-
-    ViewportInteractionResult interaction = UpdateViewportInteraction(
-      viewport_panel,
-      scene_panel,
-      active_target,
-      scene_nodes,
-      scene_props,
-      viewport_pos,
-      avail,
-      drew_image,
-      hovered);
-
-    result.overlays = interaction.overlays;
-    result.hovered_scene_id = interaction.hovered_scene_id;
-    result.hovered_hit_valid = interaction.hovered_hit_valid;
-    result.hovered_hit_pos = interaction.hovered_hit_pos;
-    result.clicked_scene_id = interaction.clicked_scene_id;
 
     // Draw light icons and overlays
     const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
