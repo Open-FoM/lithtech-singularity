@@ -9,9 +9,9 @@
 #ifndef __CLTNETWORK_H__
 #define __CLTNETWORK_H__
 
+#include "iltnetwork.h"
 #include <array>
 #include <cstdint>
-#include "iltnetwork.h"
 
 namespace SLNet {
 class RakPeerInterface;
@@ -32,10 +32,10 @@ public:
   LTRESULT ConnectWorld(const NetworkAddress &address) override;
   LTRESULT Disconnect() override;
   LTRESULT ConnectMaster(const NetworkAddress &address) override;
-  LTRESULT DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
-                          uint8 orderingChannel, DispatchTarget destination) override;
+  LTRESULT SendPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
+                      uint8 orderingChannel, DispatchTarget destination) override;
   LTRESULT SendHandshake(const NetworkAddress &address) override;
-  void UpdateNetwork() override;
+  void Tick() override;
   int WriteBitStream(void *src, int maxBits, void *stream) override;
   int ReadBitStream(void *dst, int maxBits, void *stream) override;
   int GetMasterStats() override;

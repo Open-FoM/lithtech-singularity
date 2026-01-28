@@ -76,14 +76,14 @@ public:
   virtual LTRESULT ConnectMaster(const NetworkAddress &address) = 0;
 
   // Dispatches a packet to master or world (dest=1 master, dest=2 world).
-  virtual LTRESULT DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
-                                  uint8 orderingChannel, DispatchTarget destination) = 0;
+  virtual LTRESULT SendPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
+                              uint8 orderingChannel, DispatchTarget destination) = 0;
 
   // Sends a ping/handshake packet to the given address buffer.
   virtual LTRESULT SendHandshake(const NetworkAddress &address) = 0;
 
   // Ticks internal connection state.
-  virtual void UpdateNetwork() = 0;
+  virtual void Tick() = 0;
 
   // Bitstream helpers.
   virtual int WriteBitStream(void *src, int maxBits, void *stream) = 0;

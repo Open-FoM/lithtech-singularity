@@ -5,8 +5,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <array>
 #include <cassert>
+#include <cstdlib>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "bdefs.h"
 #include "stdlterror.h"
@@ -31,6 +35,52 @@
 #include "ltmsg_resource_ids.h"
 #endif // LTJS_SDL_BACKEND
 
+ltjs::Index dsi_get_file_size(const char* path) noexcept;
+
+namespace
+{
+const char* ltjs_get_shared_lib_suffix() noexcept
+{
+#if defined(__APPLE__)
+	return ".dylib";
+#elif defined(_WIN32)
+	return ".dll";
+#else
+	return ".so";
+#endif
+}
+
+std::string ltjs_make_temp_path(const char* base_name)
+{
+	const char* temp_dir = std::getenv("TMPDIR");
+	if (!temp_dir || temp_dir[0] == '\0')
+	{
+		temp_dir = "/tmp";
+	}
+
+	std::string path = temp_dir;
+	if (!path.empty() && path.back() != '/')
+	{
+		path.push_back('/');
+	}
+
+	path += base_name;
+	path += ".XXXXXX";
+
+	std::vector<char> buffer(path.begin(), path.end());
+	buffer.push_back('\0');
+
+	const int fd = ::mkstemp(buffer.data());
+	if (fd >= 0)
+	{
+		::close(fd);
+		return std::string{buffer.data()};
+	}
+
+	return std::string{base_name};
+}
+} // namespace
+
 //IClientShell game client shell object.
 #include "iclientshell.h"
 static IClientShell *i_client_shell;
@@ -51,6 +101,11 @@ define_holder(IInstanceHandleClient, instance_handle_client);
 #include "iservershell.h"
 static IInstanceHandleServer* instance_handle_server;
 define_holder(IInstanceHandleServer, instance_handle_server);
+
+// IServerFileMgr
+#include "server_filemgr.h"
+static IServerFileMgr* server_filemgr;
+define_holder(IServerFileMgr, server_filemgr);
 
 #ifdef DE_CLIENT_COMPILE
 #include "clientmgr.h"
@@ -234,7 +289,36 @@ void* dsi_GetResourceModule()
 
 LTRESULT _GetOrCopyFile(char *pTempPath, char *pFilename, char *pOutName, int outNameLen)
 {
-    return LTTRUE;      // DAN - temporary
+	if (!pFilename || !pOutName || outNameLen <= 0 || !server_filemgr)
+	{
+		return LT_ERROR;
+	}
+
+	bool bFileCopied = false;
+	HLTFileTree* hTree = nullptr;
+
+	if (server_filemgr->DoesFileExist(pFilename, &hTree, LTNULL) && hTree != nullptr &&
+		df_GetTreeType(hTree) == DosTree)
+	{
+		int status = df_GetFullFilename(hTree, pFilename, pOutName, outNameLen);
+		return status != 0 ? LT_OK : LT_ERROR;
+	}
+
+	const auto temp_path = ltjs_make_temp_path(pFilename);
+	if (temp_path.empty())
+	{
+		return LT_ERROR;
+	}
+
+	if (server_filemgr->CopyFile(pFilename, temp_path.c_str()) != LT_OK)
+	{
+		return LT_ERROR;
+	}
+
+	bFileCopied = true;
+	static_cast<void>(bFileCopied);
+	LTStrCpy(pOutName, temp_path.c_str(), outNameLen);
+	return LT_OK;
 }
 
 
@@ -242,11 +326,20 @@ LTRESULT dsi_LoadServerObjects(CClassMgr *pInfo)
 {
 	int status;
 
-	const auto object_file_name = ltjs::ul::PathUtils::append("game", "object.dylib");
+	const auto object_file_name = std::string{"object"} + ltjs_get_shared_lib_suffix();
+	char object_name[256]{};
+	LTStrCpy(object_name, object_file_name.c_str(), sizeof(object_name));
+
+	if (_GetOrCopyFile(nullptr, object_name, object_name, sizeof(object_name)) != LT_OK)
+	{
+		sm_SetupError(LT_ERRORCOPYINGFILE, object_file_name.c_str());
+		RETURN_ERROR_PARAM(1, LoadServerObjects, LT_ERRORCOPYINGFILE, object_file_name.c_str());
+	}
+	const bool file_copied = (std::strcmp(object_name, object_file_name.c_str()) != 0);
 
 	// Load the object shared library.
 	int version;
-	status = cb_LoadModule(object_file_name.c_str(), false, pInfo->m_ClassModule, &version);
+	status = cb_LoadModule(object_name, file_copied, pInfo->m_ClassModule, &version);
 
 	// Check for errors.
 	if (status == CB_CANTFINDMODULE)
@@ -267,8 +360,19 @@ LTRESULT dsi_LoadServerObjects(CClassMgr *pInfo)
 
 #ifndef LTJS_SDL_BACKEND
 	// Get sres.dylib.
-	const auto sres_file_name = ltjs::ul::PathUtils::append("game", "sres.dylib");
-	if (bm_BindModule(sres_file_name.c_str(), false, pInfo->m_hServerResourceModule) != BIND_NOERROR)
+	const auto sres_file_name = std::string{"sres"} + ltjs_get_shared_lib_suffix();
+	char sres_name[256]{};
+	LTStrCpy(sres_name, sres_file_name.c_str(), sizeof(sres_name));
+	bool sres_copied = false;
+	if (_GetOrCopyFile(nullptr, sres_name, sres_name, sizeof(sres_name)) != LT_OK)
+	{
+		cb_UnloadModule(pInfo->m_ClassModule);
+		sm_SetupError(LT_ERRORCOPYINGFILE, sres_file_name.c_str());
+		RETURN_ERROR_PARAM(1, LoadServerObjects, LT_ERRORCOPYINGFILE, sres_file_name.c_str());
+	}
+	sres_copied = (std::strcmp(sres_name, sres_file_name.c_str()) != 0);
+
+	if (bm_BindModule(sres_name, sres_copied, pInfo->m_hServerResourceModule) != BIND_NOERROR)
 	{
 		cb_UnloadModule(pInfo->m_ClassModule);
 		sm_SetupError(LT_ERRORCOPYINGFILE, sres_file_name.c_str());
@@ -458,7 +562,24 @@ LTRESULT dsi_ShutdownRender(uint32 flags)
 
 LTRESULT _GetOrCopyClientFile(char *pTempPath, char *pFilename, char *pOutName, int outNameLen)
 {
-return LTTRUE;      // DAN - temporary
+	if (!pFilename || !pOutName || outNameLen <= 0 || !client_file_mgr)
+	{
+		return LT_ERROR;
+	}
+
+	const auto temp_path = ltjs_make_temp_path(pFilename);
+	if (temp_path.empty())
+	{
+		return LT_ERROR;
+	}
+
+	if (client_file_mgr->CopyFile(pFilename, temp_path.c_str()) != LT_OK)
+	{
+		return LT_ERROR;
+	}
+
+	LTStrCpy(pOutName, temp_path.c_str(), outNameLen);
+	return LT_OK;
 }
 
 LTRESULT dsi_InitClientShellDE()
@@ -472,9 +593,19 @@ LTRESULT dsi_InitClientShellDE()
 #endif // LTJS_SDL_BACKEND
 	g_pClientMgr->m_hShellModule = nullptr;
 
-	const auto cshell_file_name = ltjs::ul::PathUtils::append("game", "cshell.dylib");
+	const auto cshell_file_name = std::string{"cshell"} + ltjs_get_shared_lib_suffix();
+	char cshell_name[256]{};
+	LTStrCpy(cshell_name, cshell_file_name.c_str(), sizeof(cshell_name));
+	bool cshell_copied = false;
 
-	status = bm_BindModule(cshell_file_name.c_str(), false, g_pClientMgr->m_hShellModule);
+	if (_GetOrCopyClientFile(nullptr, cshell_name, cshell_name, sizeof(cshell_name)) != LT_OK)
+	{
+		g_pClientMgr->SetupError(LT_ERRORCOPYINGFILE, cshell_file_name.c_str());
+		RETURN_ERROR_PARAM(1, InitClientShellDE, LT_ERRORCOPYINGFILE, cshell_file_name.c_str());
+	}
+	cshell_copied = (std::strcmp(cshell_name, cshell_file_name.c_str()) != 0);
+
+	status = bm_BindModule(cshell_name, cshell_copied, g_pClientMgr->m_hShellModule);
 	if (status == BIND_CANTFINDMODULE)
 	{
 		g_pClientMgr->SetupError(LT_MISSINGSHELLDLL, cshell_file_name.c_str());
@@ -488,8 +619,18 @@ LTRESULT dsi_InitClientShellDE()
 	}
 
 #ifndef LTJS_SDL_BACKEND
-	const auto cres_file_name = ltjs::ul::PathUtils::append("game", "cres.dylib");
-	status = bm_BindModule(cres_file_name.c_str(), false, g_pClientMgr->m_hClientResourceModule);
+	const auto cres_file_name = std::string{"cres"} + ltjs_get_shared_lib_suffix();
+	char cres_name[256]{};
+	LTStrCpy(cres_name, cres_file_name.c_str(), sizeof(cres_name));
+	bool cres_copied = false;
+	if (_GetOrCopyClientFile(nullptr, cres_name, cres_name, sizeof(cres_name)) != LT_OK)
+	{
+		g_pClientMgr->SetupError(LT_ERRORCOPYINGFILE, cres_file_name.c_str());
+		RETURN_ERROR_PARAM(1, InitClientShellDE, LT_ERRORCOPYINGFILE, cres_file_name.c_str());
+	}
+	cres_copied = (std::strcmp(cres_name, cres_file_name.c_str()) != 0);
+
+	status = bm_BindModule(cres_name, cres_copied, g_pClientMgr->m_hClientResourceModule);
 	if (status == BIND_CANTFINDMODULE)
 	{
 		bm_UnbindModule(g_pClientMgr->m_hShellModule);

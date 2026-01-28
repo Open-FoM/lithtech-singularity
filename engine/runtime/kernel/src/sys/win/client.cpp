@@ -524,7 +524,7 @@ bool initialize_sdl()
 
 		SDL_ShowSimpleMessageBox(
 			SDL_MESSAGEBOX_ERROR,
-			"ltjs_lithtech",
+			"singularity",
 			sdl_error_message,
 			nullptr
 		);

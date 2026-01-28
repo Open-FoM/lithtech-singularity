@@ -21,7 +21,7 @@ endif ()
 set_target_properties (
 	${PROJECT_NAME}
 	PROPERTIES
-		OUTPUT_NAME ltjs_lithtech
+		OUTPUT_NAME singularity
 )
 
 target_compile_definitions (

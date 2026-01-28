@@ -224,8 +224,8 @@ LTRESULT CLTNetwork::ConnectMaster(const NetworkAddress &address) {
   return LT_OK;
 }
 
-LTRESULT CLTNetwork::DispatchPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
-                                    uint8 orderingChannel, DispatchTarget destination) {
+LTRESULT CLTNetwork::SendPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
+                                uint8 orderingChannel, DispatchTarget destination) {
   if (!m_initialized) {
     return LT_ERROR;
   }
@@ -296,7 +296,7 @@ LTRESULT CLTNetwork::SendHandshake(const NetworkAddress &address) {
   return LT_OK;
 }
 
-void CLTNetwork::UpdateNetwork() {
+void CLTNetwork::Tick() {
   if (!m_initialized) {
     return;
   }
