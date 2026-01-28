@@ -1,6 +1,7 @@
 #include "app/editor_loop.h"
 #include "app/editor_paths.h"
 #include "app/editor_session.h"
+#include "multi_viewport.h"
 #include "app/project_utils.h"
 #include "app/recent_projects.h"
 #include "app/scene_loader.h"
@@ -70,6 +71,7 @@ int main(int argc, char** argv)
 
   EditorPaths paths = ParseEditorPaths(argc, argv);
   EditorSession session;
+  InitMultiViewport(session.multi_viewport);
   session.project_root = ResolveProjectRoot(paths.project_root);
   session.world_file = paths.world_file;
 
@@ -115,7 +117,7 @@ int main(int argc, char** argv)
       diligent,
       session.project_root,
       session.world_file,
-      session.viewport_panel,
+      session.viewport_panel(),
       session.scene_nodes,
       session.scene_props,
       session.scene_panel,

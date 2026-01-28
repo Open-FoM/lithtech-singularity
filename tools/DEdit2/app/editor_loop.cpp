@@ -398,18 +398,18 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       // Numpad 5: Toggle ortho/perspective
       if (ImGui::IsKeyPressed(ImGuiKey_Keypad5, false))
       {
-        ToggleOrthoPerspective(session.viewport_panel);
+        ToggleOrthoPerspective(session.viewport_panel());
       }
       // Numpad 7: Top view (Ctrl+7: Bottom)
       if (ImGui::IsKeyPressed(ImGuiKey_Keypad7, false))
       {
         if (io.KeyCtrl)
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Bottom);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Bottom);
         }
         else
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Top);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Top);
         }
       }
       // Numpad 1: Front view (Ctrl+1: Back)
@@ -417,11 +417,11 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         if (io.KeyCtrl)
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Back);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Back);
         }
         else
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Front);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Front);
         }
       }
       // Numpad 3: Right view (Ctrl+3: Left)
@@ -429,11 +429,11 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         if (io.KeyCtrl)
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Left);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Left);
         }
         else
         {
-          SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Right);
+          SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Right);
         }
       }
     }
@@ -498,32 +498,42 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     switch (menu_actions.view_mode)
     {
     case ViewModeAction::Perspective:
-      session.viewport_panel.view_mode = ViewportPanelState::ViewMode::Perspective;
+      session.viewport_panel().view_mode = ViewportPanelState::ViewMode::Perspective;
       break;
     case ViewModeAction::Top:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Top);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Top);
       break;
     case ViewModeAction::Bottom:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Bottom);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Bottom);
       break;
     case ViewModeAction::Front:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Front);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Front);
       break;
     case ViewModeAction::Back:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Back);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Back);
       break;
     case ViewModeAction::Left:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Left);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Left);
       break;
     case ViewModeAction::Right:
-      SetViewMode(session.viewport_panel, ViewportPanelState::ViewMode::Right);
+      SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Right);
       break;
     case ViewModeAction::ToggleOrthoPerspective:
-      ToggleOrthoPerspective(session.viewport_panel);
+      ToggleOrthoPerspective(session.viewport_panel());
       break;
     case ViewModeAction::None:
     default:
       break;
+    }
+
+    // Handle viewport layout changes
+    if (menu_actions.layout_change.has_value())
+    {
+      SetViewportLayout(session.multi_viewport, *menu_actions.layout_change);
+    }
+    if (menu_actions.cycle_viewport)
+    {
+      CycleActiveViewport(session.multi_viewport);
     }
 
     // Handle primitive creation menu action
@@ -585,7 +595,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         diligent,
         session.project_root,
         session.world_file,
-        session.viewport_panel,
+        session.viewport_panel(),
         session.scene_nodes,
         session.scene_props,
         session.scene_panel,
@@ -602,7 +612,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         diligent,
         session.project_root,
         session.world_file,
-        session.viewport_panel,
+        session.viewport_panel(),
         session.scene_nodes,
         session.scene_props,
         session.scene_panel,
@@ -632,7 +642,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
 
     ViewportPanelResult viewport_result = DrawViewportPanel(
       diligent,
-      session.viewport_panel,
+      session.viewport_panel(),
       session.scene_panel,
       session.scene_nodes,
       session.scene_props,
@@ -668,22 +678,22 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     std::vector<DynamicLight> viewport_dynamic_lights;
     ApplyViewportDirectionalLight(
       diligent.engine,
-      session.viewport_panel,
+      session.viewport_panel(),
       session.scene_panel,
       session.scene_nodes,
       session.scene_props);
     BuildViewportDynamicLights(
-      session.viewport_panel,
+      session.viewport_panel(),
       session.scene_panel,
       session.scene_nodes,
       session.scene_props,
       viewport_dynamic_lights);
     ApplySceneVisibilityToRenderer(
       session.scene_panel,
-      session.viewport_panel,
+      session.viewport_panel(),
       session.scene_nodes,
       session.scene_props);
-    RenderViewport(diligent, session.viewport_panel, world_props, overlay_state, viewport_dynamic_lights);
+    RenderViewport(diligent, session.viewport_panel(), world_props, overlay_state, viewport_dynamic_lights);
 
     Diligent::ITextureView* back_rtv = diligent.engine.swapchain->GetCurrentBackBufferRTV();
     Diligent::ITextureView* back_dsv = diligent.engine.swapchain->GetDepthBufferDSV();

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "multi_viewport.h"
+
 #include "imgui.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,6 +51,8 @@ struct MainMenuActions
 	bool mirror_y = false;
 	bool mirror_z = false;
 	ViewModeAction view_mode = ViewModeAction::None;
+	std::optional<ViewportLayout> layout_change;
+	bool cycle_viewport = false;
 };
 
 void DrawMainMenuBar(

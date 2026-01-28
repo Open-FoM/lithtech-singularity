@@ -2,6 +2,7 @@
 
 #include "brush/brush_primitive.h"
 #include "editor_state.h"
+#include "multi_viewport.h"
 #include "undo_stack.h"
 #include "ui_console.h"
 #include "ui_dock.h"
@@ -44,7 +45,11 @@ struct EditorSession
   WorldBrowserState world_browser;
   ScenePanelState scene_panel;
   ConsolePanelState console_panel;
-  ViewportPanelState viewport_panel;
+  MultiViewportState multi_viewport;
+
+  /// Convenience accessor for the active viewport (backward compatible).
+  [[nodiscard]] ViewportPanelState& viewport_panel() { return multi_viewport.ActiveViewport(); }
+  [[nodiscard]] const ViewportPanelState& viewport_panel() const { return multi_viewport.ActiveViewport(); }
 
   SelectionTarget active_target = SelectionTarget::Project;
   WorldRenderSettingsCache world_settings_cache;

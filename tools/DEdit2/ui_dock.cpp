@@ -177,6 +177,39 @@ void DrawMainMenuBar(
 			}
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Layout"))
+		{
+			if (ImGui::MenuItem("Single Viewport"))
+			{
+				actions.layout_change = ViewportLayout::Single;
+			}
+			if (ImGui::MenuItem("Two Vertical (Left/Right)"))
+			{
+				actions.layout_change = ViewportLayout::TwoVertical;
+			}
+			if (ImGui::MenuItem("Two Horizontal (Top/Bottom)"))
+			{
+				actions.layout_change = ViewportLayout::TwoHorizontal;
+			}
+			if (ImGui::MenuItem("Three (Large Left)"))
+			{
+				actions.layout_change = ViewportLayout::ThreeLeft;
+			}
+			if (ImGui::MenuItem("Three (Large Top)"))
+			{
+				actions.layout_change = ViewportLayout::ThreeTop;
+			}
+			if (ImGui::MenuItem("Quad (2x2)", "Ctrl+Shift+4"))
+			{
+				actions.layout_change = ViewportLayout::Quad;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Cycle Active Viewport", "Tab"))
+			{
+				actions.cycle_viewport = true;
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::Separator();
 		if (ImGui::MenuItem("Reset Layout"))
 		{
