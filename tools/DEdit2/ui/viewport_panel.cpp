@@ -1,6 +1,7 @@
 #include "ui/viewport_panel.h"
 
 #include "dedit2_concommand.h"
+#include "multi_viewport.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
 #include "viewport/diligent_viewport.h"
@@ -21,14 +22,27 @@
 #include <cstring>
 #include <cmath>
 
+namespace
+{
+/// Draw the toolbar for a single viewport.
+void DrawViewportToolbar(ViewportPanelState& viewport_panel, DiligentContext& diligent,
+  std::vector<TreeNode>& scene_nodes, std::vector<NodeProperties>& scene_props);
+
+/// Draw the render settings popup.
+void DrawRenderSettingsPopup(ViewportPanelState& viewport_panel, DiligentContext& diligent,
+  std::vector<TreeNode>& scene_nodes, std::vector<NodeProperties>& scene_props);
+} // namespace
+
 ViewportPanelResult DrawViewportPanel(
   DiligentContext& diligent,
-  ViewportPanelState& viewport_panel,
+  MultiViewportState& multi_viewport,
   ScenePanelState& scene_panel,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,
   SelectionTarget active_target)
 {
+  // Get the active viewport for convenience
+  ViewportPanelState& viewport_panel = multi_viewport.ActiveViewport();
   ViewportPanelResult result{};
   diligent.viewport_visible = false;
   if (!ImGui::Begin("Viewport"))
@@ -574,77 +588,190 @@ ViewportPanelResult DrawViewportPanel(
     viewport_panel.initialized = false;
   }
 
-  ImVec2 avail = ImGui::GetContentRegionAvail();
-  const uint32_t target_width = static_cast<uint32_t>(avail.x > 0.0f ? avail.x : 0.0f);
-  const uint32_t target_height = static_cast<uint32_t>(avail.y > 0.0f ? avail.y : 0.0f);
-  const ImVec2 viewport_pos = ImGui::GetCursorScreenPos();
+  // Get total content area for multi-viewport layout
+  const ImVec2 content_origin = ImGui::GetCursorScreenPos();
+  const ImVec2 content_avail = ImGui::GetContentRegionAvail();
+  const int visible_count = multi_viewport.VisibleViewportCount();
 
-  diligent.viewport_visible = (target_width > 0 && target_height > 0);
+  // Track which viewport slot will receive 3D rendering this frame
+  int rendered_slot = -1;
+  ImVec2 rendered_pos{};
+  ImVec2 rendered_size{};
   bool drew_image = false;
-  if (diligent.viewport_visible && CreateViewportTargets(diligent, target_width, target_height))
-  {
-    ImTextureID view_id = reinterpret_cast<ImTextureID>(diligent.viewport.color_srv.RawPtr());
-    ImGui::Image(view_id, avail);
-    drew_image = true;
-  }
-  else
-  {
-    ImGui::TextUnformatted("Viewport inactive.");
-  }
 
-  const DEdit2TexViewState& texview = DEdit2_GetTexViewState();
-  if (drew_image && texview.enabled && texview.view && texview.width > 0 && texview.height > 0)
+  // Render each visible viewport slot
+  for (int slot = 0; slot < visible_count; ++slot)
   {
-    const float max_size = std::min(256.0f, avail.x * 0.35f);
-    const float aspect = static_cast<float>(texview.height) / static_cast<float>(texview.width);
-    ImVec2 size(max_size, max_size * aspect);
-    const float max_height = avail.y * 0.35f;
-    if (size.y > max_height && max_height > 0.0f)
+    float slot_x, slot_y, slot_w, slot_h;
+    GetViewportSlotRect(
+      multi_viewport.layout,
+      content_origin.x, content_origin.y,
+      content_avail.x, content_avail.y,
+      slot,
+      slot_x, slot_y, slot_w, slot_h);
+
+    const bool is_active = (slot == multi_viewport.active_viewport);
+    ViewportPanelState& slot_state = multi_viewport.viewports[slot].state;
+    const char* view_mode_name = ViewModeName(slot_state.view_mode);
+
+    // Position cursor for this slot
+    ImGui::SetCursorScreenPos(ImVec2(slot_x, slot_y));
+
+    // Create unique child window name for this slot
+    char child_name[32];
+    snprintf(child_name, sizeof(child_name), "##ViewportSlot%d", slot);
+
+    // Child window flags: no scrolling, handle input ourselves
+    const ImGuiWindowFlags child_flags =
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::BeginChild(child_name, ImVec2(slot_w, slot_h), ImGuiChildFlags_Borders, child_flags))
     {
-      size.y = max_height;
-      size.x = size.y / aspect;
+      const ImVec2 child_pos = ImGui::GetCursorScreenPos();
+      const ImVec2 child_avail = ImGui::GetContentRegionAvail();
+
+      if (is_active)
+      {
+        // Active viewport gets full 3D rendering
+        const uint32_t target_width = static_cast<uint32_t>(child_avail.x > 0.0f ? child_avail.x : 0.0f);
+        const uint32_t target_height = static_cast<uint32_t>(child_avail.y > 0.0f ? child_avail.y : 0.0f);
+
+        diligent.viewport_visible = (target_width > 0 && target_height > 0);
+        if (diligent.viewport_visible && CreateViewportTargets(diligent, target_width, target_height))
+        {
+          ImTextureID view_id = reinterpret_cast<ImTextureID>(diligent.viewport.color_srv.RawPtr());
+          ImGui::Image(view_id, child_avail);
+          drew_image = true;
+          rendered_slot = slot;
+          rendered_pos = child_pos;
+          rendered_size = child_avail;
+        }
+        else
+        {
+          ImGui::TextUnformatted("Viewport inactive.");
+        }
+
+        // Texture view overlay (only on active viewport)
+        const DEdit2TexViewState& texview = DEdit2_GetTexViewState();
+        if (drew_image && texview.enabled && texview.view != nullptr && texview.width > 0 && texview.height > 0)
+        {
+          const float max_size = std::min(256.0f, child_avail.x * 0.35f);
+          const float aspect = static_cast<float>(texview.height) / static_cast<float>(texview.width);
+          ImVec2 size(max_size, max_size * aspect);
+          const float max_height = child_avail.y * 0.35f;
+          if (size.y > max_height && max_height > 0.0f)
+          {
+            size.y = max_height;
+            size.x = size.y / aspect;
+          }
+
+          const ImVec2 pos(
+            child_pos.x + child_avail.x - size.x - 8.0f,
+            child_pos.y + 8.0f);
+          ImDrawList* draw_list = ImGui::GetWindowDrawList();
+          draw_list->AddImage(
+            reinterpret_cast<ImTextureID>(texview.view),
+            pos,
+            ImVec2(pos.x + size.x, pos.y + size.y));
+          draw_list->AddRect(
+            pos,
+            ImVec2(pos.x + size.x, pos.y + size.y),
+            IM_COL32(255, 255, 255, 200));
+          draw_list->AddText(
+            ImVec2(pos.x, pos.y + size.y + 4.0f),
+            IM_COL32(255, 255, 255, 200),
+            texview.name.c_str());
+        }
+      }
+      else
+      {
+        // Inactive viewport: show placeholder with view mode label
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        // Dark background
+        draw_list->AddRectFilled(
+          child_pos,
+          ImVec2(child_pos.x + child_avail.x, child_pos.y + child_avail.y),
+          IM_COL32(30, 30, 35, 255));
+
+        // View mode label centered in the viewport
+        const ImVec2 text_size = ImGui::CalcTextSize(view_mode_name);
+        const ImVec2 text_pos(
+          child_pos.x + (child_avail.x - text_size.x) * 0.5f,
+          child_pos.y + (child_avail.y - text_size.y) * 0.5f);
+        draw_list->AddText(text_pos, IM_COL32(150, 150, 160, 255), view_mode_name);
+
+        // "Click to activate" hint below the label
+        const char* hint = "Click to activate";
+        const ImVec2 hint_size = ImGui::CalcTextSize(hint);
+        const ImVec2 hint_pos(
+          child_pos.x + (child_avail.x - hint_size.x) * 0.5f,
+          text_pos.y + text_size.y + 8.0f);
+        draw_list->AddText(hint_pos, IM_COL32(100, 100, 110, 200), hint);
+
+        // Handle click to activate this viewport
+        ImGui::SetCursorScreenPos(child_pos);
+        ImGui::InvisibleButton("##activate", child_avail);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        {
+          SetActiveViewport(multi_viewport, slot);
+        }
+      }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+
+    // Draw active viewport border highlight
+    if (is_active && visible_count > 1)
+    {
+      ImDrawList* draw_list = ImGui::GetWindowDrawList();
+      draw_list->AddRect(
+        ImVec2(slot_x, slot_y),
+        ImVec2(slot_x + slot_w, slot_y + slot_h),
+        IM_COL32(100, 180, 255, 255),
+        0.0f, 0, 2.0f);
     }
 
-    const ImVec2 pos(
-      viewport_pos.x + avail.x - size.x - 8.0f,
-      viewport_pos.y + 8.0f);
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->AddImage(
-      reinterpret_cast<ImTextureID>(texview.view),
-      pos,
-      ImVec2(pos.x + size.x, pos.y + size.y));
-    draw_list->AddRect(
-      pos,
-      ImVec2(pos.x + size.x, pos.y + size.y),
-      IM_COL32(255, 255, 255, 200));
-    draw_list->AddText(
-      ImVec2(pos.x, pos.y + size.y + 4.0f),
-      IM_COL32(255, 255, 255, 200),
-      texview.name.c_str());
+    // Draw view mode label in corner for all viewports
+    {
+      ImDrawList* draw_list = ImGui::GetWindowDrawList();
+      const ImVec2 label_pos(slot_x + 6.0f, slot_y + 4.0f);
+      draw_list->AddText(label_pos, IM_COL32(200, 200, 210, 200), view_mode_name);
+    }
   }
 
-  const bool hovered = drew_image && ImGui::IsItemHovered();
-  UpdateViewportControls(viewport_panel, viewport_pos, avail, hovered);
-
-  ViewportInteractionResult interaction = UpdateViewportInteraction(
-    viewport_panel,
-    scene_panel,
-    active_target,
-    scene_nodes,
-    scene_props,
-    viewport_pos,
-    avail,
-    drew_image,
-    hovered);
-
-  result.overlays = interaction.overlays;
-  result.hovered_scene_id = interaction.hovered_scene_id;
-  result.hovered_hit_valid = interaction.hovered_hit_valid;
-  result.hovered_hit_pos = interaction.hovered_hit_pos;
-  result.clicked_scene_id = interaction.clicked_scene_id;
-
-  if (drew_image)
+  // Process input and overlays for the active viewport (if rendered)
+  if (drew_image && rendered_slot >= 0)
   {
+    const ImVec2 viewport_pos = rendered_pos;
+    const ImVec2 avail = rendered_size;
+
+    // Set cursor back to rendered viewport area for hover detection
+    ImGui::SetCursorScreenPos(viewport_pos);
+    ImGui::InvisibleButton("##viewport_input", avail);
+    const bool hovered = ImGui::IsItemHovered();
+
+    UpdateViewportControls(viewport_panel, viewport_pos, avail, hovered);
+
+    ViewportInteractionResult interaction = UpdateViewportInteraction(
+      viewport_panel,
+      scene_panel,
+      active_target,
+      scene_nodes,
+      scene_props,
+      viewport_pos,
+      avail,
+      drew_image,
+      hovered);
+
+    result.overlays = interaction.overlays;
+    result.hovered_scene_id = interaction.hovered_scene_id;
+    result.hovered_hit_valid = interaction.hovered_hit_valid;
+    result.hovered_hit_pos = interaction.hovered_hit_pos;
+    result.clicked_scene_id = interaction.clicked_scene_id;
+
+    // Draw light icons and overlays
     const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
     const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
     Diligent::float3 cam_pos;

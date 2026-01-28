@@ -7,6 +7,7 @@
 #include <vector>
 
 struct DiligentContext;
+struct MultiViewportState;
 struct NodeProperties;
 struct ScenePanelState;
 struct TreeNode;
@@ -23,9 +24,10 @@ struct ViewportPanelResult
   int clicked_scene_id = -1;
 };
 
+/// Draw the multi-viewport panel with layout support.
 ViewportPanelResult DrawViewportPanel(
   DiligentContext& diligent,
-  ViewportPanelState& viewport_panel,
+  MultiViewportState& multi_viewport,
   ScenePanelState& scene_panel,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,

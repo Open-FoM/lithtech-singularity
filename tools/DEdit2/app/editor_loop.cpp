@@ -436,6 +436,11 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Right);
         }
       }
+      // Tab cycles active viewport (multi-viewport layout)
+      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl && !io.KeyShift)
+      {
+        CycleActiveViewport(session.multi_viewport);
+      }
     }
     if (trigger_undo)
     {
@@ -642,7 +647,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
 
     ViewportPanelResult viewport_result = DrawViewportPanel(
       diligent,
-      session.viewport_panel(),
+      session.multi_viewport,
       session.scene_panel,
       session.scene_nodes,
       session.scene_props,
