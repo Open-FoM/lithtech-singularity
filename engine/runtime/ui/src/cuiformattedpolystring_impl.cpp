@@ -571,6 +571,7 @@ void CUIFormattedPolyString_Impl::ApplyXYZ()
 	cth  = (float) (m_pFont->GetCharTexHeight() + 2);
 
 	cspw = m_pFont->GetDefSpacingH();
+	const auto vsp = m_pFont->GetDefSpacingV();
 	
 	sh = m_CharScreenHeight;
 
@@ -673,7 +674,7 @@ void CUIFormattedPolyString_Impl::ApplyXYZ()
 		}
 
 		start_word = m_pLines[lines*2] + 1;
-		sy += sh;
+		sy += sh + vsp;
 	}
 }
 
@@ -756,4 +757,3 @@ void CUIFormattedPolyString_Impl::ApplyFont()
 		}
 	}
 }
-

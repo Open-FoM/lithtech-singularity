@@ -130,6 +130,7 @@ using Glyphs = std::vector<Glyph>;
 
 struct TextMetric
 {
+	int tmAscent{};
 	int tmDescent{};
 	int max_width{};
 	int tmHeight{};
@@ -235,7 +236,7 @@ bool InstalledFontFace::Init(
 
 	if (font_data_size <= 0 || font_data_size > max_font_data_size)
 	{
-		DEBUG_PRINT(1, ("[%s] Font data size out of range.", pszFontFile));
+		CUI_ERR("Font load failed (%s): size out of range (%ld).\n", pszFontFile, static_cast<long>(font_data_size));
 		return false;
 	}
 
@@ -250,7 +251,7 @@ bool InstalledFontFace::Init(
 
 	if (!load_file_result)
 	{
-		DEBUG_PRINT(1, ("[%s] Failed to load font data into memory.", pszFontFile));
+		CUI_ERR("Font load failed (%s): unable to read file data.\n", pszFontFile);
 		return false;
 	}
 
@@ -258,7 +259,7 @@ bool InstalledFontFace::Init(
 	const auto ft_init_result = ::FT_Init_FreeType(&raw_ft_library);
 	if (ft_init_result != ::FT_Err_Ok)
 	{
-		DEBUG_PRINT(1, ("[%s] Failed to initialize FreeType.", pszFontFile));
+		CUI_ERR("Font load failed (%s): FreeType init error %d.\n", pszFontFile, ft_init_result);
 		return false;
 	}
 
@@ -276,7 +277,7 @@ bool InstalledFontFace::Init(
 
 	if (ft_face_error != 0)
 	{
-		DEBUG_PRINT(1, ("[%s] Failed to initialize FreeType face.", pszFontFile));
+		CUI_ERR("Font load failed (%s): FreeType face init error %d.\n", pszFontFile, ft_face_error);
 		return false;
 	}
 
@@ -284,13 +285,13 @@ bool InstalledFontFace::Init(
 
 	if (ft_face->num_faces != 1)
 	{
-		DEBUG_PRINT(1, ("[%s] Expected only one face.", pszFontFile));
+		CUI_ERR("Font load failed (%s): expected 1 face, got %ld.\n", pszFontFile, ft_face->num_faces);
 		return false;
 	}
 
 	if ((ft_face->face_flags & FT_FACE_FLAG_SCALABLE) == 0)
 	{
-		DEBUG_PRINT(1, ("[%s] Expected scalable face.", pszFontFile));
+		CUI_ERR("Font load failed (%s): non-scalable face (flags 0x%08lx).\n", pszFontFile, ft_face->face_flags);
 		return false;
 	}
 
@@ -308,7 +309,7 @@ bool InstalledFontFace::Init(
 
 	if (ft_size_error != ::FT_Err_Ok)
 	{
-		DEBUG_PRINT(1, ("[%s] Failed to set face size.", pszFontFile));
+		CUI_ERR("Font load failed (%s): set size error %d.\n", pszFontFile, ft_size_error);
 		return false;
 	}
 
@@ -1041,39 +1042,45 @@ bool CUIVectorFont::Detail::CreateFontTextureAndTable(
 
 	auto bOk = true;
 
+	auto screen_height = 0;
 	if (bOk)
 	{
 		const auto& ft_size = ft_face->size->metrics;
-		const auto& bbox = ft_face->bbox;
-		const auto upem = ft_face->units_per_EM;
+		const auto descender_px = static_cast<int>(ft_size.descender / 64);
+		const auto height_px = static_cast<int>(ft_size.height / 64);
+		const auto ppem_px = static_cast<int>(ft_size.y_ppem);
+		const auto max_advance_px = static_cast<int>(ft_size.max_advance / 64);
 
-		const auto max_width_em = bbox.xMax - ft_face->bbox.xMin;
-		const auto max_width_px = (ft_size.x_ppem * max_width_em) / upem;
-
-		const auto max_height_em = bbox.yMax - ft_face->bbox.yMin;
-		const auto max_height_px = (ft_size.y_ppem * max_height_em) / upem;
-
-		textMetric.tmDescent = (ft_size.y_ppem * (-ft_face->bbox.yMin)) / upem;
-		textMetric.max_width = max_width_px;
-		textMetric.tmHeight = max_height_px;
+		textMetric.tmDescent = -descender_px;
+		textMetric.max_width = max_advance_px;
+		textMetric.tmHeight = height_px;
+		textMetric.tmAscent = textMetric.tmHeight - textMetric.tmDescent;
+		screen_height = (ppem_px > 0) ? ppem_px : textMetric.tmHeight;
 
 		const auto cp_code_points = make_cp_code_points(pszChars);
 
 		// Get the sizes of each glyph.
 		bOk = GetGlyphSizes(ft_face, cp_code_points, glyphs, sizeMaxGlyphSize.cx);
 
-		sizeMaxGlyphSize.cy = max_height_px;
+		sizeMaxGlyphSize.cy = 0;
+		for (const auto& glyph : glyphs)
+		{
+			const auto glyph_height = textMetric.tmAscent - glyph.bitmap_offset.y + glyph.bitmap_height;
+			sizeMaxGlyphSize.cy = Max(sizeMaxGlyphSize.cy, glyph_height);
+		}
 	}
 
 	if (bOk)
 	{
-		// Get the size of the default character.
-		ui_vector_font_.m_DefaultCharScreenWidth = static_cast<uint8>(
-			ltjs_get_default_char_screen_width(ft_face, textMetric)
-		);
+		Glyph space_glyph{};
+		const bool has_space_glyph = ltjs_get_glyph(ft_face, ' ', space_glyph);
 
-		const auto& default_glyph = glyphs.front();
-		ui_vector_font_.m_DefaultCharScreenHeight = static_cast<uint8>(default_glyph.bitmap_height);
+		const auto screen_height_px = (screen_height > 0) ? screen_height : textMetric.tmHeight;
+
+		// Get the size of the default character.
+		const auto default_width = has_space_glyph ? space_glyph.horizontal_advance : textMetric.max_width;
+		ui_vector_font_.m_DefaultCharScreenWidth = static_cast<uint8>(default_width);
+		ui_vector_font_.m_DefaultCharScreenHeight = static_cast<uint8>(screen_height_px);
 
 		ui_vector_font_.m_DefaultVerticalSpacing = static_cast<uint8>(
 			(ui_vector_font_.m_DefaultCharScreenHeight / 4.0) + 0.5
