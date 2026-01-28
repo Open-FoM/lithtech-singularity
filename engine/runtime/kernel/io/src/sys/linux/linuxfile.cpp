@@ -260,6 +260,32 @@ typedef struct LTFindData
 	CRezDir*		m_pCurSubDir;
 };
 
+static const char* ltjs_normalize_unix_path(
+	const char* input,
+	char* buffer,
+	size_t buffer_size)
+{
+	if (!buffer || buffer_size == 0)
+	{
+		return input;
+	}
+
+	if (!input)
+	{
+		buffer[0] = '\0';
+		return buffer;
+	}
+
+	size_t i = 0;
+	for (; input[i] != '\0' && (i + 1) < buffer_size; ++i)
+	{
+		buffer[i] = (input[i] == '\\') ? '/' : input[i];
+	}
+	buffer[i] = '\0';
+
+	return buffer;
+}
+
 
 
 // ------------------------------------------------------------------ //
@@ -380,7 +406,9 @@ int df_GetFileInfo(HLTFileTree* hTree, const char *pName, LTFindInfo *pInfo)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, pName);
+		char normalized_name[512];
+		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
+		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
 
 		handle = _findfirst(fullName, &data);
 		curRet = handle;
@@ -442,7 +470,9 @@ int df_GetDirInfo(HLTFileTree hTree, char *pName)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, pName);
+		char normalized_name[512];
+		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
+		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
 
 		handle = _findfirst(fullName, &data);
 		curRet = handle;
@@ -484,8 +514,10 @@ int df_GetFullFilename(HLTFileTree hTree, char *pName, char *pOutName, int maxLe
 
 	if(pTree->m_TreeType != UnixTree)
 		return 0;
-	
-	sprintf(pOutName, "%s/%s", pTree->m_BaseName, pName);
+
+	char normalized_name[512];
+	const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
+	LTSNPrintF(pOutName, maxLen, "%s/%s", pTree->m_BaseName, name);
 	return 1;
 }
 
@@ -505,7 +537,9 @@ ILTStream* df_Open(HLTFileTree* hTree, const char *pName, int openMode)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		sprintf(fullName, "%s/%s", pTree->m_BaseName, pName);
+		char normalized_name[512];
+		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
+		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
 		CountAdder cntAdd(&g_PD_FOpen);
 		if (! (fp = fopen(fullName, "rb")) )
 			return NULL;
@@ -571,7 +605,9 @@ int df_FindNext(HLTFileTree* hTree, const char *pDirName, LTFindInfo *pInfo)
 	{
 		if(!pInfo->m_pInternal)
 		{
-			LTSNPrintF(filter, sizeof(filter), "%s/%s/*.*", pTree->m_BaseName, pDirName);
+			char normalized_name[512];
+			const char* name = ltjs_normalize_unix_path(pDirName, normalized_name, sizeof(normalized_name));
+			LTSNPrintF(filter, sizeof(filter), "%s/%s/*.*", pTree->m_BaseName, name);
 
 			LT_MEM_TRACK_ALLOC(pFindData = (LTFindData*)dalloc(sizeof(LTFindData)),LT_MEM_TYPE_FILE);
 			pFindData->m_pTree = pTree;
@@ -804,7 +840,9 @@ int df_GetRawInfo(HLTFileTree *hTree, const char *pName, char* sFileName, unsign
 	{
 		if (pTree->m_TreeType == UnixTree)
 		{
-			LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, pName);
+			char normalized_name[512];
+			const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
+			LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
 		}
 		else
 		{

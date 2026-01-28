@@ -116,7 +116,11 @@ bool diligent_QueryWindowSize(uint32& width, uint32& height)
 
 	int window_width = 0;
 	int window_height = 0;
-	SDL_GetWindowSize(g_diligent_state.sdl_window, &window_width, &window_height);
+	SDL_GetWindowSizeInPixels(g_diligent_state.sdl_window, &window_width, &window_height);
+	if (window_width <= 0 || window_height <= 0)
+	{
+		SDL_GetWindowSize(g_diligent_state.sdl_window, &window_width, &window_height);
+	}
 	if (window_width <= 0 || window_height <= 0)
 	{
 		return false;
@@ -228,7 +232,6 @@ bool diligent_EnsureSwapChain()
 			return false;
 		}
 	}
-
 	if (!g_diligent_state.swap_chain)
 	{
 		if (!diligent_CreateSwapChain(width, height))

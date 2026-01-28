@@ -29,6 +29,7 @@
 #ifdef LTJS_SDL_BACKEND
 #include "ltjs_main_window_descriptor.h"
 #include "ltjs_system_event_mgr.h"
+#include "ltjs_index_type.h"
 namespace ltjs { class ShellStringFormatter; }
 #endif // LTJS_SDL_BACKEND
 
@@ -203,6 +204,14 @@ void dsi_MessageBox(const char *pMsg, const char *pTitle);
 
 #ifdef LTJS_SDL_BACKEND
 void* dsi_get_system_event_handler_mgr() noexcept;
+
+ltjs::Index dsi_get_file_size(
+	const char* path) noexcept;
+
+bool dsi_load_file_into_memory(
+	const char* path,
+	void* buffer,
+	ltjs::Index max_buffer_size) noexcept;
 #endif // LTJS_SDL_BACKEND
 
 // ------------------------------------------------------------------------- //

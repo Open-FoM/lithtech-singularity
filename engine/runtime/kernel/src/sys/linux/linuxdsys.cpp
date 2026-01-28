@@ -5,9 +5,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <cassert>
+#include <memory>
 
 #include "bdefs.h"
 #include "stdlterror.h"
+#include "bibendovsky_spul_path_utils.h"
 #include "stringmgr.h"
 #include "sysfile.h"
 #include "de_objects.h"
@@ -32,6 +35,26 @@
 #include "iclientshell.h"
 static IClientShell *i_client_shell;
 define_holder(IClientShell, i_client_shell);
+
+#ifdef DE_CLIENT_COMPILE
+// IClientFileMgr
+#include "client_filemgr.h"
+static IClientFileMgr* client_file_mgr;
+define_holder(IClientFileMgr, client_file_mgr);
+#endif // DE_CLIENT_COMPILE
+
+// IInstanceHandleClient
+static IInstanceHandleClient* instance_handle_client;
+define_holder(IInstanceHandleClient, instance_handle_client);
+
+// IInstanceHandleServer
+#include "iservershell.h"
+static IInstanceHandleServer* instance_handle_server;
+define_holder(IInstanceHandleServer, instance_handle_server);
+
+#ifdef DE_CLIENT_COMPILE
+#include "clientmgr.h"
+#endif // DE_CLIENT_COMPILE
 
 #ifdef LTJS_SDL_BACKEND
 ltjs::ShellResourceMgr* g_hResourceModule = nullptr;
@@ -75,6 +98,11 @@ static LTSysResultString s_StringMap[] = {
 
 #define STRINGMAP_SIZE (sizeof(s_StringMap) / sizeof(s_StringMap[0]))
 #endif // LTJS_SDL_BACKEND
+
+namespace ltjs
+{
+namespace ul = bibendovsky::spul;
+} // ltjs
 
 
 
@@ -212,55 +240,47 @@ LTRESULT _GetOrCopyFile(char *pTempPath, char *pFilename, char *pOutName, int ou
 
 LTRESULT dsi_LoadServerObjects(CClassMgr *pInfo)
 {
-	char* pGameServerObjectName = "libobject.so";
+	int status;
 
-    //load the GameServer shared object
-    int version;
-    int status = cb_LoadModule(pGameServerObjectName, false, pInfo->m_ClassModule, &version);
+	const auto object_file_name = ltjs::ul::PathUtils::append("game", "object.dylib");
 
-    //check for errors.
-    if (status == CB_CANTFINDMODULE) 
+	// Load the object shared library.
+	int version;
+	status = cb_LoadModule(object_file_name.c_str(), false, pInfo->m_ClassModule, &version);
+
+	// Check for errors.
+	if (status == CB_CANTFINDMODULE)
 	{
-        return LT_INVALIDOBJECTDLL;
-    }
-    else if (status == CB_NOTCLASSMODULE)
-	{
-        return LT_INVALIDOBJECTDLL;
-    }
-    else if (status == CB_VERSIONMISMATCH) 
-	{
-		return LT_INVALIDOBJECTDLLVERSION;
+		sm_SetupError(LT_INVALIDOBJECTDLL, object_file_name.c_str());
+		RETURN_ERROR_PARAM(1, LoadObjectsInDirectory, LT_INVALIDOBJECTDLL, object_file_name.c_str());
 	}
-	
-/*	
-	    // Get sres.dll.
-	bFileCopied = false;
-    if ((GetOrCopyFile("sres.dll", fileName, sizeof(fileName),bFileCopied) != LT_OK)
-        || (bm_BindModule(fileName, bFileCopied, pClassMgr->m_hServerResourceModule) != BIND_NOERROR))
-    {
-		cb_UnloadModule( pClassMgr->m_ClassModule );
-
-        sm_SetupError(LT_ERRORCOPYINGFILE, "sres.dll");
-        RETURN_ERROR_PARAM(1, LoadServerObjects, LT_ERRORCOPYINGFILE, "sres.dll");
-    }
-
-    //let the dll know it's instance handle.
-    if (instance_handle_server != NULL) 
+	else if (status == CB_NOTCLASSMODULE)
 	{
-        instance_handle_server->SetInstanceHandle( pClassMgr->m_ClassModule.m_hModule );
-    }
-*/
-	
-	//cb_LoadModule(fileName, false, pInfo->m_ClassModule, &version);
+		sm_SetupError(LT_INVALIDOBJECTDLL, object_file_name.c_str());
+		RETURN_ERROR_PARAM(1, LoadObjectsInDirectory, LT_INVALIDOBJECTDLL, object_file_name.c_str());
+	}
+	else if (status == CB_VERSIONMISMATCH)
+	{
+		sm_SetupError(LT_INVALIDOBJECTDLLVERSION, object_file_name.c_str(), version, SERVEROBJ_VERSION);
+		RETURN_ERROR_PARAM(1, LoadObjectsInDirectory, LT_INVALIDOBJECTDLLVERSION, object_file_name.c_str());
+	}
 
-	/*
-	pInfo->m_hShellModule = (ShellModule*)malloc(sizeof(ShellModule));
-	pInfo->m_hShellModule->m_hModule = NULL;
-	pInfo->m_CreateShellFn =
-		pInfo->m_hShellModule->m_CreateFn = (CreateShellFn) CreateServerShell;
-	pInfo->m_DeleteShellFn =
-		pInfo->m_hShellModule->m_DeleteFn = (DeleteShellFn) DeleteServerShell;
-	*/
+#ifndef LTJS_SDL_BACKEND
+	// Get sres.dylib.
+	const auto sres_file_name = ltjs::ul::PathUtils::append("game", "sres.dylib");
+	if (bm_BindModule(sres_file_name.c_str(), false, pInfo->m_hServerResourceModule) != BIND_NOERROR)
+	{
+		cb_UnloadModule(pInfo->m_ClassModule);
+		sm_SetupError(LT_ERRORCOPYINGFILE, sres_file_name.c_str());
+		RETURN_ERROR_PARAM(1, LoadServerObjects, LT_ERRORCOPYINGFILE, sres_file_name.c_str());
+	}
+#endif // LTJS_SDL_BACKEND
+
+	// Let the library know its instance handle.
+	if (instance_handle_server != nullptr)
+	{
+		instance_handle_server->SetInstanceHandle(pInfo->m_ClassModule.m_hModule);
+	}
 
 	return LT_OK;
 }
@@ -443,16 +463,52 @@ return LTTRUE;      // DAN - temporary
 
 LTRESULT dsi_InitClientShellDE()
 {
-//	g_pClientMgr->m_hShellModule = NULL;
-//	g_pClientMgr->m_hClientResourceModule = NULL;
+#ifdef DE_CLIENT_COMPILE
+	int status;
 
-	// have the user's cshell and the clientMgr exchange info
-	if ((i_client_shell == NULL ))
-    {
-		CRITICAL_ERROR("dsys_interface", "Can't create CShell\n");
+	g_pClientMgr->m_hClientResourceModule = nullptr;
+#ifndef LTJS_SDL_BACKEND
+	g_pClientMgr->m_hLocalizedClientResourceModule = nullptr;
+#endif // LTJS_SDL_BACKEND
+	g_pClientMgr->m_hShellModule = nullptr;
+
+	const auto cshell_file_name = ltjs::ul::PathUtils::append("game", "cshell.dylib");
+
+	status = bm_BindModule(cshell_file_name.c_str(), false, g_pClientMgr->m_hShellModule);
+	if (status == BIND_CANTFINDMODULE)
+	{
+		g_pClientMgr->SetupError(LT_MISSINGSHELLDLL, cshell_file_name.c_str());
+		RETURN_ERROR(1, InitClientShellDE, LT_MISSINGSHELLDLL);
+	}
+
+	if (!i_client_shell)
+	{
+		g_pClientMgr->SetupError(LT_INVALIDSHELLDLL, cshell_file_name.c_str());
+		RETURN_ERROR(1, InitClientShellDE, LT_INVALIDSHELLDLL);
+	}
+
+#ifndef LTJS_SDL_BACKEND
+	const auto cres_file_name = ltjs::ul::PathUtils::append("game", "cres.dylib");
+	status = bm_BindModule(cres_file_name.c_str(), false, g_pClientMgr->m_hClientResourceModule);
+	if (status == BIND_CANTFINDMODULE)
+	{
+		bm_UnbindModule(g_pClientMgr->m_hShellModule);
+		g_pClientMgr->m_hShellModule = nullptr;
+
+		g_pClientMgr->SetupError(LT_INVALIDSHELLDLL, cres_file_name.c_str());
+		RETURN_ERROR_PARAM(1, InitClientShellDE, LT_INVALIDSHELLDLL, cres_file_name.c_str());
+	}
+#endif // LTJS_SDL_BACKEND
+
+	if (instance_handle_client)
+	{
+		instance_handle_client->SetInstanceHandle(g_pClientMgr->m_hShellModule);
 	}
 
 	return LT_OK;
+#else
+	return LT_OK;
+#endif // DE_CLIENT_COMPILE
 }
 
 void dsi_OnMemoryFailure()
@@ -599,23 +655,42 @@ void dsi_PrintToConsole(const char *pMsg, ...) {
     va_list marker;
     char msg[1000];
 
-    if (g_pServerMgr && g_pServerMgr->m_pServerAppHandler) {
-        va_start(marker, pMsg);
-        vsnprintf(msg, 999, pMsg, marker);
-        va_end(marker);
+    va_start(marker, pMsg);
+    vsnprintf(msg, 999, pMsg, marker);
+    va_end(marker);
 
+    if (g_pServerMgr && g_pServerMgr->m_pServerAppHandler) {
         g_pServerMgr->m_pServerAppHandler->ConsoleOutputFn(msg);
+    } else {
+        const auto msg_len = std::strlen(msg);
+        if (msg_len > 0 && msg[msg_len - 1] == '\n') {
+            std::fputs(msg, stderr);
+        } else {
+            std::fprintf(stderr, "%s\n", msg);
+        }
     }
 }
 
 void* dsi_GetInstanceHandle()
 {
-return NULL;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_hInstance;
+#else
+	return nullptr;
+#endif // DE_CLIENT_COMPILE
 }
 
 void* dsi_GetMainWindow()
 {
-return NULL;     // DAN - temporary
+#ifdef DE_CLIENT_COMPILE
+#ifdef LTJS_SDL_BACKEND
+	return &g_ClientGlob.m_hMainWnd;
+#else
+	return g_ClientGlob.m_hMainWnd;
+#endif // LTJS_SDL_BACKEND
+#else
+	return nullptr;
+#endif // DE_CLIENT_COMPILE
 }
 
 LTRESULT dsi_DoErrorMessage(char *pMessage)
@@ -677,5 +752,84 @@ void* dsi_get_system_event_handler_mgr() noexcept
 #else
 	return nullptr;
 #endif
+}
+
+struct ILtStreamUDeleter
+{
+	void operator()(
+		ILTStream* resource) const noexcept
+	{
+		assert(resource);
+		resource->Release();
+	}
+}; // ILtStreamUDeleter
+
+using ILtStreamUPtr = std::unique_ptr<ILTStream, ILtStreamUDeleter>;
+
+ltjs::Index dsi_get_file_size(
+	const char* path) noexcept
+{
+#ifdef DE_CLIENT_COMPILE
+	if (!path || path[0] == '\0' || !client_file_mgr)
+	{
+		return 0;
+	}
+
+	auto file_ref = FileRef{};
+	file_ref.m_FileType = FILE_ANYFILE;
+	file_ref.m_pFilename = path;
+
+	auto file_stream = ILtStreamUPtr{client_file_mgr->OpenFile(&file_ref)};
+	if (!file_stream)
+	{
+		return 0;
+	}
+
+	auto lt_file_size = uint32{};
+	const auto get_len_result = file_stream->GetLen(&lt_file_size);
+	if (get_len_result != LT_OK)
+	{
+		return 0;
+	}
+
+	return static_cast<ltjs::Index>(lt_file_size);
+#else
+	static_cast<void>(path);
+	return 0;
+#endif // DE_CLIENT_COMPILE
+}
+
+bool dsi_load_file_into_memory(
+	const char* path,
+	void* buffer,
+	ltjs::Index max_buffer_size) noexcept
+{
+#ifdef DE_CLIENT_COMPILE
+	if (!path || path[0] == '\0' ||
+		!buffer ||
+		max_buffer_size <= 0 ||
+		!client_file_mgr)
+	{
+		return false;
+	}
+
+	auto file_ref = FileRef{};
+	file_ref.m_FileType = FILE_ANYFILE;
+	file_ref.m_pFilename = path;
+
+	auto file_stream = ILtStreamUPtr{client_file_mgr->OpenFile(&file_ref)};
+	if (!file_stream)
+	{
+		return false;
+	}
+
+	const auto read_result = file_stream->Read(buffer, static_cast<uint32>(max_buffer_size));
+	return read_result == LT_OK;
+#else
+	static_cast<void>(path);
+	static_cast<void>(buffer);
+	static_cast<void>(max_buffer_size);
+	return false;
+#endif // DE_CLIENT_COMPILE
 }
 #endif // LTJS_SDL_BACKEND

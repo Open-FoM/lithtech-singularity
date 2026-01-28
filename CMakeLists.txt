@@ -18,6 +18,7 @@ option (LTJS_USE_PCH "Use precompiled headers." ON)
 option (LTJS_USE_CCACHE "Use ccache if available." ON)
 option (LTJS_BUILD_DEDIT "Build DEdit map editor." OFF)
 option (LTJS_BUILD_DEDIT2 "Build DEdit2 map editor." OFF)
+option (LTJS_BUILD_RENDERDEMO "Build RenderDemo game." OFF)
 
 if (LTJS_USE_CCACHE)
 	find_program (CCACHE_PROGRAM ccache)
@@ -154,6 +155,10 @@ endif ()
 
 if (LTJS_BUILD_DEDIT2)
 	add_subdirectory (tools/DEdit2)
+endif ()
+
+if (LTJS_BUILD_RENDERDEMO)
+	add_subdirectory (game/renderdemo)
 endif ()
 
 install (

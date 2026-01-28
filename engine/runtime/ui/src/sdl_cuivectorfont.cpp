@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "bdefs.h"
+#include "dsys.h"
 #include "dtxmgr.h"
 #include "sysstreamsim.h"
 
@@ -49,66 +50,6 @@
 #include "ltjs_windows_1252.h"
 #include "ltjs_index_type.h"
 
-#if !defined(_WIN32)
-static ltjs::Index dsi_get_file_size(
-	const char* path) noexcept
-{
-	if (!path)
-	{
-		return 0;
-	}
-
-	auto* file = std::fopen(path, "rb");
-
-	if (!file)
-	{
-		return 0;
-	}
-
-	if (std::fseek(file, 0, SEEK_END) != 0)
-	{
-		std::fclose(file);
-		return 0;
-	}
-
-	const auto size = std::ftell(file);
-	std::fclose(file);
-
-	if (size < 0)
-	{
-		return 0;
-	}
-
-	return static_cast<ltjs::Index>(size);
-}
-
-static bool dsi_load_file_into_memory(
-	const char* path,
-	void* buffer,
-	ltjs::Index max_buffer_size) noexcept
-{
-	if (!path || !buffer || max_buffer_size <= 0)
-	{
-		return false;
-	}
-
-	auto* file = std::fopen(path, "rb");
-
-	if (!file)
-	{
-		return false;
-	}
-
-	const auto bytes_read = std::fread(
-		buffer,
-		1,
-		static_cast<size_t>(max_buffer_size),
-		file);
-
-	std::fclose(file);
-	return bytes_read == static_cast<size_t>(max_buffer_size);
-}
-
 static int MulDiv(
 	int nNumber,
 	int nNumerator,
@@ -122,7 +63,6 @@ static int MulDiv(
 	const auto product = static_cast<long long>(nNumber) * nNumerator;
 	return static_cast<int>(product / nDenominator);
 }
-#endif
 
 
 // get the ILTTexInterface from the interface database
@@ -314,12 +254,9 @@ bool InstalledFontFace::Init(
 		return false;
 	}
 
-	auto ft_error = ::FT_Error{};
-
 	auto raw_ft_library = ::FT_Library{};
 	const auto ft_init_result = ::FT_Init_FreeType(&raw_ft_library);
-
-	if (ft_error != ::FT_Err_Ok)
+	if (ft_init_result != ::FT_Err_Ok)
 	{
 		DEBUG_PRINT(1, ("[%s] Failed to initialize FreeType.", pszFontFile));
 		return false;
@@ -329,7 +266,7 @@ bool InstalledFontFace::Init(
 
 	auto raw_ft_face = ::FT_Face{};
 
-	ft_error = ::FT_New_Memory_Face(
+	const auto ft_face_error = ::FT_New_Memory_Face(
 		ft_library.get(),
 		font_data.data(),
 		static_cast<::FT_Long>(font_data_size),
@@ -337,7 +274,7 @@ bool InstalledFontFace::Init(
 		&raw_ft_face
 	);
 
-	if (ft_error != 0)
+	if (ft_face_error != 0)
 	{
 		DEBUG_PRINT(1, ("[%s] Failed to initialize FreeType face.", pszFontFile));
 		return false;
@@ -363,13 +300,13 @@ bool InstalledFontFace::Init(
 	const auto char_height_px = (nHeight * 1000) / 1211;
 	const auto char_width_px = (nHeight * 1000) / 1224;
 
-	ft_error = ::FT_Set_Pixel_Sizes(
+	const auto ft_size_error = ::FT_Set_Pixel_Sizes(
 		ft_face.get(),
 		char_width_px,
 		char_height_px
 	);
 
-	if (ft_error != ::FT_Err_Ok)
+	if (ft_size_error != ::FT_Err_Ok)
 	{
 		DEBUG_PRINT(1, ("[%s] Failed to set face size.", pszFontFile));
 		return false;
@@ -945,9 +882,17 @@ ltjs::ucs::CodePoint ltjs_cp_to_ucs(
 		case ltjs::ShellResourceCodePage::windows_1252:
 			return ltjs::windows_1252::to_unicode(cp_code_point);
 
+		case ltjs::ShellResourceCodePage::utf_8:
+		case ltjs::ShellResourceCodePage::none:
+			return static_cast<ltjs::ucs::CodePoint>(
+				static_cast<unsigned char>(cp_code_point)
+			);
+
 		default:
 			assert(!"Unsupported code page.");
-			return 0;
+			return static_cast<ltjs::ucs::CodePoint>(
+				static_cast<unsigned char>(cp_code_point)
+			);
 	}
 }
 

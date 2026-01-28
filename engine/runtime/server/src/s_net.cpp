@@ -221,7 +221,6 @@ void CServerMgr::DisconnectNotify(CBaseConn *id, EDisconnectReason eDisconnectRe
     sm_OnBrokenConnection(id);    
 }
 
-
 void CServerMgr::HandleUnknownPacket(const CPacket_Read &cPacket, uint8 senderAddr[4], uint16 senderPort)
 {
     if (m_pServerAppHandler)
@@ -1276,5 +1275,3 @@ void InitServerNetHandlers()
     g_ServerHandlers[CMSG_CONNECTSTAGE].m_Fn = &OnConnectStagePacket;
     g_ServerHandlers[CMSG_HELLO].m_Fn = &OnHelloPacket;
 }
-
-

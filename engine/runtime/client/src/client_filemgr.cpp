@@ -7,6 +7,7 @@
 #include "clientmgr.h"
 #endif
 #include "client_filemgr.h"
+
 #include "impl_common.h"
 
 
@@ -627,4 +628,3 @@ FTClient* CClientFileMgr::GetFTClient()
 	return m_hFTClient;
 #endif
 }
-

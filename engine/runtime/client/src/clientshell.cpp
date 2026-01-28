@@ -63,6 +63,13 @@ define_holder(IClientFileMgr, client_file_mgr);
 static IClientShell *i_client_shell;
 define_holder(IClientShell, i_client_shell);
 
+CClientShell* g_pClientShell = nullptr;
+
+static ILTMessage_Write* LTNet_AllocateClientMessageWrite()
+{
+	return CLTMessage_Write_Client::Allocate_Client();
+}
+
 static void LTNet_ClientPacketInjector(const CPacket_Read &packet, const uint8 *senderAddr, uint16 senderPort)
 {
     if (!g_pClientShell)
@@ -82,8 +89,6 @@ define_holder(IWorldBlindObjectData, g_iWorldBlindObjectData);
 
 extern LTBOOL g_bUpdateServer;
 extern int32 g_CV_MasterPaletteMode, g_bForceRemote;
-
-CClientShell *g_pClientShell;
 
 
 
@@ -193,7 +198,7 @@ bool CClientShell::Init()
     g_pClientMgr->m_NetMgr.SetNetHandler(this);
     g_pClientShell = this;
     LTNet_SetClientPacketInjector(&LTNet_ClientPacketInjector);
-    LTNet_SetClientMessageWriteAllocator(&CLTMessage_Write_Client::Allocate_Client);
+    LTNet_SetClientMessageWriteAllocator(&LTNet_AllocateClientMessageWrite);
 
     // Initialize the fileid info list.  Some information sent to the client doesn't change based on fileid.
     // This is used to reduce the amount of info sent to the client, by just comparing the new info to what

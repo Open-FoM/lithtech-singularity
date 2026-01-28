@@ -393,7 +393,7 @@ LTRESULT dsi_LoadServerObjects(CClassMgr *pClassMgr)
     char fileName[256];
     int status;
 
-    constexpr auto object_file_name = "ltjs_object.dll";
+    constexpr auto object_file_name = "object.dll";
 
     //Copy the object.lto file out of the res so we can run it.
 	bool bFileCopied = false;
@@ -422,7 +422,7 @@ LTRESULT dsi_LoadServerObjects(CClassMgr *pClassMgr)
     }
 
     // Get sres.dll.
-    constexpr auto sres_file_name = "ltjs_sres.dll";
+    constexpr auto sres_file_name = "sres.dll";
 
 	bFileCopied = false;
     if ((GetOrCopyFile(sres_file_name, fileName, sizeof(fileName),bFileCopied) != LT_OK)
@@ -448,7 +448,7 @@ LTRESULT dsi_LoadServerObjects(
 {
 	int status;
 
-	const auto object_file_name = ltjs::ul::PathUtils::append("game", "ltjs_object.dll");
+	const auto object_file_name = ltjs::ul::PathUtils::append("game", "object.dll");
 
 	//load the object.lto DLL.
 	int version;
@@ -473,7 +473,7 @@ LTRESULT dsi_LoadServerObjects(
 
 #ifndef LTJS_SDL_BACKEND
 	// Get sres.dll.
-	const auto sres_file_name = ltjs::ul::PathUtils::append("game", "ltjs_sres.dll");
+	const auto sres_file_name = ltjs::ul::PathUtils::append("game", "sres.dll");
 
 	if (bm_BindModule(sres_file_name.c_str(), false, pClassMgr->m_hServerResourceModule) != BIND_NOERROR)
 	{
@@ -731,7 +731,7 @@ LTRESULT dsi_InitClientShellDE()
     g_pClientMgr->m_hShellModule = LTNULL;
 
     // Setup the cshell.dll file.
-    constexpr auto cshell_file_name = "ltjs_cshell.dll";
+    constexpr auto cshell_file_name = "cshell.dll";
 
 	bool bFileCopied = false;
     dResult = GetOrCopyClientFile( cshell_file_name, fileName, sizeof(fileName), bFileCopied );
@@ -758,7 +758,7 @@ LTRESULT dsi_InitClientShellDE()
     //
     // Try to setup cres.dll.
     //
-    constexpr auto cres_file_name = "ltjs_cres.dll";
+    constexpr auto cres_file_name = "cres.dll";
 
 
     //copy the file out of the res file.
@@ -802,7 +802,7 @@ LTRESULT dsi_InitClientShellDE()
 	g_pClientMgr->m_hShellModule = nullptr;
 
 	// Setup the cshell.dll file.
-	const auto cshell_file_name = ltjs::ul::PathUtils::append("game" , "ltjs_cshell.dll");
+	const auto cshell_file_name = ltjs::ul::PathUtils::append("game" , "cshell.dll");
 
 	//load the DLL.
 	status = bm_BindModule(cshell_file_name.c_str(), false, g_pClientMgr->m_hShellModule);
@@ -825,7 +825,7 @@ LTRESULT dsi_InitClientShellDE()
 	//
 	// Try to setup cres.dll.
 	//
-	const auto cres_file_name = ltjs::ul::PathUtils::append("game" , "ltjs_cres.dll");
+	const auto cres_file_name = ltjs::ul::PathUtils::append("game" , "cres.dll");
 
 	//load the DLL.
 	status = bm_BindModule(cres_file_name.c_str(), false, g_pClientMgr->m_hClientResourceModule);
@@ -1182,5 +1182,4 @@ void dsi_OnMemoryFailure() {
 
 
 #endif
-
 

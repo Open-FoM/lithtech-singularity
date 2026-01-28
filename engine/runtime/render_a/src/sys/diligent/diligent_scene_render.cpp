@@ -40,6 +40,20 @@ int diligent_RenderScene(SceneDesc* desc)
 		return RENDER_ERROR;
 	}
 
+	if (g_diligent_state.immediate_context)
+	{
+		auto* render_target = diligent_get_active_render_target();
+		auto* depth_target = diligent_get_active_depth_target();
+		if (render_target || depth_target)
+		{
+			g_diligent_state.immediate_context->SetRenderTargets(
+				render_target ? 1 : 0,
+				render_target ? &render_target : nullptr,
+				depth_target,
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		}
+	}
+
 	DiligentAaContext aa_ctx{};
 	const bool aa_active = diligent_begin_antialiasing(desc, aa_ctx);
 	struct DiligentAaScope

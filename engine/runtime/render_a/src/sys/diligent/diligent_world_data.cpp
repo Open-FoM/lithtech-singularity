@@ -1220,7 +1220,6 @@ bool DiligentRenderWorld::Load(ILTStream* stream)
 
 	uint32 render_block_count = 0;
 	*stream >> render_block_count;
-
 	render_blocks.clear();
 	render_blocks.reserve(render_block_count);
 	for (uint32 block_index = 0; block_index < render_block_count; ++block_index)

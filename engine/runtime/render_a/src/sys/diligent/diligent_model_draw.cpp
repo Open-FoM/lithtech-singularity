@@ -510,7 +510,7 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	sampler_desc.SamplerOrTextureName = "g_Texture0";
+	sampler_desc.SamplerOrTextureName = "g_Texture0_sampler";
 	diligent_apply_anisotropy(sampler_desc.Desc);
 
 	if (uses_texture)

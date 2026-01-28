@@ -27,3 +27,6 @@ ipch/
 *.VC.db
 *.VC.VC.opendb
 .DS_Store
+*.chm
+*.pdf
+*.doc

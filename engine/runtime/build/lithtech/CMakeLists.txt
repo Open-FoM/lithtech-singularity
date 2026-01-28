@@ -452,6 +452,7 @@ target_sources (
 		../../shared/src/lightmapdefs.h
 		../../shared/src/ltbbox.h
 		../../shared/src/ltmessage.h
+		../../shared/src/ltnetwork_hooks.h
 		../../shared/src/ltmutex.h
 		../../shared/src/lttimer.h
 		../../shared/src/misctools.h
@@ -614,6 +615,7 @@ target_sources (
 		../../shared/src/lightmap_compress.cpp
 		../../shared/src/lightmap_planes.cpp
 		../../shared/src/ltmessage.cpp
+		../../shared/src/ltnetwork_hooks.cpp
 		../../shared/src/lttimer.cpp
 		../../shared/src/modellt_impl.cpp
 		../../shared/src/motion.cpp

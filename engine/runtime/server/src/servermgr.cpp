@@ -87,6 +87,11 @@ define_holder(IWorldSharedBSP, world_bsp_shared);
 static IServerShell *i_server_shell;
 define_holder(IServerShell, i_server_shell);
 
+static ILTMessage_Write* LTNet_AllocateServerMessageWrite()
+{
+	return CLTMessage_Write_Server::Allocate_Server();
+}
+
 //IWorldBlindObjectData holder
 #include "world_blind_object_data.h"
 static IWorldBlindObjectData *g_iWorldBlindObjectData = LTNULL;
@@ -428,7 +433,7 @@ bool CServerMgr::Init()
 	m_NetMgr.Init("SERVER_PLAYER");
 	m_NetMgr.SetNetHandler(this);
 	LTNet_SetServerPacketInjector(&LTNet_ServerPacketInjector);
-	LTNet_SetServerMessageWriteAllocator(&CLTMessage_Write_Server::Allocate_Server);
+		LTNet_SetServerMessageWriteAllocator(&LTNet_AllocateServerMessageWrite);
 
 	dl_TieOff(&m_RemovedObjectHead);
 	m_pServerAppHandler = LTNULL;

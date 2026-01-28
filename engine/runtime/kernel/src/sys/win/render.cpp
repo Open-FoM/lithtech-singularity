@@ -625,6 +625,10 @@ LTRESULT r_InitRender(RMode *pMode)
 #ifdef LTJS_SDL_BACKEND
 	const auto hWnd = static_cast<const ltjs::MainWindowDescriptor*>(dsi_GetMainWindow());
 	SDL_RestoreWindow(hWnd->sdl_window);
+	if (pMode && pMode->m_Width > 0 && pMode->m_Height > 0)
+	{
+		SDL_SetWindowSize(hWnd->sdl_window, pMode->m_Width, pMode->m_Height);
+	}
 #else
 	hWnd = (HWND)dsi_GetMainWindow();
 	ShowWindow(hWnd, SW_RESTORE);

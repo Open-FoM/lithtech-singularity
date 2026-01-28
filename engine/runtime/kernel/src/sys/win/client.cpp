@@ -3,6 +3,20 @@
 #include <utility>
 
 #include "SDL3/SDL_events.h"
+#include "SDL3/SDL_video.h"
+#if defined(__APPLE__)
+#include "SDL3/SDL_metal.h"
+#endif
+
+#if defined(__APPLE__)
+extern "C" {
+typedef void* LTJS_ObjcId;
+typedef void* LTJS_ObjcSel;
+LTJS_ObjcId objc_msgSend(LTJS_ObjcId self, LTJS_ObjcSel op, ...);
+LTJS_ObjcSel sel_registerName(const char* name);
+void* objc_getClass(const char* name);
+}
+#endif // __APPLE__
 
 #ifdef LTJS_SDL_BACKEND
 #include "ltjs_language_mgr.h"
@@ -161,6 +175,9 @@ auto g_system_event_handler = CSystemEventHandler{};
 auto g_system_event_mgr = ltjs::SystemEventMgrUPtr{};
 auto g_video_subsystem = ltjs::SdlSubsystem{};
 auto g_main_window = ltjs::SdlWindowUResource{};
+#if defined(__APPLE__)
+SDL_MetalView g_metal_view = nullptr;
+#endif
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
@@ -558,6 +575,13 @@ bool initialize()
 
 void destroy_main_window()
 {
+#if defined(__APPLE__)
+	if (g_metal_view)
+	{
+		SDL_Metal_DestroyView(g_metal_view);
+		g_metal_view = nullptr;
+	}
+#endif
 	g_main_window = nullptr;
 }
 
@@ -598,9 +622,77 @@ void create_main_window(
 
 	void* window_native_handle = nullptr;
 
-#if _WIN32
+#if defined(_WIN32)
 	SDL_PropertiesID sdl_properties_id = SDL_GetWindowProperties(sdl_window.get());
 	window_native_handle = SDL_GetPointerProperty(sdl_properties_id, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#elif defined(__APPLE__)
+	SDL_PropertiesID sdl_properties_id = SDL_GetWindowProperties(sdl_window.get());
+	SDL_MetalView metal_view = SDL_Metal_CreateView(sdl_window.get());
+	if (metal_view)
+	{
+		g_metal_view = metal_view;
+		void* metal_layer = SDL_Metal_GetLayer(metal_view);
+		void* ns_view = metal_view;
+
+		if (metal_layer)
+		{
+			int window_width = 0;
+			int window_height = 0;
+			int drawable_width = 0;
+			int drawable_height = 0;
+			SDL_GetWindowSize(sdl_window.get(), &window_width, &window_height);
+			SDL_GetWindowSizeInPixels(sdl_window.get(), &drawable_width, &drawable_height);
+
+			if (drawable_width > 0 && drawable_height > 0)
+			{
+				struct LTJS_CGSize
+				{
+					double width;
+					double height;
+				};
+
+				const double scale = (window_width > 0)
+					? static_cast<double>(drawable_width) / static_cast<double>(window_width)
+					: 1.0;
+
+				auto sel_set_contents_scale = sel_registerName("setContentsScale:");
+				reinterpret_cast<void (*)(LTJS_ObjcId, LTJS_ObjcSel, double)>(objc_msgSend)(
+					reinterpret_cast<LTJS_ObjcId>(metal_layer),
+					sel_set_contents_scale,
+					scale);
+
+				auto sel_set_drawable_size = sel_registerName("setDrawableSize:");
+				const LTJS_CGSize drawable_size{
+					static_cast<double>(drawable_width),
+					static_cast<double>(drawable_height)};
+				reinterpret_cast<void (*)(LTJS_ObjcId, LTJS_ObjcSel, LTJS_CGSize)>(objc_msgSend)(
+					reinterpret_cast<LTJS_ObjcId>(metal_layer),
+					sel_set_drawable_size,
+					drawable_size);
+			}
+		}
+
+		window_native_handle = ns_view;
+	}
+	else
+	{
+		void* cocoa_window =
+			SDL_GetPointerProperty(sdl_properties_id, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+		if (cocoa_window)
+		{
+			auto sel_content_view = sel_registerName("contentView");
+			auto ns_view =
+				reinterpret_cast<void*>(
+					reinterpret_cast<LTJS_ObjcId (*)(LTJS_ObjcId, LTJS_ObjcSel)>(objc_msgSend)(
+						reinterpret_cast<LTJS_ObjcId>(cocoa_window),
+						sel_content_view));
+
+			if (ns_view)
+			{
+				window_native_handle = ns_view;
+			}
+		}
+	}
 #endif // _WIN32
 
 	ltjs::sdl_utils::fill_window_black(sdl_window.get());

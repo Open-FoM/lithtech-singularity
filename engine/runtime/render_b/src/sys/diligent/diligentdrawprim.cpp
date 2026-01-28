@@ -514,7 +514,7 @@ static DrawPrimPipeline* GetPipeline(
 		sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		sampler_desc.SamplerOrTextureName = "g_Texture";
+		sampler_desc.SamplerOrTextureName = "g_Texture_sampler";
 		const uint8 anisotropy_level = GetAnisotropyLevel();
 		if (anisotropy_level > 1)
 		{

@@ -3,15 +3,19 @@
 #include "bdefs.h"
 #include "diligent_device.h"
 #include "diligent_postfx.h"
+#include "diligent_render.h"
 #include "diligent_state.h"
 #include "diligent_model_draw.h"
 #include "diligent_texture_cache.h"
 #include "debuggeometry.h"
 #include "strtools.h"
+#include "pixelformat.h"
 
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
+
+#include <cstring>
 
 namespace
 {
@@ -21,11 +25,19 @@ CRenderObject* g_render_object_list_head = nullptr;
 
 } // namespace
 
-void diligent_Clear(LTRect*, uint32, LTRGBColor& clear_color)
+void diligent_Clear(LTRect*, uint32 flags, LTRGBColor& clear_color)
 {
 	if (!diligent_EnsureSwapChain())
 	{
 		return;
+	}
+
+	if ((flags & CLEARSCREEN_SCREEN) != 0)
+	{
+		if (g_diligent_state.output_render_target_override || g_diligent_state.output_depth_target_override)
+		{
+			diligent_SetOutputTargets(nullptr, nullptr);
+		}
 	}
 
 	diligent_ssao_set_clear_color(clear_color);
@@ -43,6 +55,12 @@ void diligent_Clear(LTRect*, uint32, LTRGBColor& clear_color)
 	{
 		return;
 	}
+
+	g_diligent_state.immediate_context->SetRenderTargets(
+		1,
+		&render_target,
+		depth_target,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	g_diligent_state.immediate_context->ClearRenderTarget(
 		render_target,
@@ -164,9 +182,89 @@ bool diligent_GetTextureFormat2(BPPIdent, uint32, PFormat*)
 	return false;
 }
 
-bool diligent_ConvertTexDataToDD(uint8*, PFormat*, uint32, uint32, uint8*, PFormat*, BPPIdent, uint32, uint32, uint32)
+bool diligent_ConvertTexDataToDD(
+	uint8* src_data,
+	PFormat* src_format,
+	uint32 src_width,
+	uint32 src_height,
+	uint8* dst_data,
+	PFormat* dst_format,
+	BPPIdent,
+	uint32,
+	uint32 dst_width,
+	uint32 dst_height)
 {
-	return false;
+	static FormatMgr s_format_mgr;
+
+	if (!src_data || !dst_data || !src_format || !dst_format)
+	{
+		return false;
+	}
+
+	if (src_width == 0 || src_height == 0 || dst_width == 0 || dst_height == 0)
+	{
+		return false;
+	}
+
+	const auto src_bpp = src_format->GetBytesPerPixel();
+	const auto dst_bpp = dst_format->GetBytesPerPixel();
+	if (src_bpp == 0 || dst_bpp == 0)
+	{
+		return false;
+	}
+
+	const auto src_pitch = static_cast<long>(src_width * src_bpp);
+	const auto dst_pitch = static_cast<long>(dst_width * dst_bpp);
+
+	const auto formats_match = src_format->IsSameFormat(dst_format);
+
+	if (src_width == dst_width && src_height == dst_height)
+	{
+		if (formats_match)
+		{
+			for (uint32 y = 0; y < src_height; ++y)
+			{
+				std::memcpy(dst_data + (y * dst_pitch), src_data + (y * src_pitch), src_pitch);
+			}
+
+			return true;
+		}
+
+		FMConvertRequest request{};
+		request.m_pSrcFormat = src_format;
+		request.m_pSrc = src_data;
+		request.m_SrcPitch = src_pitch;
+		request.m_pDestFormat = dst_format;
+		request.m_pDest = dst_data;
+		request.m_DestPitch = dst_pitch;
+		request.m_Width = src_width;
+		request.m_Height = src_height;
+
+		const auto convert_result = s_format_mgr.ConvertPixels(&request, nullptr);
+		return convert_result == LT_OK;
+	}
+
+	if (!formats_match)
+	{
+		return false;
+	}
+
+	for (uint32 y = 0; y < dst_height; ++y)
+	{
+		const uint32 src_y = (y * src_height) / dst_height;
+		const auto* src_row = src_data + (src_y * src_pitch);
+		auto* dst_row = dst_data + (y * dst_pitch);
+
+		for (uint32 x = 0; x < dst_width; ++x)
+		{
+			const uint32 src_x = (x * src_width) / dst_width;
+			const auto* src_pixel = src_row + (src_x * src_bpp);
+			auto* dst_pixel = dst_row + (x * dst_bpp);
+			std::memcpy(dst_pixel, src_pixel, src_bpp);
+		}
+	}
+
+	return true;
 }
 
 void diligent_DrawPrimSetTexture(SharedTexture* texture)
