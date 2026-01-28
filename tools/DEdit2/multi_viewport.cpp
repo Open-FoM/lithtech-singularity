@@ -110,6 +110,112 @@ void CycleActiveViewport(MultiViewportState& state)
   state.active_viewport = (state.active_viewport + 1) % visible_count;
 }
 
+void SyncOrthoViewportsToPerspective(MultiViewportState& state)
+{
+  const int visible_count = state.VisibleViewportCount();
+  if (visible_count <= 1)
+  {
+    return;
+  }
+
+  // Find the first perspective viewport and get its target position
+  float sync_target[3] = {
+    state.last_perspective_target[0],
+    state.last_perspective_target[1],
+    state.last_perspective_target[2]
+  };
+  bool found_perspective = false;
+
+  for (int i = 0; i < visible_count; ++i)
+  {
+    const ViewportPanelState& vp = state.viewports[i].state;
+    if (vp.view_mode == ViewportPanelState::ViewMode::Perspective)
+    {
+      // Use target for orbit mode, or fly_pos for fly mode
+      if (vp.fly_mode)
+      {
+        sync_target[0] = vp.fly_pos[0];
+        sync_target[1] = vp.fly_pos[1];
+        sync_target[2] = vp.fly_pos[2];
+      }
+      else
+      {
+        sync_target[0] = vp.target[0];
+        sync_target[1] = vp.target[1];
+        sync_target[2] = vp.target[2];
+      }
+      found_perspective = true;
+      break;
+    }
+  }
+
+  // Update last known perspective target if we found one
+  if (found_perspective)
+  {
+    state.last_perspective_target[0] = sync_target[0];
+    state.last_perspective_target[1] = sync_target[1];
+    state.last_perspective_target[2] = sync_target[2];
+  }
+
+  // Sync all orthographic viewports to this position
+  for (int i = 0; i < visible_count; ++i)
+  {
+    ViewportPanelState& vp = state.viewports[i].state;
+
+    // Map 3D target to 2D ortho_center based on view mode
+    // ortho_center[0] = horizontal axis, ortho_center[1] = vertical axis
+    // ortho_depth = depth into screen
+    switch (vp.view_mode)
+    {
+    case ViewportPanelState::ViewMode::Top:
+      // Looking down -Y: screen X = world X, screen Y = world -Z
+      vp.ortho_center[0] = sync_target[0];
+      vp.ortho_center[1] = -sync_target[2];
+      vp.ortho_depth = sync_target[1];
+      break;
+
+    case ViewportPanelState::ViewMode::Bottom:
+      // Looking up +Y: screen X = world X, screen Y = world Z
+      vp.ortho_center[0] = sync_target[0];
+      vp.ortho_center[1] = sync_target[2];
+      vp.ortho_depth = sync_target[1];
+      break;
+
+    case ViewportPanelState::ViewMode::Front:
+      // Looking down -Z: screen X = world X, screen Y = world Y
+      vp.ortho_center[0] = sync_target[0];
+      vp.ortho_center[1] = sync_target[1];
+      vp.ortho_depth = sync_target[2];
+      break;
+
+    case ViewportPanelState::ViewMode::Back:
+      // Looking down +Z: screen X = world -X, screen Y = world Y
+      vp.ortho_center[0] = -sync_target[0];
+      vp.ortho_center[1] = sync_target[1];
+      vp.ortho_depth = sync_target[2];
+      break;
+
+    case ViewportPanelState::ViewMode::Left:
+      // Looking down +X: screen X = world Z, screen Y = world Y
+      vp.ortho_center[0] = sync_target[2];
+      vp.ortho_center[1] = sync_target[1];
+      vp.ortho_depth = sync_target[0];
+      break;
+
+    case ViewportPanelState::ViewMode::Right:
+      // Looking down -X: screen X = world -Z, screen Y = world Y
+      vp.ortho_center[0] = -sync_target[2];
+      vp.ortho_center[1] = sync_target[1];
+      vp.ortho_depth = sync_target[0];
+      break;
+
+    case ViewportPanelState::ViewMode::Perspective:
+      // Don't modify perspective viewports
+      break;
+    }
+  }
+}
+
 void GetViewportSlotRect(
     ViewportLayout layout,
     float area_x, float area_y, float area_width, float area_height,

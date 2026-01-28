@@ -682,6 +682,9 @@ ViewportPanelResult DrawViewportPanel(
   const ImVec2 content_avail = ImGui::GetContentRegionAvail();
   const int visible_count = multi_viewport.VisibleViewportCount();
 
+  // Sync orthographic viewports to perspective camera position
+  SyncOrthoViewportsToPerspective(multi_viewport);
+
   // Track which viewport slot will receive 3D rendering this frame
   int rendered_slot = -1;
   ImVec2 rendered_pos{};

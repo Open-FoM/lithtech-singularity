@@ -34,6 +34,10 @@ struct MultiViewportState
   int active_viewport = 0;   ///< Index of the currently active viewport
   ViewportLayout layout = ViewportLayout::Single;
 
+  /// Last known perspective camera target position.
+  /// Used to sync orthographic viewports when no perspective view is active.
+  float last_perspective_target[3] = {0.0f, 0.0f, 0.0f};
+
   /// Returns the currently active viewport state.
   [[nodiscard]] ViewportPanelState& ActiveViewport()
   {
@@ -64,6 +68,11 @@ void SetActiveViewport(MultiViewportState& state, int index);
 
 /// Cycle to the next visible viewport.
 void CycleActiveViewport(MultiViewportState& state);
+
+/// Synchronize orthographic viewports to the perspective camera position.
+/// Finds the first perspective viewport and centers all ortho viewports on its target.
+/// If no perspective viewport exists, uses the last known perspective target.
+void SyncOrthoViewportsToPerspective(MultiViewportState& state);
 
 /// Returns the viewport rectangle for a given slot in the current layout.
 /// @param area Total available area for all viewports.
