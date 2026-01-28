@@ -1276,12 +1276,31 @@ bool CUIVectorFont::Detail::CreateFontTextureAndTable(
 
 	if (bOk)
 	{
+		std::vector<uint32> pixel_data_32;
+		pixel_data_32.resize(static_cast<size_t>(sizeTexture.cx) * static_cast<size_t>(sizeTexture.cy));
+
+		for (int y = 0; y < sizeTexture.cy; ++y)
+		{
+			const auto* src_row = reinterpret_cast<const uint16*>(pPixelData + (y * nPixelDataPitch));
+			auto* dst_row = pixel_data_32.data() + (y * sizeTexture.cx);
+
+			for (int x = 0; x < sizeTexture.cx; ++x)
+			{
+				const uint16 src = src_row[x];
+				const uint32 a = ((src >> 12) & 0xF) * 17;
+				const uint32 r = ((src >> 8) & 0xF) * 17;
+				const uint32 g = ((src >> 4) & 0xF) * 17;
+				const uint32 b = (src & 0xF) * 17;
+				dst_row[x] = (a << 24) | (r << 16) | (g << 8) | b;
+			}
+		}
+
 		// turn pixeldata into a texture
 		pTexInterface->CreateTextureFromData(
 			ui_vector_font_.m_Texture,
-			TEXTURETYPE_ARGB4444,
-			TEXTUREFLAG_PREFER16BIT | TEXTUREFLAG_PREFER4444,
-			pPixelData,
+			TEXTURETYPE_ARGB8888,
+			TEXTUREFLAG_32BITSYSCOPY,
+			reinterpret_cast<uint8*>(pixel_data_32.data()),
 			sizeTexture.cx,
 			sizeTexture.cy);
 

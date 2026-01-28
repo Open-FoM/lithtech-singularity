@@ -17,7 +17,7 @@
 
 FormatMgr g_FormatMgr;
 
-static Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
+static Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format, const PFormat* pformat)
 {
 	switch (format)
 	{
@@ -26,6 +26,10 @@ static Diligent::TEXTURE_FORMAT diligent_map_texture_format(BPPIdent format)
 		case BPP_24:
 			return Diligent::TEX_FORMAT_UNKNOWN;
 		case BPP_16:
+			if (pformat && pformat->m_Masks[CP_ALPHA] != 0)
+			{
+				return Diligent::TEX_FORMAT_UNKNOWN;
+			}
 			return Diligent::TEX_FORMAT_B5G6R5_UNORM;
 		case BPP_S3TC_DXT1:
 			return Diligent::TEX_FORMAT_BC1_UNORM;
@@ -330,7 +334,7 @@ DiligentRenderTexture* diligent_get_render_texture(SharedTexture* shared_texture
 	}
 
 	const uint32 mip_count = diligent_get_mip_count(texture_data);
-	auto format = diligent_map_texture_format(texture_data->m_Header.GetBPPIdent());
+	auto format = diligent_map_texture_format(texture_data->m_Header.GetBPPIdent(), &texture_data->m_PFormat);
 	auto converted = diligent_clone_texture_data(texture_data, mip_count);
 	if (!converted)
 	{
