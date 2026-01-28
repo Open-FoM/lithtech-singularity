@@ -7,7 +7,8 @@ void DrawMainMenuBar(
 	MainMenuActions& actions,
 	const std::vector<std::string>& recent_projects,
 	bool can_undo,
-	bool can_redo)
+	bool can_redo,
+	bool* show_tools_panel)
 {
 	if (!ImGui::BeginMainMenuBar())
 	{
@@ -218,6 +219,18 @@ void DrawMainMenuBar(
 		ImGui::EndMenu();
 	}
 
+	if (ImGui::BeginMenu("Window"))
+	{
+		if (show_tools_panel != nullptr)
+		{
+			if (ImGui::MenuItem("Tools", nullptr, *show_tools_panel))
+			{
+				*show_tools_panel = !*show_tools_panel;
+			}
+		}
+		ImGui::EndMenu();
+	}
+
 	if (ImGui::BeginMenu("Help"))
 	{
 		ImGui::MenuItem("About DEdit", nullptr, false, false);
@@ -255,6 +268,7 @@ void EnsureDockLayout(ImGuiID dockspace_id, const ImGuiViewport* viewport, bool 
 	ImGui::DockBuilderDockWindow("Project", dock_left_top);
 	ImGui::DockBuilderDockWindow("Worlds", dock_left_bottom);
 	ImGui::DockBuilderDockWindow("Scene", dock_left_bottom);
+	ImGui::DockBuilderDockWindow("Tools", dock_left_top);
 	ImGui::DockBuilderDockWindow("Properties", dock_right);
 	ImGui::DockBuilderDockWindow("Console", dock_bottom);
 	ImGui::DockBuilderDockWindow("Viewport", dock_main);

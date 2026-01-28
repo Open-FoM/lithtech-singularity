@@ -311,7 +311,8 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       menu_actions,
       session.recent_projects,
       session.undo_stack.CanUndo(),
-      session.undo_stack.CanRedo());
+      session.undo_stack.CanRedo(),
+      &session.tools_panel.visible);
 
     ImGuiIO& io = ImGui::GetIO();
     bool trigger_undo = menu_actions.undo;
@@ -641,6 +642,45 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.project_root);
 
     DrawConsolePanel(session.console_panel);
+
+    // Draw tools panel and handle tool selection
+    ToolsPanelResult tools_result = DrawToolsPanel(session.tools_panel);
+    if (tools_result.create_primitive != PrimitiveType::None)
+    {
+      session.primitive_dialog.open = true;
+      session.primitive_dialog.type = tools_result.create_primitive;
+    }
+    if (tools_result.tool_changed)
+    {
+      // Map tool selection to gizmo mode
+      switch (tools_result.new_tool)
+      {
+      case EditorTool::Move:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Translate;
+        break;
+      case EditorTool::Rotate:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Rotate;
+        break;
+      case EditorTool::Scale:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Scale;
+        break;
+      default:
+        break;
+      }
+    }
+
+    // Handle Shift+A for primitive popup
+    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false) && !io.KeyCtrl)
+    {
+      ImGui::OpenPopup("AddPrimitive");
+    }
+    PrimitiveType popup_primitive = PrimitiveType::None;
+    DrawPrimitivePopup(popup_primitive);
+    if (popup_primitive != PrimitiveType::None)
+    {
+      session.primitive_dialog.open = true;
+      session.primitive_dialog.type = popup_primitive;
+    }
 
     // Draw modal dialogs
     DrawPrimitiveDialog(session);

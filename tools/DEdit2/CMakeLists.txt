@@ -162,6 +162,7 @@ target_sources (
 		texture_effect_group.cpp
 		ui_console.cpp
 		ui_dock.cpp
+		ui_tools_dock.cpp
 		ui_project.cpp
 		ui_worlds.cpp
 		ui_scene.cpp

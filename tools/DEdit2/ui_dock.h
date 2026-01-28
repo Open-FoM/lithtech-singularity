@@ -60,5 +60,6 @@ void DrawMainMenuBar(
 	MainMenuActions& actions,
 	const std::vector<std::string>& recent_projects,
 	bool can_undo,
-	bool can_redo);
+	bool can_redo,
+	bool* show_tools_panel = nullptr);
 void EnsureDockLayout(ImGuiID dockspace_id, const ImGuiViewport* viewport, bool force_reset);

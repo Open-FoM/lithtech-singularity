@@ -6,6 +6,7 @@
 #include "undo_stack.h"
 #include "ui_console.h"
 #include "ui_dock.h"
+#include "ui_tools_dock.h"
 #include "ui_project.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
@@ -57,4 +58,5 @@ struct EditorSession
   UndoStack undo_stack;
 
   PrimitiveDialogState primitive_dialog;
+  ToolsPanelState tools_panel;
 };
