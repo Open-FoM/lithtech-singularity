@@ -1,0 +1,248 @@
+| ### Content Guide | [ ![](../Images/Logo-s.png) ](http://www.touchdownentertainment.com/jupiter.md) |
+| --- | --- |
+
+# About Tools and Plugins
+
+Jupiter includes two primary editing tools, and a variety of additional tools and plugins for creating games that work with the Jupiter engine. This section provides a brief description of each of the tools provided in the Jupiter installation. Read the following topics in this section to familiarize yourself with the tools and plugins included in your installation.
+
+- [Primary Editing Tools ](#Primary)
+- [Additional Editing Tools ](#Additional)
+- [Plugins ](#Plugins)
+
+---
+
+## Primary Editing Tools
+
+The DEdit and ModelEdit applications are the primary tools used to develop levels and prepare models for your game.
+
+### DEdit
+![](../Images/DETBar/DEditLogo.gif)
+
+>
+
+DEdit is the integration point for most game resources, as well as the final assembly point for your levels. Using DEdit, you build the world your players will explore and experience when they play your game. You can use DEdit to build your buildings, skies, doors, windows and other objects, or assemble these things from parts built in a supported 3D package. You can also apply the level’s textures to add more shape to the world if you have not done so already. You can create, preview and refine the level’s lighting. You can add game objects, such as creatures, characters, tools, and weapons, to the world to make it interactive. Finally, you use DEdit to tune your world for the best performance possible.
+
+### ModelEdit
+![](../Images/Logos/ModelEditLogo.gif)
+
+>
+
+ModelEdit enables you to view and edit models and animations created in 3D Studio Max or Maya. This tool is vital in ensuring that models are optimized for inclusion in a Jupiter game. Artists can also use ModelEdit to define specific properties, assign texture IDs, and manipulate model animation, among other functions. ModelEdit ensures models are optimized to interact correctly with environments and other objects.
+
+---
+
+## Additional Tools
+
+In addition to DEdit and ModelEdit, Jupiter is supplemented by a large group of smaller tools. These include converters from outside or older file formats. All of the files listed below are executable files (.exe files) and are located in the following directory:
+
+>
+
+<Installation Root>\Development\Tools\
+
+### **ButeCheck **
+
+>
+
+ButeCheck.exe checks for errors in .BUT files.
+
+### **ButeEdit **
+
+>
+
+ButeEdit.exe allows you to view and edit .BUT files graphically. As an example, DEdit uses one common .BUT file (Classhlp.BUT) to display helpful tips about objects and properties. Although it’s usually easier to create .BUT files (which look like Windows .INI files in structure) by hand in Notepad, once they get large enough they’re easier to handle in a graphical interface like ButeEdit’s.
+
+### **dtxutil **
+
+>
+
+Dtxutil.exe runs from the command line and provides advanced, but rarely used, .DTX modification functions.
+
+### FXED
+![](../Images/Logos/FZLogo.gif)
+
+>
+
+FXED.exe is an editor that artists can use to create spectacular special effects. FXED removes the need for programmer interaction (in creating effects) and therefore speeds up development.
+
+### **HeightMapToNormalMap
+![](../Images/Logos/HMapLogo.gif)
+**
+
+>
+
+HeightMapToNormalMap.exe converts a texture with height map data—0 to 255 height value in any of the red, green, blue, or alpha channels—to a texture with normal map data. The default is alpha channel. The normal map is used with dot3 bump mapping. The normal map specifies x, y, z normal values in the r, g, b channels of the output texture. There is an input scale value that scales the input height values. The normal vectors are calculated at each texel by triangulating the scaled height values, crossing two legs of the triangle, and normalizing.
+
+### **LithRez **
+
+>
+
+LithRez.exe creates the .REZ files that store all of your project’s game resources. This file is not compressed, but it saves some space and adds convenience during installs by reducing the number of files you must copy to the player’s machine from hundreds or thousands down to a single one. It greatly increases resource loading times. Running the program with no parameters displays its options.
+
+### **ltaview **
+
+>
+
+Ltaview.exe allows you to view .LTA files in a tree view.
+
+### **ltbhead **
+
+>
+
+Ltbhead.exe is a command-line utility that reads an .LTB file and sends the header information to STDOUT.
+
+### **LTC **
+
+>
+
+LTC.exe compresses .LTA files or to decompress .LTC files. This capability is built into DEdit and ModelEdit.
+
+### **Model_Packer **
+
+>
+
+Model_Packer.exe is a command line utility that converts .LTA files to the .LTB binary format for output to Direct3D.
+
+### **pma **
+
+>
+
+Pma.exe converts a premultiplied .TGA file to an unpremultiplied .TGA file. A premultiplied .TGA file has color components scaled by the alpha value ahead of time. Jupiter expects unpremultiplied .TGA files, so images generated by some applications might need to be run through this utility before using them with the engine.
+
+### **Processor **
+
+>
+
+Processor.exe is used by DEdit to process your worlds into optimized .DAT files.
+
+### **PropHelpGen **
+
+>
+
+PropHelpGen.exe creates a skeleton .BUT file including all the objects and properties, but with no descriptions.
+
+### **Recurse_run **
+
+>
+
+Recurse_run.exe is helpful for use in batch processing files with other command-line tools. It recursively runs any specified program on multiple files instead of one.
+
+### **RenderStyle_Packer
+![](../Images/Logos/MPkrLogo.gif)
+**
+
+>
+
+RenderStyle_Packer.exe compiles your render styles for the PC. It supports a fallback mechanism to ensure full compatibility across a wide range of video cards. It can be run from the Render Styles Editor.
+
+### RenderStylesEditor
+![](../Images/Logos/RSEdLogo.gif)
+
+>
+
+RenderStylesEditor.exe is a tool for developers. It allows you to create render styles using existing game project resources, such as textures. Using the RenderStylesEditor you can map the Render Styles to standardized sample models such as globes, walls, and The Utah Teapot and preview the results in real-time in the tool. When you create a new Render Style, the Render Styles Editor saves it as an .LTB file that is attached to a model in the game code.
+
+### **RenderStylesViewer
+![](../Images/Logos/RSVLogo.gif)
+**
+
+>
+
+RenderStylesViewer.exe is a tool for content artists. You can use the Render Styles Viewer to preview the new Render Styles created with the Render Styles Editor.
+
+### WaveEdit
+![](../Images/Logos/WavELogo.gif)
+
+>
+
+WaveEdit.exe allows you to edit and optimize your .wav files for the Jupiter system. Using WaveEdit you can control how .wav files are streamed and decompressed during execution of your game.
+
+### **WinLTC **
+
+>
+
+WinLTC.exe is a Windows version of the LTC.exe tool. Used to compress .LTA files or to decompress .LTC files.
+
+[Top ](#top)
+
+---
+
+## Plugins
+
+The following plugins provide model, animation, world, and terrain importing and exporting functionality to Maya and 3D Studio Max.
+
+All of the files listed below are located in the following directory:
+
+>
+
+<Installation Root>\Development\Tools\
+
+### **LithTechWorldExportOptions.mel **
+
+>
+
+Exporter interface Maya Embedded Language (MEL) script for the Maya Terrain and Brush Exporter and Importer. See the MayaWorldExport30.mll listing below.
+
+### **MaxModelExport30.dle **
+
+>
+
+.LTA Model Exporter for 3D Studio Max 3.0. Exports models from Max to ModelEdit format. To install the exporter, copy theMaxModelExport30.dle file to the plug-in path used by 3D Studio Max.
+
+### **MaxModelExport40.dle **
+
+>
+
+.LTA Model Exporter for 3D Studio Max 4.0. See the MaxModelExport30.dle listing above for a description and installation instructions.
+
+### **MaxWorldExport30.dle **
+
+>
+
+.LTA Model Exporter for 3D Studio Max 3.0. Exports worlds from Max to DEdit format. To install the exporter, copy theMaxWorldExport30.dle file to the plug-in path used by 3D Studio Max.
+
+### **MaxWorldExport40.dle **
+
+>
+
+.LTA Model Exporter for 3D Studio Max 4.0. See the MaxWorldExport30.dle listing above for a description and installation instructions.
+
+### **MaxWorldImport30.dli **
+
+>
+
+.LTA World Importer for 3D Studio Max 3.0. This importer plug-in complements the Max Terrain Exporter but is more versatile in that it will import any full .LTA level file into Max. Every brush and terrain object in the level will be imported into Max as an independent mesh, with textures aligned exactly as they were in DEdit.
+
+To install the importer, place the plug-in file MaxWorldImport30.dli within a plug-in path used by 3D Studio Max. After that, the plug-in is accessed through the File menu Import command within 3D Studio Max.
+
+### **MaxWorldImport40.dli **
+
+>
+
+.LTA World Importer for 3d Studio Max 4.0. See MaxWorldImport30.dli listing above for description and installation instructions.
+
+### **MayaModelExport30.mll **
+
+>
+
+Maya Model Exporter plug-in file for use with Maya 3.0. This exporter plug-in for Maya allows creation of models and animation within Maya. The plug-in consists of two parts. There is the UI front-end, which consists of a Maya file translator plug-in and the associated UI MEL script.
+To install the plug-in, the plug-in file (MayaModelExport30.mll) must be placed within a plug-in path used by Maya. The exporter interface MEL script (LithTechModelExportOptions.mel) must be placed within a script path used by Maya. Finally, the plug-in must be loaded using the Maya Plug-in Managerdialog.
+
+### **MayaModelExport40.mll **
+
+>
+
+Maya Model Exporter plug-in file for use with Maya 3.0. See MayaModelExport30.mll listing above for description and installation instructions.
+
+### **MayaWorldExport30.mll **
+
+>
+
+Maya Terrain and Brush Exporter and Importer plug-in file for use with Maya 3.0. This exporter plug-in for Maya allows creation of brushes and terrain within Maya. The plug-in consists of two parts. There is the UI front-end, which consists of a Maya file translator plug-in and the associated UI MEL script.
+
+To install the plug-in, the plug-in file (MayaWorldExport30.mll) must be placed within a plug-in path used by Maya. The exporter interface MEL script (LithTechWorldExportOptions.mel) must be placed within a script path used by Maya. Finally, the plug-in must be loaded using the Maya Plug-in Manager dialog.
+
+[Top ](#top)
+
+---
+
+Touchdown Entertainment, Inc. [Send feedback regarding this page. ](mailto:support@touchdownentertainment.com?subject=JupiterDevGuide Feedback: ToolOvrv\TAbout.md)2006, All Rights Reserved.
