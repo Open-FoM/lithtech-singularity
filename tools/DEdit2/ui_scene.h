@@ -14,7 +14,7 @@ enum class SelectionMode {
   Replace, ///< Clear existing selection, select clicked item
   Add,     ///< Add clicked item to selection (Shift+Click)
   Remove,  ///< Remove clicked item from selection
-  Toggle   ///< Toggle clicked item in selection (Ctrl+Click)
+	Toggle   ///< Toggle clicked item in selection (Primary+Click)
 };
 
 struct ScenePanelState {

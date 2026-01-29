@@ -11,8 +11,11 @@
 #include "ui/viewport_panel.h"
 #include "viewport/diligent_viewport.h"
 #include "viewport/lighting.h"
+#include "viewport/overlays.h"
 #include "viewport/render_settings.h"
 #include "viewport/world_settings.h"
+#include "viewport_picking.h"
+#include "viewport_render.h"
 
 #include "transform/mirror.h"
 #include "transform/nudge.h"
@@ -41,6 +44,36 @@
 #include <cstdio>
 
 namespace {
+
+/// Helper to draw a DragFloat that snaps values when grid snap is enabled.
+bool SnapDragFloat(const char* label, float* v, float snap_step, float v_speed = 1.0f, float v_min = 0.0f,
+                   float v_max = 0.0f) {
+  bool changed = ImGui::DragFloat(label, v, v_speed, v_min, v_max);
+  if (changed && snap_step > 0.0f) {
+    *v = grid::SnapValue(*v, snap_step);
+  }
+  return changed;
+}
+
+/// Helper to draw a DragFloat3 that snaps values when grid snap is enabled.
+bool SnapDragFloat3(const char* label, float v[3], float snap_step, float v_speed = 1.0f) {
+  bool changed = ImGui::DragFloat3(label, v, v_speed);
+  if (changed && snap_step > 0.0f) {
+    v[0] = grid::SnapValue(v[0], snap_step);
+    v[1] = grid::SnapValue(v[1], snap_step);
+    v[2] = grid::SnapValue(v[2], snap_step);
+  }
+  return changed;
+}
+
+bool IsPrimaryShortcutDown(const ImGuiIO& io)
+{
+#if defined(__APPLE__)
+  return io.KeySuper;
+#else
+  return io.KeyCtrl;
+#endif
+}
 
 /// Creates a new brush node from primitive result and adds it to the scene.
 int CreateBrushFromPrimitive(
@@ -159,11 +192,21 @@ void DrawPrimitiveDialog(EditorSession& session)
   {
     bool create = false;
 
+    // Get snap step if snapping is enabled
+    const ViewportPanelState& viewport = session.viewport_panel();
+    const float snap_step = viewport.snap_translate ? viewport.snap_translate_step : 0.0f;
+
     switch (dialog.type)
     {
     case PrimitiveType::Box:
-      ImGui::DragFloat3("Center", dialog.box_params.center, 1.0f);
-      ImGui::DragFloat3("Size", dialog.box_params.size, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat3("Center", dialog.box_params.center, snap_step, 1.0f);
+      SnapDragFloat3("Size", dialog.box_params.size, snap_step, 1.0f);
+      // Enforce minimum size to prevent degenerate or inverted geometry
+      for (int i = 0; i < 3; ++i) {
+        if (dialog.box_params.size[i] < 1.0f) {
+          dialog.box_params.size[i] = 1.0f;
+        }
+      }
       if (ImGui::Button("Create"))
       {
         create = true;
@@ -171,10 +214,10 @@ void DrawPrimitiveDialog(EditorSession& session)
       break;
 
     case PrimitiveType::Cylinder:
-      ImGui::DragFloat3("Center", dialog.cylinder_params.center, 1.0f);
-      ImGui::DragFloat("Height", &dialog.cylinder_params.height, 1.0f, 1.0f, 10000.0f);
-      ImGui::DragFloat("Radius", &dialog.cylinder_params.radius, 1.0f, 1.0f, 10000.0f);
-      ImGui::SliderInt("Sides", &dialog.cylinder_params.sides, 3, 32);
+      SnapDragFloat3("Center", dialog.cylinder_params.center, snap_step, 1.0f);
+      SnapDragFloat("Height", &dialog.cylinder_params.height, snap_step, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat("Radius", &dialog.cylinder_params.radius, snap_step, 1.0f, 1.0f, 10000.0f);
+      ImGui::SliderInt("Sides", &dialog.cylinder_params.sides, 3, 64);
       if (ImGui::Button("Create"))
       {
         create = true;
@@ -182,9 +225,15 @@ void DrawPrimitiveDialog(EditorSession& session)
       break;
 
     case PrimitiveType::Pyramid:
-      ImGui::DragFloat3("Center", dialog.pyramid_params.center, 1.0f);
-      ImGui::DragFloat("Height", &dialog.pyramid_params.height, 1.0f, 1.0f, 10000.0f);
-      ImGui::DragFloat("Base Radius", &dialog.pyramid_params.radius, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat3("Center", dialog.pyramid_params.center, snap_step, 1.0f);
+      SnapDragFloat("Height", &dialog.pyramid_params.height, snap_step, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat("Base Radius", &dialog.pyramid_params.radius, snap_step, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat("Top Radius", &dialog.pyramid_params.top_radius, snap_step, 1.0f, 0.0f,
+                    dialog.pyramid_params.radius);
+      if (dialog.pyramid_params.top_radius > 0.0f) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(Frustum)");
+      }
       ImGui::SliderInt("Sides", &dialog.pyramid_params.sides, 3, 32);
       if (ImGui::Button("Create"))
       {
@@ -195,8 +244,8 @@ void DrawPrimitiveDialog(EditorSession& session)
     case PrimitiveType::Sphere:
     case PrimitiveType::Dome:
       dialog.sphere_params.dome = (dialog.type == PrimitiveType::Dome);
-      ImGui::DragFloat3("Center", dialog.sphere_params.center, 1.0f);
-      ImGui::DragFloat("Radius", &dialog.sphere_params.radius, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat3("Center", dialog.sphere_params.center, snap_step, 1.0f);
+      SnapDragFloat("Radius", &dialog.sphere_params.radius, snap_step, 1.0f, 1.0f, 10000.0f);
       ImGui::SliderInt("H Subdivisions", &dialog.sphere_params.horizontal_subdivisions, 4, 32);
       ImGui::SliderInt("V Subdivisions", &dialog.sphere_params.vertical_subdivisions, 2, 16);
       if (ImGui::Button("Create"))
@@ -205,16 +254,42 @@ void DrawPrimitiveDialog(EditorSession& session)
       }
       break;
 
-    case PrimitiveType::Plane:
-      ImGui::DragFloat3("Center", dialog.plane_params.center, 1.0f);
-      ImGui::DragFloat("Width", &dialog.plane_params.width, 1.0f, 1.0f, 10000.0f);
-      ImGui::DragFloat("Height", &dialog.plane_params.height, 1.0f, 1.0f, 10000.0f);
-      ImGui::DragFloat3("Normal", dialog.plane_params.normal, 0.01f, -1.0f, 1.0f);
+    case PrimitiveType::Plane: {
+      SnapDragFloat3("Center", dialog.plane_params.center, snap_step, 1.0f);
+      SnapDragFloat("Width", &dialog.plane_params.width, snap_step, 1.0f, 1.0f, 10000.0f);
+      SnapDragFloat("Height", &dialog.plane_params.height, snap_step, 1.0f, 1.0f, 10000.0f);
+
+      // Orientation preset combo
+      static const char* orientation_names[] = {"XZ (Floor)", "XY (Wall Z)", "YZ (Wall X)"};
+      int orientation_idx = static_cast<int>(dialog.plane_params.orientation);
+      if (ImGui::Combo("Orientation", &orientation_idx, orientation_names, 3)) {
+        dialog.plane_params.orientation = static_cast<PlaneOrientation>(orientation_idx);
+        // Update normal based on orientation
+        switch (dialog.plane_params.orientation) {
+        case PlaneOrientation::XZ:
+          dialog.plane_params.normal[0] = 0.0f;
+          dialog.plane_params.normal[1] = 1.0f;
+          dialog.plane_params.normal[2] = 0.0f;
+          break;
+        case PlaneOrientation::XY:
+          dialog.plane_params.normal[0] = 0.0f;
+          dialog.plane_params.normal[1] = 0.0f;
+          dialog.plane_params.normal[2] = 1.0f;
+          break;
+        case PlaneOrientation::YZ:
+          dialog.plane_params.normal[0] = 1.0f;
+          dialog.plane_params.normal[1] = 0.0f;
+          dialog.plane_params.normal[2] = 0.0f;
+          break;
+        }
+      }
+
       if (ImGui::Button("Create"))
       {
         create = true;
       }
       break;
+    }
 
     default:
       break;
@@ -269,10 +344,128 @@ void DrawPrimitiveDialog(EditorSession& session)
         {
           SelectNode(session.scene_panel, new_id);
           session.active_target = SelectionTarget::Scene;
+          session.undo_stack.PushCreate(UndoTarget::Scene, new_id);
+          session.document_state.MarkDirty();
         }
       }
 
       dialog.open = false;
+    }
+
+    ImGui::EndPopup();
+  }
+}
+
+/// Draws the polygon extrusion dialog and handles brush creation.
+void DrawPolygonExtrusionDialog(EditorSession& session)
+{
+  PolygonDrawState& state = session.polygon_draw;
+  if (!state.show_extrusion_dialog)
+  {
+    return;
+  }
+
+  const char* title = "Extrude Polygon";
+  ImGui::OpenPopup(title);
+  if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+  {
+    const size_t num_verts = state.vertices.size() / 3;
+    ImGui::Text("Polygon has %zu vertices", num_verts);
+
+    // Check convexity
+    std::vector<float> vertices_2d;
+    vertices_2d.reserve(num_verts * 2);
+    for (size_t i = 0; i < num_verts; ++i)
+    {
+      // Project 3D to 2D based on plane
+      switch (state.plane)
+      {
+      case PolygonDrawPlane::XZ:
+        vertices_2d.push_back(state.vertices[i * 3 + 0]);  // X
+        vertices_2d.push_back(state.vertices[i * 3 + 2]);  // Z
+        break;
+      case PolygonDrawPlane::XY:
+        vertices_2d.push_back(state.vertices[i * 3 + 0]);  // X
+        vertices_2d.push_back(state.vertices[i * 3 + 1]);  // Y
+        break;
+      case PolygonDrawPlane::YZ:
+        vertices_2d.push_back(state.vertices[i * 3 + 1]);  // Y
+        vertices_2d.push_back(state.vertices[i * 3 + 2]);  // Z
+        break;
+      }
+    }
+
+    state.is_convex = IsPolygonConvex(vertices_2d);
+    if (!state.is_convex)
+    {
+      ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Warning: Polygon is not convex!");
+    }
+
+    // Get snap step if snapping is enabled
+    const ViewportPanelState& viewport = session.viewport_panel();
+    const float snap_step = viewport.snap_translate ? viewport.snap_translate_step : 0.0f;
+
+    SnapDragFloat("Extrusion Height", &state.extrusion_height, snap_step, 1.0f, -10000.0f, 10000.0f);
+
+    bool create = false;
+    if (ImGui::Button("Create Brush"))
+    {
+      create = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+    {
+      state.show_extrusion_dialog = false;
+      state.active = false;
+      state.vertices.clear();
+    }
+
+    if (create)
+    {
+      // Get extrusion normal and axis-aligned basis based on plane.
+      // The basis must match how vertices_2d was constructed:
+      // - XZ: u=X, v=Z, normal=Y
+      // - XY: u=X, v=Y, normal=Z
+      // - YZ: u=Y, v=Z, normal=X
+      float normal[3] = {0.0f, 0.0f, 0.0f};
+      float tangent[3] = {0.0f, 0.0f, 0.0f};
+      float bitangent[3] = {0.0f, 0.0f, 0.0f};
+      switch (state.plane)
+      {
+      case PolygonDrawPlane::XZ:
+        normal[1] = 1.0f;
+        tangent[0] = 1.0f;    // u -> X
+        bitangent[2] = 1.0f;  // v -> Z
+        break;
+      case PolygonDrawPlane::XY:
+        normal[2] = 1.0f;
+        tangent[0] = 1.0f;    // u -> X
+        bitangent[1] = 1.0f;  // v -> Y
+        break;
+      case PolygonDrawPlane::YZ:
+        normal[0] = 1.0f;
+        tangent[1] = 1.0f;    // u -> Y
+        bitangent[2] = 1.0f;  // v -> Z
+        break;
+      }
+
+      PrimitiveResult result =
+          ExtrudePolygon(vertices_2d, state.extrusion_height, normal, tangent, bitangent, state.plane_offset);
+      if (result.success)
+      {
+        const int new_id = CreateBrushFromPrimitive(session.scene_nodes, session.scene_props, result, "Polygon");
+        if (new_id >= 0)
+        {
+          SelectNode(session.scene_panel, new_id);
+          session.active_target = SelectionTarget::Scene;
+          session.undo_stack.PushCreate(UndoTarget::Scene, new_id);
+          session.document_state.MarkDirty();
+        }
+      }
+
+      state.show_extrusion_dialog = false;
+      state.active = false;
+      state.vertices.clear();
     }
 
     ImGui::EndPopup();
@@ -466,20 +659,22 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     }
 
     ImGuiIO& io = ImGui::GetIO();
+    const bool allow_shortcuts = !io.WantTextInput && !ImGui::IsAnyItemActive();
+    const bool primary_down = IsPrimaryShortcutDown(io);
     bool trigger_undo = menu_actions.undo;
     bool trigger_redo = menu_actions.redo;
-    if (!io.WantCaptureKeyboard)
+    if (allow_shortcuts)
     {
-      // File operations: Cmd+N (New), Cmd+O (Open), Cmd+S (Save), Cmd+Shift+S (Save As)
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))
+      // File operations: primary+N (New), primary+O (Open), primary+S (Save), primary+Shift+S (Save As)
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_N, false))
       {
         menu_actions.new_world = true;
       }
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false))
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_O, false))
       {
         menu_actions.open_world = true;
       }
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_S, false))
       {
         if (io.KeyShift)
         {
@@ -491,7 +686,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         }
       }
 
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_Z, false))
       {
         if (io.KeyShift)
         {
@@ -502,46 +697,46 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           trigger_undo = true;
         }
       }
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_Y, false))
       {
         trigger_redo = true;
       }
       // Selection commands (only when Scene is active)
       if (session.active_target == SelectionTarget::Scene)
       {
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false))
+        if (primary_down && ImGui::IsKeyPressed(ImGuiKey_A, false))
         {
           SelectAll(session.scene_panel, session.scene_nodes, session.scene_props);
         }
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false))
+        if (primary_down && ImGui::IsKeyPressed(ImGuiKey_D, false))
         {
           SelectNone(session.scene_panel);
         }
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_I, false))
+        if (primary_down && ImGui::IsKeyPressed(ImGuiKey_I, false))
         {
           SelectInverse(session.scene_panel, session.scene_nodes, session.scene_props);
         }
         // Visibility commands: H = Hide Selected, Shift+H = Unhide Selected,
-        // Ctrl+H = Unhide All, Alt+H = Hide Unselected
+        // Primary+H = Unhide All, Alt+H = Hide Unselected
         if (ImGui::IsKeyPressed(ImGuiKey_H, false))
         {
-          if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+          if (primary_down && !io.KeyShift && !io.KeyAlt)
           {
             UnhideAllWithUndo(session.scene_props, &session.undo_stack);
             session.document_state.MarkDirty();
           }
-          else if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt)
+          else if (io.KeyShift && !primary_down && !io.KeyAlt)
           {
             UnhideSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             session.document_state.MarkDirty();
           }
-          else if (io.KeyAlt && !io.KeyCtrl && !io.KeyShift)
+          else if (io.KeyAlt && !primary_down && !io.KeyShift)
           {
             HideUnselectedWithUndo(session.scene_panel, session.scene_nodes,
                                    session.scene_props, &session.undo_stack);
             session.document_state.MarkDirty();
           }
-          else if (!io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          else if (!primary_down && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
           {
             HideSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             ClearSelection(session.scene_panel);
@@ -549,28 +744,28 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           }
         }
         // Freeze commands: F = Freeze Selected, Shift+F = Unfreeze Selected,
-        // Ctrl+F = Unfreeze All
+        // Primary+F = Unfreeze All
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
         {
-          if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+          if (primary_down && !io.KeyShift && !io.KeyAlt)
           {
             UnfreezeAllWithUndo(session.scene_props, &session.undo_stack);
             session.document_state.MarkDirty();
           }
-          else if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt)
+          else if (io.KeyShift && !primary_down && !io.KeyAlt)
           {
             UnfreezeSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             session.document_state.MarkDirty();
           }
-          else if (!io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          else if (!primary_down && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
           {
             FreezeSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             ClearSelection(session.scene_panel);
             session.document_state.MarkDirty();
           }
         }
-        // Mirror commands: Ctrl+Shift+X/Y/Z
-        if (io.KeyCtrl && io.KeyShift && HasSelection(session.scene_panel))
+        // Mirror commands: primary+Shift+X/Y/Z
+        if (primary_down && io.KeyShift && HasSelection(session.scene_panel))
         {
           if (ImGui::IsKeyPressed(ImGuiKey_X, false))
           {
@@ -580,13 +775,13 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           {
             MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Y);
           }
-          // Note: Ctrl+Shift+Z is also Redo shortcut on some systems, so mirror Z may conflict
+          // Note: primary+Shift+Z is also Redo shortcut on some systems, so mirror Z may conflict
           // Users can still use the menu for Mirror Z
         }
-        // Group commands: Ctrl+G = Group, Ctrl+Shift+G = Ungroup
+        // Group commands: primary+G = Group, primary+Shift+G = Ungroup
         if (ImGui::IsKeyPressed(ImGuiKey_G, false))
         {
-          if (io.KeyCtrl && io.KeyShift && !io.KeyAlt)
+          if (primary_down && io.KeyShift && !io.KeyAlt)
           {
             // Ungroup: only works when a single container is selected
             if (SelectionCount(session.scene_panel) == 1)
@@ -603,7 +798,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
               }
             }
           }
-          else if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          else if (primary_down && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
           {
             // Group selected nodes
             GroupResult result = GroupSelectedNodes(
@@ -622,10 +817,10 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         ToggleOrthoPerspective(session.viewport_panel());
       }
-      // Numpad 7: Top view (Ctrl+7: Bottom)
+      // Numpad 7: Top view (primary+7: Bottom)
       if (ImGui::IsKeyPressed(ImGuiKey_Keypad7, false))
       {
-        if (io.KeyCtrl)
+        if (primary_down)
         {
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Bottom);
         }
@@ -634,10 +829,10 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Top);
         }
       }
-      // Numpad 1: Front view (Ctrl+1: Back)
+      // Numpad 1: Front view (primary+1: Back)
       if (ImGui::IsKeyPressed(ImGuiKey_Keypad1, false))
       {
-        if (io.KeyCtrl)
+        if (primary_down)
         {
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Back);
         }
@@ -646,10 +841,10 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Front);
         }
       }
-      // Numpad 3: Right view (Ctrl+3: Left)
+      // Numpad 3: Right view (primary+3: Left)
       if (ImGui::IsKeyPressed(ImGuiKey_Keypad3, false))
       {
-        if (io.KeyCtrl)
+        if (primary_down)
         {
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Left);
         }
@@ -659,7 +854,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         }
       }
       // Tab cycles active viewport (multi-viewport layout)
-      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl && !io.KeyShift)
+      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !primary_down && !io.KeyShift)
       {
         CycleActiveViewport(session.multi_viewport);
       }
@@ -669,24 +864,24 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         OpenGoToDialog(session.goto_dialog);
       }
       // W: Translate gizmo mode
-      if (ImGui::IsKeyPressed(ImGuiKey_W, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      if (ImGui::IsKeyPressed(ImGuiKey_W, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
       {
         session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Translate;
       }
       // E: Rotate gizmo mode
-      if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
       {
         session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Rotate;
       }
       // R: Scale gizmo mode
-      if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
       {
         session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Scale;
       }
 
       // Grid controls
-      // G: Toggle grid visibility (plain G without modifiers; Ctrl+G is Group)
-      if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      // G: Toggle grid visibility (plain G without modifiers; primary+G is Group)
+      if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
       {
         session.viewport_panel().show_grid = !session.viewport_panel().show_grid;
       }
@@ -708,6 +903,73 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         if (session.viewport_panel().snap_translate)
         {
           session.viewport_panel().snap_translate_step = session.viewport_panel().grid_spacing;
+        }
+      }
+
+      // B: Open Box primitive dialog
+      if (ImGui::IsKeyPressed(ImGuiKey_B, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
+      {
+        SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
+        session.primitive_dialog.open = true;
+        session.primitive_dialog.type = PrimitiveType::Box;
+      }
+
+      // P: Enter polygon drawing mode (only when not already in polygon mode)
+      if (ImGui::IsKeyPressed(ImGuiKey_P, false) && !primary_down && !io.KeyShift && !io.KeyAlt &&
+          !session.polygon_draw.active)
+      {
+        session.polygon_draw.active = true;
+        session.polygon_draw.vertices.clear();
+        session.polygon_draw.is_convex = true;
+        session.polygon_draw.show_extrusion_dialog = false;
+        // Set plane based on current view
+        const auto view_mode = session.viewport_panel().view_mode;
+        if (view_mode == ViewportPanelState::ViewMode::Top ||
+            view_mode == ViewportPanelState::ViewMode::Bottom)
+        {
+          session.polygon_draw.plane = PolygonDrawPlane::XZ;
+          session.polygon_draw.plane_offset = session.viewport_panel().marker_position[1];
+        }
+        else if (view_mode == ViewportPanelState::ViewMode::Front ||
+                 view_mode == ViewportPanelState::ViewMode::Back)
+        {
+          session.polygon_draw.plane = PolygonDrawPlane::XY;
+          session.polygon_draw.plane_offset = session.viewport_panel().marker_position[2];
+        }
+        else if (view_mode == ViewportPanelState::ViewMode::Left ||
+                 view_mode == ViewportPanelState::ViewMode::Right)
+        {
+          session.polygon_draw.plane = PolygonDrawPlane::YZ;
+          session.polygon_draw.plane_offset = session.viewport_panel().marker_position[0];
+        }
+        else
+        {
+          // Perspective: default to XZ
+          session.polygon_draw.plane = PolygonDrawPlane::XZ;
+          session.polygon_draw.plane_offset = session.viewport_panel().marker_position[1];
+        }
+      }
+
+      // Polygon drawing mode keyboard controls
+      if (session.polygon_draw.active && !session.polygon_draw.show_extrusion_dialog)
+      {
+        // Escape: Cancel polygon mode
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        {
+          session.polygon_draw.active = false;
+          session.polygon_draw.vertices.clear();
+        }
+        // Backspace: Remove last vertex
+        else if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && session.polygon_draw.vertices.size() >= 3)
+        {
+          session.polygon_draw.vertices.pop_back();
+          session.polygon_draw.vertices.pop_back();
+          session.polygon_draw.vertices.pop_back();
+        }
+        // Enter: Complete polygon (need at least 3 vertices)
+        else if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && session.polygon_draw.vertices.size() >= 9)
+        {
+          session.polygon_draw.show_extrusion_dialog = true;
         }
       }
 
@@ -914,6 +1176,41 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
       session.primitive_dialog.open = true;
       session.primitive_dialog.type = menu_actions.create_primitive;
+    }
+
+    // Handle enter polygon drawing mode
+    if (menu_actions.enter_polygon_mode)
+    {
+      session.polygon_draw.active = true;
+      session.polygon_draw.vertices.clear();
+      session.polygon_draw.is_convex = true;
+      session.polygon_draw.show_extrusion_dialog = false;
+      // Set plane based on current view
+      const auto view_mode = session.viewport_panel().view_mode;
+      if (view_mode == ViewportPanelState::ViewMode::Top ||
+          view_mode == ViewportPanelState::ViewMode::Bottom)
+      {
+        session.polygon_draw.plane = PolygonDrawPlane::XZ;
+        session.polygon_draw.plane_offset = session.viewport_panel().marker_position[1];
+      }
+      else if (view_mode == ViewportPanelState::ViewMode::Front ||
+               view_mode == ViewportPanelState::ViewMode::Back)
+      {
+        session.polygon_draw.plane = PolygonDrawPlane::XY;
+        session.polygon_draw.plane_offset = session.viewport_panel().marker_position[2];
+      }
+      else if (view_mode == ViewportPanelState::ViewMode::Left ||
+               view_mode == ViewportPanelState::ViewMode::Right)
+      {
+        session.polygon_draw.plane = PolygonDrawPlane::YZ;
+        session.polygon_draw.plane_offset = session.viewport_panel().marker_position[0];
+      }
+      else
+      {
+        // Perspective view: default to XZ (horizontal)
+        session.polygon_draw.plane = PolygonDrawPlane::XZ;
+        session.polygon_draw.plane_offset = session.viewport_panel().marker_position[1];
+      }
     }
 
     // Handle reset splitters
@@ -1314,7 +1611,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     }
 
     // Handle Shift+A for primitive popup
-    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false) && !io.KeyCtrl)
+    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false) && !primary_down)
     {
       ImGui::OpenPopup("AddPrimitive");
     }
@@ -1329,6 +1626,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
 
     // Draw modal dialogs
     DrawPrimitiveDialog(session);
+    DrawPolygonExtrusionDialog(session);
     DrawSavePromptDialog(session.save_prompt_dialog);
     DrawSelectionFilterDialog(session.selection_filter_dialog, session.selection_filter);
     DrawAdvancedSelectionDialog(
@@ -1385,7 +1683,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     {
       // Determine selection mode based on modifier keys
       SelectionMode sel_mode = SelectionMode::Replace;
-      if (io.KeyShift && io.KeyCtrl)
+      if (io.KeyShift && primary_down)
       {
         sel_mode = SelectionMode::Remove;
       }
@@ -1393,7 +1691,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         sel_mode = SelectionMode::Add;
       }
-      else if (io.KeyCtrl)
+      else if (primary_down)
       {
         sel_mode = SelectionMode::Toggle;
       }
@@ -1432,11 +1730,65 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.active_target = SelectionTarget::Scene;
     }
 
+    // Polygon drawing mode: handle left-click to add vertices
+    if (session.polygon_draw.active && !session.polygon_draw.show_extrusion_dialog &&
+        viewport_result.active_viewport_hovered &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+      // Build a pick ray from the mouse position
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      const ImVec2 local(mouse.x - viewport_result.active_viewport_pos.x,
+                         mouse.y - viewport_result.active_viewport_pos.y);
+      const PickRay ray = BuildPickRay(session.viewport_panel(), viewport_result.active_viewport_size, local);
+
+      // Intersect with the drawing plane
+      float normal[3] = {0.0f, 0.0f, 0.0f};
+      switch (session.polygon_draw.plane)
+      {
+      case PolygonDrawPlane::XZ:
+        normal[1] = 1.0f;
+        break;
+      case PolygonDrawPlane::XY:
+        normal[2] = 1.0f;
+        break;
+      case PolygonDrawPlane::YZ:
+        normal[0] = 1.0f;
+        break;
+      }
+
+      Diligent::float3 hit_pos;
+      if (RayPlaneIntersect(ray, normal, session.polygon_draw.plane_offset, hit_pos))
+      {
+        // Snap to grid if enabled
+        float snap_step = 0.0f;
+        if (session.viewport_panel().snap_translate)
+        {
+          snap_step = session.viewport_panel().snap_translate_step;
+        }
+
+        float x = hit_pos.x;
+        float y = hit_pos.y;
+        float z = hit_pos.z;
+
+        if (snap_step > 0.0f)
+        {
+          x = grid::SnapValue(x, snap_step);
+          y = grid::SnapValue(y, snap_step);
+          z = grid::SnapValue(z, snap_step);
+        }
+
+        // Add the vertex
+        session.polygon_draw.vertices.push_back(x);
+        session.polygon_draw.vertices.push_back(y);
+        session.polygon_draw.vertices.push_back(z);
+      }
+    }
+
     // Marker controls (require viewport interaction data)
-    if (!io.WantCaptureKeyboard)
+    if (allow_shortcuts)
     {
       // M: Set marker at cursor position
-      if (ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      if (ImGui::IsKeyPressed(ImGuiKey_M, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
       {
         if (viewport_result.hovered_hit_valid)
         {
@@ -1445,15 +1797,15 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           session.viewport_panel().marker_position[2] = viewport_result.hovered_hit_pos.z;
         }
       }
-      // Ctrl+M: Reset marker to origin
-      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyShift && !io.KeyAlt)
+      // Primary+M: Reset marker to origin
+      if (primary_down && ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyShift && !io.KeyAlt)
       {
         session.viewport_panel().marker_position[0] = 0.0f;
         session.viewport_panel().marker_position[1] = 0.0f;
         session.viewport_panel().marker_position[2] = 0.0f;
       }
       // Shift+M: Open marker position dialog
-      if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyCtrl && !io.KeyAlt)
+      if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_M, false) && !primary_down && !io.KeyAlt)
       {
         session.marker_dialog.position[0] = session.viewport_panel().marker_position[0];
         session.marker_dialog.position[1] = session.viewport_panel().marker_position[1];
@@ -1515,6 +1867,35 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
 
+    // Draw polygon outline if in polygon draw mode
+    if (session.polygon_draw.active && !session.polygon_draw.vertices.empty())
+    {
+      const size_t vertex_count = session.polygon_draw.vertices.size() / 3;
+      if (vertex_count > 0 && viewport_result.active_viewport_size.x > 0 &&
+          viewport_result.active_viewport_size.y > 0)
+      {
+        const float aspect =
+            viewport_result.active_viewport_size.x / viewport_result.active_viewport_size.y;
+        const Diligent::float4x4 view_proj = ComputeViewportViewProj(session.viewport_panel(), aspect);
+
+        ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+        const ImU32 line_color = IM_COL32(0, 255, 128, 255);      // Green lines
+        const ImU32 vertex_color = IM_COL32(255, 200, 50, 255);   // Orange vertices
+        constexpr float thickness = 2.0f;
+
+        DrawPolygonOutline(
+            session.polygon_draw.vertices.data(),
+            vertex_count,
+            view_proj,
+            viewport_result.active_viewport_pos,
+            viewport_result.active_viewport_size,
+            draw_list,
+            line_color,
+            vertex_color,
+            thickness);
+      }
+    }
+
     // Draw status bar
     {
       StatusBarInfo status_info;
@@ -1541,6 +1922,27 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (!viewport_result.depth_cycle_status.empty())
       {
         status_info.depth_cycle_status = viewport_result.depth_cycle_status.c_str();
+      }
+      // Show polygon mode hint
+      if (session.polygon_draw.active)
+      {
+        static char polygon_hint_buf[64];
+        const size_t num_verts = session.polygon_draw.vertices.size() / 3;
+        if (session.polygon_draw.show_extrusion_dialog)
+        {
+          snprintf(polygon_hint_buf, sizeof(polygon_hint_buf), "POLYGON: Set extrusion height");
+        }
+        else if (num_verts < 3)
+        {
+          snprintf(polygon_hint_buf, sizeof(polygon_hint_buf),
+                   "POLYGON: Click to add vertices (%zu/3 min) | Esc=Cancel", num_verts);
+        }
+        else
+        {
+          snprintf(polygon_hint_buf, sizeof(polygon_hint_buf),
+                   "POLYGON: %zu vertices | Enter=Complete | Backspace=Undo | Esc=Cancel", num_verts);
+        }
+        status_info.hint = polygon_hint_buf;
       }
       DrawStatusBar(status_info);
     }

@@ -74,7 +74,7 @@ PrimitiveResult CreatePrimitiveBox(const BoxParams& params) {
 PrimitiveResult CreatePrimitiveCylinder(const CylinderParams& params) {
   PrimitiveResult result;
 
-  const int sides = std::clamp(params.sides, 3, 32);
+  const int sides = std::clamp(params.sides, 3, 64);
   const float cx = params.center[0];
   const float cy = params.center[1];
   const float cz = params.center[2];
@@ -143,39 +143,82 @@ PrimitiveResult CreatePrimitivePyramid(const PyramidParams& params) {
   const float cy = params.center[1];
   const float cz = params.center[2];
   const float half_height = params.height * 0.5f;
-  const float radius = params.radius;
+  const float base_radius = params.radius;
+  const float top_radius = std::max(0.0f, params.top_radius);
+  const bool is_frustum = top_radius > 0.0f;
 
-  // Generate base ring vertices
   const float angle_step = kTwoPi / static_cast<float>(sides);
 
   // Base ring vertices (indices 0 to sides-1)
   for (int i = 0; i < sides; ++i) {
     const float angle = static_cast<float>(i) * angle_step;
-    const float x = cx + radius * std::cos(angle);
-    const float z = cz + radius * std::sin(angle);
+    const float x = cx + base_radius * std::cos(angle);
+    const float z = cz + base_radius * std::sin(angle);
     AddVertex(result.vertices, x, cy - half_height, z);
   }
 
-  // Apex vertex (index sides)
-  AddVertex(result.vertices, cx, cy + half_height, cz);
-  const uint32_t apex = static_cast<uint32_t>(sides);
+  if (is_frustum) {
+    // Top ring vertices (indices sides to 2*sides-1)
+    for (int i = 0; i < sides; ++i) {
+      const float angle = static_cast<float>(i) * angle_step;
+      const float x = cx + top_radius * std::cos(angle);
+      const float z = cz + top_radius * std::sin(angle);
+      AddVertex(result.vertices, x, cy + half_height, z);
+    }
 
-  // Base center vertex for cap (index sides+1)
-  AddVertex(result.vertices, cx, cy - half_height, cz);
-  const uint32_t base_center = static_cast<uint32_t>(sides + 1);
+    // Base center vertex (index 2*sides)
+    AddVertex(result.vertices, cx, cy - half_height, cz);
+    const uint32_t base_center = static_cast<uint32_t>(2 * sides);
 
-  // Base cap triangles (fan from center)
-  for (int i = 0; i < sides; ++i) {
-    const uint32_t curr = static_cast<uint32_t>(i);
-    const uint32_t next = static_cast<uint32_t>((i + 1) % sides);
-    AddTriangle(result.indices, base_center, next, curr);  // CCW from below
-  }
+    // Top center vertex (index 2*sides+1)
+    AddVertex(result.vertices, cx, cy + half_height, cz);
+    const uint32_t top_center = static_cast<uint32_t>(2 * sides + 1);
 
-  // Side face triangles (to apex)
-  for (int i = 0; i < sides; ++i) {
-    const uint32_t curr = static_cast<uint32_t>(i);
-    const uint32_t next = static_cast<uint32_t>((i + 1) % sides);
-    AddTriangle(result.indices, curr, next, apex);
+    // Base cap triangles (fan from center)
+    for (int i = 0; i < sides; ++i) {
+      const uint32_t curr = static_cast<uint32_t>(i);
+      const uint32_t next = static_cast<uint32_t>((i + 1) % sides);
+      AddTriangle(result.indices, base_center, next, curr);  // CCW from below
+    }
+
+    // Top cap triangles (fan from center)
+    for (int i = 0; i < sides; ++i) {
+      const uint32_t curr = static_cast<uint32_t>(sides + i);
+      const uint32_t next = static_cast<uint32_t>(sides + (i + 1) % sides);
+      AddTriangle(result.indices, top_center, curr, next);  // CCW from above
+    }
+
+    // Side faces (quads as triangle pairs)
+    for (int i = 0; i < sides; ++i) {
+      const uint32_t bot_curr = static_cast<uint32_t>(i);
+      const uint32_t bot_next = static_cast<uint32_t>((i + 1) % sides);
+      const uint32_t top_curr = static_cast<uint32_t>(sides + i);
+      const uint32_t top_next = static_cast<uint32_t>(sides + (i + 1) % sides);
+      AddQuad(result.indices, bot_curr, bot_next, top_next, top_curr);
+    }
+  } else {
+    // Pointed pyramid (original behavior)
+    // Apex vertex (index sides)
+    AddVertex(result.vertices, cx, cy + half_height, cz);
+    const uint32_t apex = static_cast<uint32_t>(sides);
+
+    // Base center vertex for cap (index sides+1)
+    AddVertex(result.vertices, cx, cy - half_height, cz);
+    const uint32_t base_center = static_cast<uint32_t>(sides + 1);
+
+    // Base cap triangles (fan from center)
+    for (int i = 0; i < sides; ++i) {
+      const uint32_t curr = static_cast<uint32_t>(i);
+      const uint32_t next = static_cast<uint32_t>((i + 1) % sides);
+      AddTriangle(result.indices, base_center, next, curr);  // CCW from below
+    }
+
+    // Side face triangles (to apex)
+    for (int i = 0; i < sides; ++i) {
+      const uint32_t curr = static_cast<uint32_t>(i);
+      const uint32_t next = static_cast<uint32_t>((i + 1) % sides);
+      AddTriangle(result.indices, curr, next, apex);
+    }
   }
 
   result.success = true;
@@ -352,4 +395,179 @@ PrimitiveResult CreatePrimitivePlane(const PlaneParams& params) {
 
   result.success = true;
   return result;
+}
+
+bool IsPolygonConvex(const std::vector<float>& vertices_2d) {
+  const size_t num_verts = vertices_2d.size() / 2;
+  if (num_verts < 3) {
+    return true;  // Degenerate, consider convex
+  }
+
+  // Check that all cross products have the same sign
+  int sign = 0;
+  for (size_t i = 0; i < num_verts; ++i) {
+    const size_t j = (i + 1) % num_verts;
+    const size_t k = (i + 2) % num_verts;
+
+    const float ax = vertices_2d[j * 2 + 0] - vertices_2d[i * 2 + 0];
+    const float ay = vertices_2d[j * 2 + 1] - vertices_2d[i * 2 + 1];
+    const float bx = vertices_2d[k * 2 + 0] - vertices_2d[j * 2 + 0];
+    const float by = vertices_2d[k * 2 + 1] - vertices_2d[j * 2 + 1];
+
+    const float cross = ax * by - ay * bx;
+
+    if (std::abs(cross) > 1e-6f) {
+      const int curr_sign = (cross > 0.0f) ? 1 : -1;
+      if (sign == 0) {
+        sign = curr_sign;
+      } else if (sign != curr_sign) {
+        return false;  // Sign changed, not convex
+      }
+    }
+  }
+
+  return true;
+}
+
+PrimitiveResult ExtrudePolygon(const std::vector<float>& vertices_2d, float height, const float normal[3],
+                               const float tangent[3], const float bitangent[3], float plane_offset) {
+  PrimitiveResult result;
+
+  const size_t num_verts = vertices_2d.size() / 2;
+  if (num_verts < 3) {
+    return result;  // Need at least 3 vertices
+  }
+
+  const float nx = normal[0];
+  const float ny = normal[1];
+  const float nz = normal[2];
+  const float tx = tangent[0];
+  const float ty = tangent[1];
+  const float tz = tangent[2];
+  const float bx = bitangent[0];
+  const float by = bitangent[1];
+  const float bz = bitangent[2];
+
+  // Generate bottom face vertices (at plane_offset along normal)
+  for (size_t i = 0; i < num_verts; ++i) {
+    const float u = vertices_2d[i * 2 + 0];
+    const float v = vertices_2d[i * 2 + 1];
+
+    const float x = u * tx + v * bx + plane_offset * nx;
+    const float y = u * ty + v * by + plane_offset * ny;
+    const float z = u * tz + v * bz + plane_offset * nz;
+    AddVertex(result.vertices, x, y, z);
+  }
+
+  // Generate top face vertices (at plane_offset + height along normal)
+  const float top_offset = plane_offset + height;
+  for (size_t i = 0; i < num_verts; ++i) {
+    const float u = vertices_2d[i * 2 + 0];
+    const float v = vertices_2d[i * 2 + 1];
+
+    const float x = u * tx + v * bx + top_offset * nx;
+    const float y = u * ty + v * by + top_offset * ny;
+    const float z = u * tz + v * bz + top_offset * nz;
+    AddVertex(result.vertices, x, y, z);
+  }
+
+  // Add center vertices for fan triangulation
+  // Calculate centroid for bottom and top
+  float cx_bot = 0.0f, cy_bot = 0.0f, cz_bot = 0.0f;
+  float cx_top = 0.0f, cy_top = 0.0f, cz_top = 0.0f;
+  for (size_t i = 0; i < num_verts; ++i) {
+    cx_bot += result.vertices[i * 3 + 0];
+    cy_bot += result.vertices[i * 3 + 1];
+    cz_bot += result.vertices[i * 3 + 2];
+    cx_top += result.vertices[(num_verts + i) * 3 + 0];
+    cy_top += result.vertices[(num_verts + i) * 3 + 1];
+    cz_top += result.vertices[(num_verts + i) * 3 + 2];
+  }
+  const float inv_n = 1.0f / static_cast<float>(num_verts);
+  AddVertex(result.vertices, cx_bot * inv_n, cy_bot * inv_n, cz_bot * inv_n);
+  const uint32_t bot_center = static_cast<uint32_t>(2 * num_verts);
+  AddVertex(result.vertices, cx_top * inv_n, cy_top * inv_n, cz_top * inv_n);
+  const uint32_t top_center = static_cast<uint32_t>(2 * num_verts + 1);
+
+  // Bottom face triangles (fan from center, CCW when viewed from below)
+  // Winding order depends on extrusion direction
+  const bool positive_height = height >= 0.0f;
+  for (size_t i = 0; i < num_verts; ++i) {
+    const uint32_t curr = static_cast<uint32_t>(i);
+    const uint32_t next = static_cast<uint32_t>((i + 1) % num_verts);
+    if (positive_height) {
+      AddTriangle(result.indices, bot_center, next, curr);
+    } else {
+      AddTriangle(result.indices, bot_center, curr, next);
+    }
+  }
+
+  // Top face triangles (fan from center, CCW when viewed from above)
+  for (size_t i = 0; i < num_verts; ++i) {
+    const uint32_t curr = static_cast<uint32_t>(num_verts + i);
+    const uint32_t next = static_cast<uint32_t>(num_verts + (i + 1) % num_verts);
+    if (positive_height) {
+      AddTriangle(result.indices, top_center, curr, next);
+    } else {
+      AddTriangle(result.indices, top_center, next, curr);
+    }
+  }
+
+  // Side faces (quads as triangle pairs)
+  for (size_t i = 0; i < num_verts; ++i) {
+    const uint32_t bot_curr = static_cast<uint32_t>(i);
+    const uint32_t bot_next = static_cast<uint32_t>((i + 1) % num_verts);
+    const uint32_t top_curr = static_cast<uint32_t>(num_verts + i);
+    const uint32_t top_next = static_cast<uint32_t>(num_verts + (i + 1) % num_verts);
+    if (positive_height) {
+      AddQuad(result.indices, bot_curr, bot_next, top_next, top_curr);
+    } else {
+      AddQuad(result.indices, bot_next, bot_curr, top_curr, top_next);
+    }
+  }
+
+  result.success = true;
+  return result;
+}
+
+PrimitiveResult ExtrudePolygon(const std::vector<float>& vertices_2d, float height, const float normal[3],
+                               float plane_offset) {
+  // Compute tangent vectors from normal (similar to plane creation)
+  float nx = normal[0];
+  float ny = normal[1];
+  float nz = normal[2];
+
+  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 1e-6f) {
+    return PrimitiveResult{};
+  }
+  nx /= len;
+  ny /= len;
+  nz /= len;
+
+  // Find perpendicular vectors (tangent and bitangent)
+  float tx, ty, tz;
+  if (std::abs(ny) < 0.9f) {
+    tx = nz;
+    ty = 0.0f;
+    tz = -nx;
+  } else {
+    tx = ny;
+    ty = -nx;
+    tz = 0.0f;
+  }
+
+  const float tlen = std::sqrt(tx * tx + ty * ty + tz * tz);
+  tx /= tlen;
+  ty /= tlen;
+  tz /= tlen;
+
+  const float bx = ny * tz - nz * ty;
+  const float by = nz * tx - nx * tz;
+  const float bz = nx * ty - ny * tx;
+
+  const float tangent[3] = {tx, ty, tz};
+  const float bitangent[3] = {bx, by, bz};
+
+  return ExtrudePolygon(vertices_2d, height, normal, tangent, bitangent, plane_offset);
 }

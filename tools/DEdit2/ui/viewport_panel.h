@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DiligentCore/Common/interface/BasicMath.hpp"
+#include "imgui.h"
 
 #include "viewport/overlays.h"
 
@@ -33,6 +34,11 @@ struct ViewportPanelResult
 
   /// Depth cycle status (e.g., "2 of 5" when cycling through overlapping objects).
   std::string depth_cycle_status;
+
+  /// Active viewport position and size (for ray building).
+  ImVec2 active_viewport_pos{};
+  ImVec2 active_viewport_size{};
+  bool active_viewport_hovered = false;
 };
 
 class UndoStack;

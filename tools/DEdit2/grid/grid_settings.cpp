@@ -1,6 +1,7 @@
 #include "grid_settings.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace grid {
 
@@ -37,6 +38,13 @@ float ComputeAdaptiveSpacing(float base_spacing, float ortho_zoom, float viewpor
 
 float ClampSpacing(float spacing) {
   return std::clamp(spacing, kMinSpacing, kMaxSpacing);
+}
+
+float SnapValue(float value, float step) {
+  if (step <= 0.0f) {
+    return value;
+  }
+  return std::round(value / step) * step;
 }
 
 } // namespace grid

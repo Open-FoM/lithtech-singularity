@@ -37,6 +37,24 @@ struct PrimitiveDialogState {
   PlaneParams plane_params;
 };
 
+/// Drawing plane for manual polygon mode.
+enum class PolygonDrawPlane {
+  XZ,  ///< Top/bottom view (horizontal plane)
+  XY,  ///< Front/back view (vertical plane facing Z)
+  YZ,  ///< Left/right view (vertical plane facing X)
+};
+
+/// State for manual polygon drawing mode.
+struct PolygonDrawState {
+  bool active = false;                  ///< Whether polygon drawing mode is active
+  std::vector<float> vertices;          ///< Placed vertices (XYZ triplets)
+  PolygonDrawPlane plane = PolygonDrawPlane::XZ;  ///< Drawing plane
+  float plane_offset = 0.0f;            ///< Offset along plane normal
+  float extrusion_height = 64.0f;       ///< Height for extrusion
+  bool show_extrusion_dialog = false;   ///< Show dialog to confirm extrusion
+  bool is_convex = true;                ///< Convexity check result
+};
+
 /// Action that triggered the save prompt dialog.
 enum class SavePromptTrigger {
   None,
@@ -133,4 +151,7 @@ struct EditorSession
 
   /// Marker position dialog state.
   MarkerDialogState marker_dialog;
+
+  /// Manual polygon drawing mode state.
+  PolygonDrawState polygon_draw;
 };

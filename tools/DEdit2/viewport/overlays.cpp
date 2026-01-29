@@ -9,6 +9,8 @@
 #include "ltvector.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <vector>
 
 LTRGBColor MakeOverlayColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
@@ -275,5 +277,78 @@ void DrawNodeOverlay(
   if (TryGetNodeBounds(props, bounds_min, bounds_max))
   {
     DrawAABBOverlay(bounds_min, bounds_max, view_proj, viewport_pos, viewport_size, draw_list, color, thickness);
+  }
+}
+
+void DrawPolygonOutline(
+  const float* vertices,
+  size_t vertex_count,
+  const Diligent::float4x4& view_proj,
+  const ImVec2& viewport_pos,
+  const ImVec2& viewport_size,
+  ImDrawList* draw_list,
+  unsigned int line_color,
+  unsigned int vertex_color,
+  float thickness)
+{
+  if (vertex_count == 0 || vertices == nullptr || draw_list == nullptr)
+  {
+    return;
+  }
+
+  // Project all vertices to screen space
+  std::vector<ImVec2> screen_verts(vertex_count);
+  std::vector<bool> visible(vertex_count);
+
+  for (size_t i = 0; i < vertex_count; ++i)
+  {
+    const float pos[3] = {
+      vertices[i * 3 + 0],
+      vertices[i * 3 + 1],
+      vertices[i * 3 + 2]};
+    visible[i] = ProjectWorldToScreen(view_proj, pos, viewport_size, screen_verts[i]);
+    if (visible[i])
+    {
+      screen_verts[i].x += viewport_pos.x;
+      screen_verts[i].y += viewport_pos.y;
+    }
+  }
+
+  // Draw edges between consecutive vertices
+  for (size_t i = 0; i < vertex_count; ++i)
+  {
+    const size_t next = (i + 1) % vertex_count;
+    if (visible[i] && visible[next])
+    {
+      // Don't close the polygon until complete (3+ vertices and Enter pressed)
+      // For now, draw all edges including the closing edge when 3+ verts
+      if (next == 0 && vertex_count < 3)
+      {
+        continue;  // Don't close if less than 3 vertices
+      }
+      if (next == 0)
+      {
+        // Draw closing edge with dashed style (just dimmer for now)
+        draw_list->AddLine(screen_verts[i], screen_verts[next], (line_color & 0x00FFFFFF) | 0x80000000, thickness);
+      }
+      else
+      {
+        draw_list->AddLine(screen_verts[i], screen_verts[next], line_color, thickness);
+      }
+    }
+  }
+
+  // Draw vertex markers
+  constexpr float vertex_radius = 4.0f;
+  for (size_t i = 0; i < vertex_count; ++i)
+  {
+    if (visible[i])
+    {
+      draw_list->AddCircleFilled(screen_verts[i], vertex_radius, vertex_color);
+      // Draw index number next to vertex
+      char label[8];
+      snprintf(label, sizeof(label), "%zu", i + 1);
+      draw_list->AddText(ImVec2(screen_verts[i].x + 6.0f, screen_verts[i].y - 6.0f), vertex_color, label);
+    }
   }
 }

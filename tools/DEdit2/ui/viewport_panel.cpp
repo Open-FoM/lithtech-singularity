@@ -774,6 +774,9 @@ ViewportPanelResult DrawViewportPanel(
           result.marquee_additive = interaction.marquee_additive;
           result.marquee_subtractive = interaction.marquee_subtractive;
           result.depth_cycle_status = std::move(interaction.depth_cycle_status);
+          result.active_viewport_pos = child_pos;
+          result.active_viewport_size = child_avail;
+          result.active_viewport_hovered = hovered;
         }
         else
         {

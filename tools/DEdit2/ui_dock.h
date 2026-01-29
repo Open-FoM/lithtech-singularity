@@ -44,6 +44,7 @@ struct MainMenuActions
 	bool undo = false;
 	bool redo = false;
 	PrimitiveType create_primitive = PrimitiveType::None;
+	bool enter_polygon_mode = false;
 	bool select_all = false;
 	bool select_none = false;
 	bool select_inverse = false;

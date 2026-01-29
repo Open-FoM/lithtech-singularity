@@ -509,3 +509,33 @@ bool RaycastNode(const NodeProperties& props, const PickRay& ray, float& out_t)
 	}
 	return false;
 }
+
+bool RayPlaneIntersect(const PickRay& ray, const float plane_normal[3], float plane_offset,
+                       Diligent::float3& out_pos)
+{
+	// Plane equation: dot(P, N) = D where D = plane_offset
+	// Ray: P = origin + t * dir
+	// Substitute: dot(origin + t * dir, N) = D
+	// Solve: t = (D - dot(origin, N)) / dot(dir, N)
+
+	const Diligent::float3 n(plane_normal[0], plane_normal[1], plane_normal[2]);
+	const float denom = Dot(ray.dir, n);
+
+	// Check if ray is parallel to plane
+	if (std::abs(denom) < 1e-6f)
+	{
+		return false;
+	}
+
+	const float numer = plane_offset - Dot(ray.origin, n);
+	const float t = numer / denom;
+
+	// Only intersect if t >= 0 (in front of ray origin)
+	if (t < 0.0f)
+	{
+		return false;
+	}
+
+	out_pos = Add(ray.origin, Scale(ray.dir, t));
+	return true;
+}

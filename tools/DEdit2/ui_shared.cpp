@@ -263,6 +263,21 @@ std::string BuildNodePath(const std::vector<TreeNode>& nodes, int root_id, int t
 	return path;
 }
 
+std::vector<SceneRowIcon> BuildSceneRowIcons(const TreeNode& node, const NodeProperties& props)
+{
+	std::vector<SceneRowIcon> icons;
+	if (node.is_folder)
+	{
+		return icons;
+	}
+	icons.push_back(SceneRowIcon::Visibility);
+	if (props.frozen)
+	{
+		icons.push_back(SceneRowIcon::Freeze);
+	}
+	return icons;
+}
+
 void DrawTreeNodes(
 	std::vector<TreeNode>& nodes,
 	int node_id,
@@ -406,23 +421,27 @@ void DrawTreeNodes(
 	if (is_scene && props != nullptr && node_id >= 0 && static_cast<size_t>(node_id) < props->size())
 	{
 		const NodeProperties& node_props = (*props)[node_id];
-		if (!node.is_folder)
+		const std::vector<SceneRowIcon> icons = BuildSceneRowIcons(node, node_props);
+		for (SceneRowIcon icon : icons)
 		{
 			ImGui::SameLine();
-			// Eye icon for visibility (gray = hidden)
-			if (node_props.visible)
+			switch (icon)
 			{
-				ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.6f), "[V]");
-			}
-			else
-			{
-				ImGui::TextColored(ImVec4(0.5f, 0.3f, 0.3f, 0.8f), "[H]");
-			}
-			ImGui::SameLine();
-			// Lock icon for freeze (red = frozen)
-			if (node_props.frozen)
-			{
+			case SceneRowIcon::Visibility:
+				// Eye icon for visibility (gray = hidden)
+				if (node_props.visible)
+				{
+					ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.6f), "[V]");
+				}
+				else
+				{
+					ImGui::TextColored(ImVec4(0.5f, 0.3f, 0.3f, 0.8f), "[H]");
+				}
+				break;
+			case SceneRowIcon::Freeze:
+				// Lock icon for freeze (red = frozen)
 				ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.1f, 1.0f), "[F]");
+				break;
 			}
 		}
 	}

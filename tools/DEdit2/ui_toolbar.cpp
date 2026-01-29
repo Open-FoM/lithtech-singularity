@@ -7,6 +7,15 @@
 
 namespace {
 
+const char* PrimaryShortcutLabel()
+{
+#if defined(__APPLE__)
+  return "Cmd";
+#else
+  return "Ctrl";
+#endif
+}
+
 /// Draw a simple tool icon for the toolbar.
 void DrawToolbarIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, EditorTool tool, bool selected, bool hovered)
 {
@@ -361,7 +370,7 @@ ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, 
       if (hovered)
       {
         ImGui::BeginTooltip();
-        ImGui::Text("Undo (Cmd+Z)");
+        ImGui::Text("Undo (%s+Z)", PrimaryShortcutLabel());
         ImGui::EndTooltip();
       }
 
@@ -384,7 +393,7 @@ ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, 
       if (hovered)
       {
         ImGui::BeginTooltip();
-        ImGui::Text("Redo (Cmd+Shift+Z)");
+        ImGui::Text("Redo (%s+Shift+Z)", PrimaryShortcutLabel());
         ImGui::EndTooltip();
       }
 

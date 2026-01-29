@@ -52,4 +52,10 @@ constexpr float kDefaultSpacing = 64.0f;
 /// @return Clamped spacing within [kMinSpacing, kMaxSpacing].
 [[nodiscard]] float ClampSpacing(float spacing);
 
+/// Snap a value to the nearest grid step.
+/// @param value The value to snap.
+/// @param step The grid step size. If <= 0, returns value unchanged.
+/// @return The snapped value (nearest multiple of step).
+[[nodiscard]] float SnapValue(float value, float step);
+
 } // namespace grid

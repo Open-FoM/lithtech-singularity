@@ -2,6 +2,19 @@
 
 #include "imgui_internal.h"
 
+namespace {
+
+const char* PrimaryShortcutLabel()
+{
+#if defined(__APPLE__)
+	return "Cmd";
+#else
+	return "Ctrl";
+#endif
+}
+
+}
+
 void DrawMainMenuBar(
 	bool& request_reset_layout,
 	MainMenuActions& actions,
@@ -20,13 +33,18 @@ void DrawMainMenuBar(
 		return;
 	}
 
+	const char* primary_label = PrimaryShortcutLabel();
+	auto primary = [primary_label](const char* key) { return std::string(primary_label) + "+" + key; };
+	auto primary_shift = [primary_label](const char* key) { return std::string(primary_label) + "+Shift+" + key; };
+	auto primary_numpad = [primary_label](const char* key) { return std::string(primary_label) + "+Numpad " + key; };
+
 	if (ImGui::BeginMenu("File"))
 	{
-		if (ImGui::MenuItem("New World", "Cmd+N"))
+		if (ImGui::MenuItem("New World", primary("N").c_str()))
 		{
 			actions.new_world = true;
 		}
-		if (ImGui::MenuItem("Open World...", "Cmd+O"))
+		if (ImGui::MenuItem("Open World...", primary("O").c_str()))
 		{
 			actions.open_world = true;
 		}
@@ -55,11 +73,11 @@ void DrawMainMenuBar(
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();
-		if (ImGui::MenuItem("Save", "Cmd+S", false, has_world))
+		if (ImGui::MenuItem("Save", primary("S").c_str(), false, has_world))
 		{
 			actions.save_world = true;
 		}
-		if (ImGui::MenuItem("Save As...", "Cmd+Shift+S", false, has_world))
+		if (ImGui::MenuItem("Save As...", primary_shift("S").c_str(), false, has_world))
 		{
 			actions.save_world_as = true;
 		}
@@ -70,30 +88,30 @@ void DrawMainMenuBar(
 
 	if (ImGui::BeginMenu("Edit"))
 	{
-		if (ImGui::MenuItem("Undo", "Cmd+Z", false, can_undo))
+		if (ImGui::MenuItem("Undo", primary("Z").c_str(), false, can_undo))
 		{
 			actions.undo = true;
 		}
-		if (ImGui::MenuItem("Redo", "Cmd+Shift+Z", false, can_redo))
+		if (ImGui::MenuItem("Redo", primary_shift("Z").c_str(), false, can_redo))
 		{
 			actions.redo = true;
 		}
 		ImGui::Separator();
 		// Clipboard operations not yet implemented - keep disabled
-		ImGui::MenuItem("Cut", "Cmd+X", false, false);
-		ImGui::MenuItem("Copy", "Cmd+C", false, false);
-		ImGui::MenuItem("Paste", "Cmd+V", false, false);
+		ImGui::MenuItem("Cut", primary("X").c_str(), false, false);
+		ImGui::MenuItem("Copy", primary("C").c_str(), false, false);
+		ImGui::MenuItem("Paste", primary("V").c_str(), false, false);
 		ImGui::MenuItem("Delete", "Del", false, false);
 		ImGui::Separator();
-		if (ImGui::MenuItem("Select All", "Cmd+A"))
+		if (ImGui::MenuItem("Select All", primary("A").c_str()))
 		{
 			actions.select_all = true;
 		}
-		if (ImGui::MenuItem("Select None", "Cmd+D"))
+		if (ImGui::MenuItem("Select None", primary("D").c_str()))
 		{
 			actions.select_none = true;
 		}
-		if (ImGui::MenuItem("Select Inverse", "Cmd+I"))
+		if (ImGui::MenuItem("Select Inverse", primary("I").c_str()))
 		{
 			actions.select_inverse = true;
 		}
@@ -151,7 +169,7 @@ void DrawMainMenuBar(
 		{
 			actions.hide_selected = true;
 		}
-		if (ImGui::MenuItem("Unhide All", "Ctrl+H"))
+		if (ImGui::MenuItem("Unhide All", primary("H").c_str()))
 		{
 			actions.unhide_all = true;
 		}
@@ -160,28 +178,28 @@ void DrawMainMenuBar(
 		{
 			actions.freeze_selected = true;
 		}
-		if (ImGui::MenuItem("Unfreeze All", "Ctrl+F"))
+		if (ImGui::MenuItem("Unfreeze All", primary("F").c_str()))
 		{
 			actions.unfreeze_all = true;
 		}
 		ImGui::Separator();
 		if (ImGui::BeginMenu("Mirror"))
 		{
-			if (ImGui::MenuItem("Mirror X", "Ctrl+Shift+X"))
+			if (ImGui::MenuItem("Mirror X", primary_shift("X").c_str()))
 			{
 				actions.mirror_x = true;
 			}
-			if (ImGui::MenuItem("Mirror Y", "Ctrl+Shift+Y"))
+			if (ImGui::MenuItem("Mirror Y", primary_shift("Y").c_str()))
 			{
 				actions.mirror_y = true;
 			}
-			if (ImGui::MenuItem("Mirror Z", "Ctrl+Shift+Z"))
+			if (ImGui::MenuItem("Mirror Z", primary_shift("Z").c_str()))
 			{
 				actions.mirror_z = true;
 			}
 			ImGui::EndMenu();
 		}
-		if (ImGui::MenuItem("Rotate Selection...", "Ctrl+Shift+R"))
+		if (ImGui::MenuItem("Rotate Selection...", primary_shift("R").c_str()))
 		{
 			actions.rotate_selection = true;
 		}
@@ -198,29 +216,34 @@ void DrawMainMenuBar(
 	{
 		if (ImGui::BeginMenu("Create Primitive"))
 		{
-			if (ImGui::MenuItem("Box...", "Ctrl+Shift+B"))
+			if (ImGui::MenuItem("Box...", primary_shift("B").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Box;
 			}
-			if (ImGui::MenuItem("Cylinder...", "Ctrl+Shift+C"))
+			if (ImGui::MenuItem("Cylinder...", primary_shift("C").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Cylinder;
 			}
-			if (ImGui::MenuItem("Pyramid...", "Ctrl+Shift+Y"))
+			if (ImGui::MenuItem("Pyramid...", primary_shift("Y").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Pyramid;
 			}
-			if (ImGui::MenuItem("Sphere...", "Ctrl+Shift+S"))
+			if (ImGui::MenuItem("Sphere...", primary_shift("S").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Sphere;
 			}
-			if (ImGui::MenuItem("Dome...", "Ctrl+Shift+D"))
+			if (ImGui::MenuItem("Dome...", primary_shift("D").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Dome;
 			}
-			if (ImGui::MenuItem("Plane...", "Ctrl+Shift+P"))
+			if (ImGui::MenuItem("Plane...", primary_shift("P").c_str()))
 			{
 				actions.create_primitive = PrimitiveType::Plane;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Draw Polygon...", "P"))
+			{
+				actions.enter_polygon_mode = true;
 			}
 			ImGui::EndMenu();
 		}
@@ -240,7 +263,7 @@ void DrawMainMenuBar(
 			{
 				actions.view_mode = ViewModeAction::Top;
 			}
-			if (ImGui::MenuItem("Bottom", "Ctrl+Numpad 7"))
+			if (ImGui::MenuItem("Bottom", primary_numpad("7").c_str()))
 			{
 				actions.view_mode = ViewModeAction::Bottom;
 			}
@@ -249,7 +272,7 @@ void DrawMainMenuBar(
 			{
 				actions.view_mode = ViewModeAction::Front;
 			}
-			if (ImGui::MenuItem("Back", "Ctrl+Numpad 1"))
+			if (ImGui::MenuItem("Back", primary_numpad("1").c_str()))
 			{
 				actions.view_mode = ViewModeAction::Back;
 			}
@@ -258,7 +281,7 @@ void DrawMainMenuBar(
 			{
 				actions.view_mode = ViewModeAction::Right;
 			}
-			if (ImGui::MenuItem("Left", "Ctrl+Numpad 3"))
+			if (ImGui::MenuItem("Left", primary_numpad("3").c_str()))
 			{
 				actions.view_mode = ViewModeAction::Left;
 			}
@@ -286,7 +309,7 @@ void DrawMainMenuBar(
 			{
 				actions.layout_change = ViewportLayout::ThreeTop;
 			}
-			if (ImGui::MenuItem("Quad (2x2)", "Ctrl+Shift+4"))
+			if (ImGui::MenuItem("Quad (2x2)", primary_shift("4").c_str()))
 			{
 				actions.layout_change = ViewportLayout::Quad;
 			}
@@ -303,7 +326,7 @@ void DrawMainMenuBar(
 			{
 				actions.open_marker_dialog = true;
 			}
-			if (ImGui::MenuItem("Reset Marker to Origin", "Ctrl+M"))
+			if (ImGui::MenuItem("Reset Marker to Origin", primary("M").c_str()))
 			{
 				actions.reset_marker = true;
 			}

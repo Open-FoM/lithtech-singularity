@@ -6,6 +6,7 @@
 #include "imgui.h"
 
 #include <string>
+#include <vector>
 
 using TreeNodeFilter = bool (*)(
 	int node_id,
@@ -26,6 +27,12 @@ enum class ExpandMode
 	CollapseAll
 };
 
+enum class SceneRowIcon
+{
+	Visibility,
+	Freeze
+};
+
 bool IsNameEmptyOrWhitespace(const std::string& name);
 bool HasDuplicateSiblingName(
 	const std::vector<TreeNode>& nodes,
@@ -33,6 +40,7 @@ bool HasDuplicateSiblingName(
 	int node_id,
 	const std::string& name);
 std::string BuildNodePath(const std::vector<TreeNode>& nodes, int root_id, int target_id);
+[[nodiscard]] std::vector<SceneRowIcon> BuildSceneRowIcons(const TreeNode& node, const NodeProperties& props);
 
 void DrawTreeNodes(
 	std::vector<TreeNode>& nodes,
