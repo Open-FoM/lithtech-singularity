@@ -21,67 +21,6 @@
 #include <algorithm>
 #include <cmath>
 
-bool IsLightIconOccluded(
-  const ViewportPanelState& viewport_state,
-  const ScenePanelState& scene_state,
-  const std::vector<TreeNode>& nodes,
-  const std::vector<NodeProperties>& props,
-  int light_id,
-  const Diligent::float3& cam_pos,
-  const float light_pos[3])
-{
-  const Diligent::float3 light_world(light_pos[0], light_pos[1], light_pos[2]);
-  const Diligent::float3 to_light = Diligent::float3(
-    light_world.x - cam_pos.x,
-    light_world.y - cam_pos.y,
-    light_world.z - cam_pos.z);
-  const float dist_sq = to_light.x * to_light.x + to_light.y * to_light.y + to_light.z * to_light.z;
-  if (dist_sq <= 1.0e-4f)
-  {
-    return false;
-  }
-  const float dist = std::sqrt(dist_sq);
-  const float inv_dist = 1.0f / dist;
-  const Diligent::float3 dir(to_light.x * inv_dist, to_light.y * inv_dist, to_light.z * inv_dist);
-  const PickRay ray{cam_pos, dir};
-  const float occlusion_epsilon = 0.1f;
-  const size_t count = std::min(nodes.size(), props.size());
-
-  for (size_t i = 0; i < count; ++i)
-  {
-    if (static_cast<int>(i) == light_id)
-    {
-      continue;
-    }
-    const TreeNode& node = nodes[i];
-    const NodeProperties& node_props = props[i];
-    if (node.deleted || node.is_folder || !node_props.visible)
-    {
-      continue;
-    }
-    if (IsLightNode(node_props))
-    {
-      continue;
-    }
-    if (!SceneNodePassesFilters(scene_state, static_cast<int>(i), nodes, props))
-    {
-      continue;
-    }
-    if (!NodePickableByRender(viewport_state, node_props))
-    {
-      continue;
-    }
-
-    float hit_t = 0.0f;
-    if (RaycastNode(node_props, ray, hit_t) && hit_t > 0.0f && hit_t < dist - occlusion_epsilon)
-    {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 void BuildViewportDynamicLights(
   const ViewportPanelState& viewport_state,
   const ScenePanelState& scene_state,
@@ -296,14 +235,6 @@ void DrawLightIcons(
     // Project to screen
     ImVec2 screen_pos;
     if (!ProjectWorldToScreen(view_proj, pick_pos, viewport_size, screen_pos))
-    {
-      continue;
-    }
-
-    // Check occlusion if enabled
-    if (viewport_state.light_icon_occlusion &&
-      IsLightIconOccluded(viewport_state, scene_state, nodes, props,
-        static_cast<int>(i), cam_pos, pick_pos))
     {
       continue;
     }

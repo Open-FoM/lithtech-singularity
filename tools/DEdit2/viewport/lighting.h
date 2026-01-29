@@ -13,15 +13,6 @@ struct ScenePanelState;
 struct TreeNode;
 struct ViewportPanelState;
 
-bool IsLightIconOccluded(
-  const ViewportPanelState& viewport_state,
-  const ScenePanelState& scene_state,
-  const std::vector<TreeNode>& nodes,
-  const std::vector<NodeProperties>& props,
-  int light_id,
-  const Diligent::float3& cam_pos,
-  const float light_pos[3]);
-
 void BuildViewportDynamicLights(
   const ViewportPanelState& viewport_state,
   const ScenePanelState& scene_state,

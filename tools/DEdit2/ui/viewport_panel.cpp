@@ -337,15 +337,6 @@ ViewportPanelResult DrawViewportPanel(
     ImGui::TextUnformatted("Lightbulbs");
     ImGui::Separator();
     ImGui::Checkbox("Show Lightbulb Icons", &viewport_panel.show_light_icons);
-    if (!viewport_panel.show_light_icons)
-    {
-      ImGui::BeginDisabled();
-    }
-    ImGui::Checkbox("Occlude Behind Geometry", &viewport_panel.light_icon_occlusion);
-    if (!viewport_panel.show_light_icons)
-    {
-      ImGui::EndDisabled();
-    }
     ImGui::EndPopup();
   }
   if (ImGui::BeginPopup("RenderSettings"))
