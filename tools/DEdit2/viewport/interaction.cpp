@@ -8,6 +8,7 @@
 #include "ui_viewport.h"
 #include "undo_stack.h"
 #include "viewport/scene_filters.h"
+#include "viewport/lighting.h"
 #include "viewport_gizmo.h"
 #include "viewport_picking.h"
 #include "viewport_render.h"
@@ -285,6 +286,27 @@ ViewportInteractionResult UpdateViewportInteraction(
           ViewportOverlayItem{&props, MakeOverlayColor(255, 255, 255, 180)};
       }
     }
+  }
+
+  // Draw light icons using the child window's draw list (after hover detection so we can highlight)
+  if (viewport_panel.show_light_icons && !scene_nodes.empty() && !scene_props.empty())
+  {
+    const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
+    const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
+
+    Diligent::float3 cam_pos;
+    Diligent::float3 cam_forward;
+    Diligent::float3 cam_right;
+    Diligent::float3 cam_up;
+    ComputeCameraBasis(viewport_panel, cam_pos, cam_forward, cam_right, cam_up);
+    (void)cam_forward;
+    (void)cam_right;
+    (void)cam_up;
+
+    DrawLightIcons(
+      viewport_panel, scene_panel, scene_nodes, scene_props,
+      view_proj, cam_pos, viewport_pos, viewport_size,
+      result.hovered_scene_id, ImGui::GetWindowDrawList());
   }
 
   return result;

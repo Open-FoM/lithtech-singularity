@@ -996,94 +996,12 @@ ViewportPanelResult DrawViewportPanel(
     }
   }
 
-  // Draw light icons and overlays for the active viewport (if rendered)
+  // Draw tooltips and overlays for the active viewport (if rendered)
+  // Note: Light icons are now drawn in UpdateViewportInteraction using the child window's draw list
   if (drew_image && rendered_slot >= 0)
   {
     const ImVec2 viewport_pos = rendered_pos;
     const ImVec2 avail = rendered_size;
-
-    // Draw light icons and overlays
-    const float aspect = avail.y > 0.0f ? (avail.x / avail.y) : 1.0f;
-    const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
-    Diligent::float3 cam_pos;
-    Diligent::float3 cam_forward;
-    Diligent::float3 cam_right;
-    Diligent::float3 cam_up;
-    ComputeCameraBasis(viewport_panel, cam_pos, cam_forward, cam_right, cam_up);
-    (void)cam_forward;
-    (void)cam_right;
-    (void)cam_up;
-    const size_t count = std::min(scene_nodes.size(), scene_props.size());
-    const int selected_id = scene_panel.primary_selection;
-
-    if (viewport_panel.show_light_icons)
-    {
-      ImDrawList* draw_list = ImGui::GetWindowDrawList();
-      for (size_t i = 0; i < count; ++i)
-      {
-        const TreeNode& node = scene_nodes[i];
-        const NodeProperties& props = scene_props[i];
-        if (node.deleted || node.is_folder || !props.visible)
-        {
-          continue;
-        }
-        if (!IsLightNode(props))
-        {
-          continue;
-        }
-        if (!SceneNodePassesFilters(
-          scene_panel,
-          static_cast<int>(i),
-          scene_nodes,
-          scene_props))
-        {
-          continue;
-        }
-        if (!NodePickableByRender(viewport_panel, props))
-        {
-          continue;
-        }
-
-        float pick_pos[3] = {props.position[0], props.position[1], props.position[2]};
-        TryGetNodePickPosition(props, pick_pos);
-        ImVec2 screen_pos;
-        if (!ProjectWorldToScreen(view_proj, pick_pos, avail, screen_pos))
-        {
-          continue;
-        }
-        if (viewport_panel.light_icon_occlusion &&
-          IsLightIconOccluded(
-            viewport_panel,
-            scene_panel,
-            scene_nodes,
-            scene_props,
-            static_cast<int>(i),
-            cam_pos,
-            pick_pos))
-        {
-          continue;
-        }
-
-        const ImVec2 center(
-          viewport_pos.x + screen_pos.x,
-          viewport_pos.y + screen_pos.y);
-        const bool is_selected = static_cast<int>(i) == selected_id;
-        const bool is_hovered = static_cast<int>(i) == result.hovered_scene_id;
-        const float radius = is_selected ? 7.0f : (is_hovered ? 6.0f : 5.0f);
-        const ImU32 bulb_color = is_selected ? IM_COL32(255, 210, 120, 240)
-          : (is_hovered ? IM_COL32(255, 235, 160, 230) : IM_COL32(220, 200, 120, 210));
-        const ImU32 base_color = is_selected ? IM_COL32(120, 110, 90, 230)
-          : IM_COL32(90, 85, 70, 200);
-
-        draw_list->AddCircleFilled(center, radius, bulb_color, 20);
-        draw_list->AddCircle(center, radius, IM_COL32(30, 30, 30, 160), 20, 1.0f);
-        draw_list->AddRectFilled(
-          ImVec2(center.x - radius * 0.6f, center.y + radius * 0.4f),
-          ImVec2(center.x + radius * 0.6f, center.y + radius * 1.2f),
-          base_color,
-          2.0f);
-      }
-    }
 
     if (result.hovered_scene_id >= 0)
     {
