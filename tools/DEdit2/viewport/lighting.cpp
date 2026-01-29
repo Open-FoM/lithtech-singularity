@@ -72,8 +72,9 @@ bool IsLightIconOccluded(
       continue;
     }
 
+    // Only use brush geometry for occlusion (not AABB approximations which are too loose)
     float hit_t = 0.0f;
-    if (RaycastNode(node_props, ray, hit_t) && hit_t > 0.0f && hit_t < dist - occlusion_epsilon)
+    if (RaycastBrush(node_props, ray, hit_t) && hit_t > occlusion_epsilon && hit_t < dist - occlusion_epsilon)
     {
       return true;
     }
