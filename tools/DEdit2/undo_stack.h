@@ -16,7 +16,16 @@ enum class UndoActionType
 	CreateNode,
 	DeleteNode,
 	RenameNode,
-	MoveNode
+	MoveNode,
+	ChangeVisibility,
+	ChangeFrozen
+};
+
+/// Stores the previous visibility/frozen state for a single node.
+struct NodeStateChange
+{
+	int node_id = -1;
+	bool previous_value = false;
 };
 
 struct UndoAction
@@ -29,6 +38,9 @@ struct UndoAction
 	std::string after_name;
 	int old_parent = -1;
 	int new_parent = -1;
+
+	/// For ChangeVisibility/ChangeFrozen: batch of affected nodes and their previous values.
+	std::vector<NodeStateChange> state_changes;
 };
 
 class UndoStack
@@ -46,12 +58,30 @@ public:
 	void PushRename(UndoTarget target, int node_id, std::string before, std::string after);
 	void PushMove(UndoTarget target, int node_id, int old_parent, int new_parent);
 
+	/// Push a batch visibility change (visible flag).
+	/// @param target Which tree the nodes belong to.
+	/// @param changes Vector of node IDs and their previous visible values.
+	void PushVisibility(UndoTarget target, std::vector<NodeStateChange> changes);
+
+	/// Push a batch frozen change.
+	/// @param target Which tree the nodes belong to.
+	/// @param changes Vector of node IDs and their previous frozen values.
+	void PushFrozen(UndoTarget target, std::vector<NodeStateChange> changes);
+
+	void Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
+	          std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props);
+	void Redo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
+	          std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props);
+
+	/// Legacy overloads for backward compatibility (no-op for visibility/frozen actions).
 	void Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes);
 	void Redo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes);
 
 private:
 	void Push(UndoAction action);
-	void Apply(const UndoAction& action, bool undo, std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes);
+	void Apply(const UndoAction& action, bool undo,
+	           std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
+	           std::vector<NodeProperties>* project_props, std::vector<NodeProperties>* scene_props);
 	static std::vector<TreeNode>* ResolveNodes(
 		UndoTarget target,
 		std::vector<TreeNode>& project_nodes,

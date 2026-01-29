@@ -171,3 +171,12 @@ void ToggleOrthoPerspective(ViewportPanelState& state);
 
 /// Returns display name for view mode.
 [[nodiscard]] const char* ViewModeName(ViewportPanelState::ViewMode mode);
+
+/// Focus the viewport on a specific world position.
+/// Adjusts orbit target (perspective) or ortho_center (orthographic) and zoom.
+/// @param state The viewport state to modify.
+/// @param position The world position to focus on (3 floats: x, y, z).
+/// @param bounds_min Optional minimum corner of bounding box for auto-zoom.
+/// @param bounds_max Optional maximum corner of bounding box for auto-zoom.
+void FocusViewportOn(ViewportPanelState& state, const float position[3],
+                     const float* bounds_min = nullptr, const float* bounds_max = nullptr);

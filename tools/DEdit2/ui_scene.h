@@ -88,6 +88,28 @@ void SelectInverse(
   const std::vector<TreeNode>& nodes,
   const std::vector<NodeProperties>& props);
 
+/// Select all visible, non-frozen nodes of a specific type.
+/// @param type_name The type name to match (e.g., "Brush", "Light", "Object").
+void SelectByType(
+  ScenePanelState& state,
+  const std::vector<TreeNode>& nodes,
+  const std::vector<NodeProperties>& props,
+  std::string_view type_name);
+
+/// Select all visible, non-frozen nodes of a specific class.
+/// @param class_name The class name to match (e.g., "PointLight", "Door").
+void SelectByClass(
+  ScenePanelState& state,
+  const std::vector<TreeNode>& nodes,
+  const std::vector<NodeProperties>& props,
+  std::string_view class_name);
+
+/// Collect all unique class names from the scene nodes.
+/// @return A sorted vector of unique class names found in the scene.
+[[nodiscard]] std::vector<std::string> CollectSceneClasses(
+  const std::vector<TreeNode>& nodes,
+  const std::vector<NodeProperties>& props);
+
 /// Compute center position of all selected nodes.
 /// Returns (0,0,0) if no nodes are selected.
 [[nodiscard]] std::array<float, 3> ComputeSelectionCenter(
@@ -133,5 +155,51 @@ void UnfreezeAll(std::vector<NodeProperties>& props);
 /// Returns true if the node can be picked/selected (not hidden or frozen).
 [[nodiscard]] bool IsNodePickable(
   const NodeProperties& props);
+
+/// @}
+
+/// Visibility/Freeze commands with undo support.
+/// @{
+
+/// Hide all currently selected nodes with undo support.
+void HideSelectedWithUndo(
+  const ScenePanelState& state,
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Unhide all nodes with undo support.
+void UnhideAllWithUndo(
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Hide all nodes except those currently selected, with undo support.
+void HideUnselectedWithUndo(
+  const ScenePanelState& state,
+  const std::vector<TreeNode>& nodes,
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Unhide only the currently selected nodes, with undo support.
+void UnhideSelectedWithUndo(
+  const ScenePanelState& state,
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Freeze all currently selected nodes with undo support.
+void FreezeSelectedWithUndo(
+  const ScenePanelState& state,
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Unfreeze all nodes with undo support.
+void UnfreezeAllWithUndo(
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
+
+/// Unfreeze only the currently selected nodes, with undo support.
+void UnfreezeSelectedWithUndo(
+  const ScenePanelState& state,
+  std::vector<NodeProperties>& props,
+  UndoStack* undo_stack);
 
 /// @}

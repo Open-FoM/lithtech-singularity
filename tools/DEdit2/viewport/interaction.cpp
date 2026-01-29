@@ -1,6 +1,9 @@
 #include "viewport/interaction.h"
 
 #include "editor_state.h"
+#include "selection/depth_cycle.h"
+#include "selection/marquee_selection.h"
+#include "selection/selection_filter.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
 #include "viewport/scene_filters.h"
@@ -12,9 +15,16 @@
 
 #include <algorithm>
 
+namespace {
+/// Persistent marquee state across frames.
+MarqueeState g_marquee_state;
+} // namespace
+
 ViewportInteractionResult UpdateViewportInteraction(
   ViewportPanelState& viewport_panel,
   const ScenePanelState& scene_panel,
+  const SelectionFilter& selection_filter,
+  DepthCycleState& depth_cycle,
   SelectionTarget active_target,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,
@@ -102,6 +112,11 @@ ViewportInteractionResult UpdateViewportInteraction(
       {
         continue;
       }
+      // Apply selection filter
+      if (!selection_filter.PassesFilter(scene_props[i].type, scene_props[i].class_name))
+      {
+        continue;
+      }
       if (IsLightNode(scene_props[i]))
       {
         float pick_pos[3] = {scene_props[i].position[0], scene_props[i].position[1], scene_props[i].position[2]};
@@ -154,14 +169,74 @@ ViewportInteractionResult UpdateViewportInteraction(
     }
   }
 
+  // Marquee selection handling
+  const ImVec2 mouse = ImGui::GetIO().MousePos;
+  const ImVec2 mouse_local(mouse.x - viewport_pos.x, mouse.y - viewport_pos.y);
+
   if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
   {
-    if (!scene_nodes.empty() && !scene_props.empty())
+    if (!scene_nodes.empty() && !scene_props.empty() && !result.gizmo_consumed_click)
     {
-      if (!result.gizmo_consumed_click && result.hovered_scene_id >= 0)
+      // Check if we are hovering over a light (lights use screen-space picking, not depth cycling)
+      const bool hovered_is_light = result.hovered_scene_id >= 0 &&
+        static_cast<size_t>(result.hovered_scene_id) < scene_props.size() &&
+        IsLightNode(scene_props[result.hovered_scene_id]);
+
+      if (hovered_is_light)
       {
         result.clicked_scene_id = result.hovered_scene_id;
+        // Reset depth cycle since we clicked on a light
+        depth_cycle.Reset();
       }
+      else
+      {
+        // Use depth cycling for non-light objects
+        const PickRay click_ray = BuildPickRay(viewport_panel, viewport_size, mouse_local);
+        const float current_time = static_cast<float>(ImGui::GetTime());
+        const int cycle_result = ProcessDepthCycleClick(
+          depth_cycle, mouse_local, current_time,
+          click_ray, viewport_panel, scene_panel, selection_filter,
+          scene_nodes, scene_props);
+
+        if (cycle_result >= 0)
+        {
+          result.clicked_scene_id = cycle_result;
+        }
+        else
+        {
+          // Clicked on empty space - start marquee
+          BeginMarquee(g_marquee_state, mouse_local,
+                       ImGui::GetIO().KeyShift, ImGui::GetIO().KeyAlt);
+        }
+      }
+    }
+  }
+
+  // Set depth cycle status for status bar
+  result.depth_cycle_status = GetDepthCycleStatus(depth_cycle);
+
+  // Update marquee if active
+  if (g_marquee_state.active)
+  {
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+    {
+      UpdateMarquee(g_marquee_state, mouse_local);
+      DrawMarqueeRect(g_marquee_state, viewport_pos, ImGui::GetWindowDrawList());
+    }
+    else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+    {
+      // End marquee and collect selected nodes
+      result.marquee_selected_ids = EndMarquee(
+          g_marquee_state, viewport_panel, scene_panel,
+          scene_nodes, scene_props, selection_filter, viewport_size);
+      result.marquee_additive = g_marquee_state.additive;
+      result.marquee_subtractive = g_marquee_state.subtractive;
+    }
+
+    // Cancel on Escape
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+    {
+      CancelMarquee(g_marquee_state);
     }
   }
 

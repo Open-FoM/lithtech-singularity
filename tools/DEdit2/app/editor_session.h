@@ -4,9 +4,13 @@
 #include "document_state.h"
 #include "editor_state.h"
 #include "multi_viewport.h"
+#include "selection/depth_cycle.h"
+#include "selection/selection_filter.h"
+#include "selection/selection_query.h"
 #include "undo_stack.h"
 #include "ui_console.h"
 #include "ui_dock.h"
+#include "ui_goto.h"
 #include "ui_tools_dock.h"
 #include "ui_project.h"
 #include "ui_scene.h"
@@ -104,4 +108,17 @@ struct EditorSession
   PrimitiveDialogState primitive_dialog;
   ToolsPanelState tools_panel;
   SavePromptDialogState save_prompt_dialog;
+
+  /// Selection filter for controlling which node types can be selected.
+  SelectionFilter selection_filter;
+  SelectionFilterDialogState selection_filter_dialog;
+
+  /// Depth cycle state for cycling through overlapping objects.
+  DepthCycleState depth_cycle;
+
+  /// Advanced selection dialog state.
+  AdvancedSelectionDialogState advanced_selection_dialog;
+
+  /// Go To Node dialog state.
+  GoToDialogState goto_dialog;
 };

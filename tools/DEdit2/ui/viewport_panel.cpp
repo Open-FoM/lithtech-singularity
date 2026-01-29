@@ -2,6 +2,8 @@
 
 #include "dedit2_concommand.h"
 #include "multi_viewport.h"
+#include "selection/depth_cycle.h"
+#include "selection/selection_filter.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
 #include "viewport/diligent_viewport.h"
@@ -123,6 +125,8 @@ ViewportPanelResult DrawViewportPanel(
   DiligentContext& diligent,
   MultiViewportState& multi_viewport,
   ScenePanelState& scene_panel,
+  const SelectionFilter& selection_filter,
+  DepthCycleState& depth_cycle,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,
   SelectionTarget active_target)
@@ -758,6 +762,8 @@ ViewportPanelResult DrawViewportPanel(
           ViewportInteractionResult interaction = UpdateViewportInteraction(
             slot_state,
             scene_panel,
+            selection_filter,
+            depth_cycle,
             active_target,
             scene_nodes,
             scene_props,
@@ -771,6 +777,10 @@ ViewportPanelResult DrawViewportPanel(
           result.hovered_hit_valid = interaction.hovered_hit_valid;
           result.hovered_hit_pos = interaction.hovered_hit_pos;
           result.clicked_scene_id = interaction.clicked_scene_id;
+          result.marquee_selected_ids = std::move(interaction.marquee_selected_ids);
+          result.marquee_additive = interaction.marquee_additive;
+          result.marquee_subtractive = interaction.marquee_subtractive;
+          result.depth_cycle_status = std::move(interaction.depth_cycle_status);
         }
         else
         {

@@ -338,3 +338,70 @@ void ToggleOrthoPerspective(ViewportPanelState& state)
 		state.view_mode = ViewportPanelState::ViewMode::Perspective;
 	}
 }
+
+void FocusViewportOn(ViewportPanelState& state, const float position[3],
+                     const float* bounds_min, const float* bounds_max)
+{
+	// Calculate appropriate zoom/distance if bounds are provided
+	float radius = 100.0f;  // Default radius if no bounds
+	if (bounds_min != nullptr && bounds_max != nullptr)
+	{
+		const float dx = bounds_max[0] - bounds_min[0];
+		const float dy = bounds_max[1] - bounds_min[1];
+		const float dz = bounds_max[2] - bounds_min[2];
+		radius = 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz);
+		radius = std::max(10.0f, radius);  // Minimum radius for small objects
+	}
+
+	if (IsOrthographicView(state))
+	{
+		// Set ortho center based on view direction
+		switch (state.view_mode)
+		{
+		case ViewportPanelState::ViewMode::Top:
+		case ViewportPanelState::ViewMode::Bottom:
+			state.ortho_center[0] = position[0];  // X -> horizontal
+			state.ortho_center[1] = position[2];  // Z -> vertical
+			state.ortho_depth = position[1];      // Y preserved as depth
+			break;
+		case ViewportPanelState::ViewMode::Front:
+		case ViewportPanelState::ViewMode::Back:
+			state.ortho_center[0] = position[0];  // X -> horizontal
+			state.ortho_center[1] = position[1];  // Y -> vertical
+			state.ortho_depth = position[2];      // Z preserved as depth
+			break;
+		case ViewportPanelState::ViewMode::Left:
+		case ViewportPanelState::ViewMode::Right:
+			state.ortho_center[0] = position[2];  // Z -> horizontal
+			state.ortho_center[1] = position[1];  // Y -> vertical
+			state.ortho_depth = position[0];      // X preserved as depth
+			break;
+		default:
+			break;
+		}
+		// Adjust zoom to fit bounds
+		state.ortho_zoom = Clamp(radius / 400.0f, 0.05f, 50.0f);
+	}
+	else
+	{
+		// Perspective mode: set orbit target and distance
+		state.target[0] = position[0];
+		state.target[1] = position[1];
+		state.target[2] = position[2];
+
+		// Set distance to show the object with some margin
+		const float desired_distance = std::max(100.0f, radius * 2.6f);
+		state.orbit_distance = Clamp(desired_distance, 50.0f, 20000.0f);
+
+		// Sync fly mode position if active
+		if (state.fly_mode)
+		{
+			SyncFlyFromOrbit(state);
+		}
+	}
+
+	// Update grid origin to match focus point
+	state.grid_origin[0] = position[0];
+	state.grid_origin[1] = position[1];
+	state.grid_origin[2] = position[2];
+}

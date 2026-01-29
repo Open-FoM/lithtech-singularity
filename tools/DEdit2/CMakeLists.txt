@@ -149,6 +149,11 @@ target_sources (
 		app_main.cpp
 		app/editor_loop.cpp
 		brush/brush_primitive.cpp
+		grouping/node_grouping.cpp
+		selection/depth_cycle.cpp
+		selection/marquee_selection.cpp
+		selection/selection_filter.cpp
+		selection/selection_query.cpp
 		transform/mirror.cpp
 		app/document_state.h
 		app/editor_paths.cpp
@@ -184,6 +189,7 @@ target_sources (
 		texture_effect_group.cpp
 		ui_console.cpp
 		ui_dock.cpp
+		ui_goto.cpp
 		ui_status_bar.cpp
 		ui_toolbar.cpp
 		ui_tools_dock.cpp

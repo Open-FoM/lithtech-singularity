@@ -70,6 +70,25 @@ void DrawStatusBar(const StatusBarInfo& info)
     const char* tool_name = ToolName(info.current_tool);
     ImGui::Text("%s Tool", tool_name);
 
+    // Selection filter status
+    if (info.filter_active)
+    {
+      ImGui::SameLine(0.0f, 16.0f);
+      ImGui::TextDisabled("|");
+      ImGui::SameLine(0.0f, 16.0f);
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Filter: %s",
+        info.filter_status != nullptr ? info.filter_status : "Active");
+    }
+
+    // Depth cycle status
+    if (info.depth_cycle_status != nullptr && info.depth_cycle_status[0] != '\0')
+    {
+      ImGui::SameLine(0.0f, 16.0f);
+      ImGui::TextDisabled("|");
+      ImGui::SameLine(0.0f, 16.0f);
+      ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Cycle: %s", info.depth_cycle_status);
+    }
+
     // FPS (right-aligned)
     if (info.show_fps)
     {

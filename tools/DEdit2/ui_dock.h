@@ -47,6 +47,12 @@ struct MainMenuActions
 	bool select_all = false;
 	bool select_none = false;
 	bool select_inverse = false;
+	bool select_brushes = false;
+	bool select_lights = false;
+	bool select_objects = false;
+	bool select_world_models = false;
+	bool select_by_class = false;
+	std::string select_class_name;
 	bool hide_selected = false;
 	bool unhide_all = false;
 	bool freeze_selected = false;
@@ -54,6 +60,8 @@ struct MainMenuActions
 	bool mirror_x = false;
 	bool mirror_y = false;
 	bool mirror_z = false;
+	bool open_selection_filter = false;
+	bool open_advanced_selection = false;
 	ViewModeAction view_mode = ViewModeAction::None;
 	std::optional<ViewportLayout> layout_change;
 	bool cycle_viewport = false;
@@ -81,6 +89,7 @@ void DrawMainMenuBar(
 	bool& request_reset_layout,
 	MainMenuActions& actions,
 	const std::vector<std::string>& recent_projects,
+	const std::vector<std::string>& scene_classes,
 	bool can_undo,
 	bool can_redo,
 	bool has_selection,

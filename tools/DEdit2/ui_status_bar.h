@@ -15,6 +15,9 @@ struct StatusBarInfo {
   const char* hint = nullptr;
   float fps = 0.0f;
   bool show_fps = false;
+  bool filter_active = false;          ///< Whether selection filter is enabled
+  const char* filter_status = nullptr; ///< Brief filter status text (e.g., "5/7")
+  const char* depth_cycle_status = nullptr; ///< Depth cycle status (e.g., "2 of 5")
 };
 
 /// Draw the status bar at the bottom of the main window.

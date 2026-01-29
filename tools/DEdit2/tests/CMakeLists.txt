@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
 
 set (_DEDIT2_ROOT "${CMAKE_CURRENT_LIST_DIR}/..")
+set (_LTJS_ROOT "${_DEDIT2_ROOT}/../..")
 
 add_executable (
 	ltjs_dedit2_tests
@@ -9,11 +10,21 @@ add_executable (
 	${_DEDIT2_ROOT}/app/project.cpp
 	${_DEDIT2_ROOT}/app/node_props.cpp
 	${_DEDIT2_ROOT}/app/world_core.cpp
+	${_DEDIT2_ROOT}/grouping/node_grouping.cpp
+	${_DEDIT2_ROOT}/selection/selection_filter.cpp
+	${_DEDIT2_ROOT}/selection/selection_query.cpp
+	${_DEDIT2_ROOT}/undo_stack.cpp
+	${_LTJS_ROOT}/libs/imgui/imgui.cpp
+	${_LTJS_ROOT}/libs/imgui/imgui_draw.cpp
+	${_LTJS_ROOT}/libs/imgui/imgui_tables.cpp
+	${_LTJS_ROOT}/libs/imgui/imgui_widgets.cpp
 	${CMAKE_CURRENT_LIST_DIR}/path_utils_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/string_utils_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/document_state_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/project_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/world_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/selection_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/grouping_tests.cpp
 )
 
 set_target_properties (
@@ -28,6 +39,7 @@ target_include_directories (
 	ltjs_dedit2_tests
 	PRIVATE
 		${_DEDIT2_ROOT}
+		${_LTJS_ROOT}/libs/imgui
 )
 
 target_link_libraries (

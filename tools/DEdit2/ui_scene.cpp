@@ -1,6 +1,8 @@
 #include "ui_scene.h"
 
+#include "selection/selection_filter.h"
 #include "ui_shared.h"
+#include "undo_stack.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -446,6 +448,104 @@ void SelectInverse(
 	}
 }
 
+void SelectByType(
+	ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	std::string_view type_name)
+{
+	state.selected_ids.clear();
+	// Normalize the target type for comparison
+	const SelectableType target_type = SelectionFilter::TypeFromString(type_name);
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		const NodeProperties& prop = props[i];
+		if (!prop.visible || prop.frozen)
+		{
+			continue;
+		}
+		// Normalize the node's type for case-insensitive and alias matching
+		const SelectableType node_type = SelectionFilter::TypeFromString(prop.type);
+		if (node_type == target_type)
+		{
+			state.selected_ids.insert(static_cast<int>(i));
+		}
+	}
+	if (!state.selected_ids.empty())
+	{
+		state.primary_selection = *state.selected_ids.begin();
+	}
+	else
+	{
+		state.primary_selection = -1;
+	}
+}
+
+void SelectByClass(
+	ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	std::string_view class_name)
+{
+	state.selected_ids.clear();
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		const NodeProperties& prop = props[i];
+		if (!prop.visible || prop.frozen)
+		{
+			continue;
+		}
+		if (prop.class_name == class_name)
+		{
+			state.selected_ids.insert(static_cast<int>(i));
+		}
+	}
+	if (!state.selected_ids.empty())
+	{
+		state.primary_selection = *state.selected_ids.begin();
+	}
+	else
+	{
+		state.primary_selection = -1;
+	}
+}
+
+std::vector<std::string> CollectSceneClasses(
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props)
+{
+	std::unordered_set<std::string> class_set;
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		const NodeProperties& prop = props[i];
+		if (!prop.class_name.empty())
+		{
+			class_set.insert(prop.class_name);
+		}
+	}
+	std::vector<std::string> result(class_set.begin(), class_set.end());
+	std::sort(result.begin(), result.end());
+	return result;
+}
+
 std::array<float, 3> ComputeSelectionCenter(
 	const ScenePanelState& state,
 	const std::vector<NodeProperties>& props)
@@ -589,4 +689,171 @@ void UnfreezeAll(std::vector<NodeProperties>& props)
 bool IsNodePickable(const NodeProperties& props)
 {
 	return props.visible && !props.frozen;
+}
+
+void HideSelectedWithUndo(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			NodeProperties& p = props[id];
+			if (p.visible)  // Only record if actually changing
+			{
+				changes.push_back({id, true});  // previous_value = true (was visible)
+				p.visible = false;
+			}
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushVisibility(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void UnhideAllWithUndo(
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (size_t i = 0; i < props.size(); ++i)
+	{
+		NodeProperties& p = props[i];
+		if (!p.visible)  // Only record if actually changing
+		{
+			changes.push_back({static_cast<int>(i), false});  // previous_value = false (was hidden)
+			p.visible = true;
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushVisibility(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void HideUnselectedWithUndo(
+	const ScenePanelState& state,
+	const std::vector<TreeNode>& nodes,
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	const size_t count = std::min(nodes.size(), props.size());
+	for (size_t i = 0; i < count; ++i)
+	{
+		const TreeNode& node = nodes[i];
+		if (node.deleted || node.is_folder)
+		{
+			continue;
+		}
+		if (state.selected_ids.find(static_cast<int>(i)) == state.selected_ids.end())
+		{
+			NodeProperties& p = props[i];
+			if (p.visible)  // Only record if actually changing
+			{
+				changes.push_back({static_cast<int>(i), true});  // previous_value = true
+				p.visible = false;
+			}
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushVisibility(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void UnhideSelectedWithUndo(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			NodeProperties& p = props[id];
+			if (!p.visible)  // Only record if actually changing
+			{
+				changes.push_back({id, false});  // previous_value = false (was hidden)
+				p.visible = true;
+			}
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushVisibility(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void FreezeSelectedWithUndo(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			NodeProperties& p = props[id];
+			if (!p.frozen)  // Only record if actually changing
+			{
+				changes.push_back({id, false});  // previous_value = false (was not frozen)
+				p.frozen = true;
+			}
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushFrozen(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void UnfreezeAllWithUndo(
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (size_t i = 0; i < props.size(); ++i)
+	{
+		NodeProperties& p = props[i];
+		if (p.frozen)  // Only record if actually changing
+		{
+			changes.push_back({static_cast<int>(i), true});  // previous_value = true (was frozen)
+			p.frozen = false;
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushFrozen(UndoTarget::Scene, std::move(changes));
+	}
+}
+
+void UnfreezeSelectedWithUndo(
+	const ScenePanelState& state,
+	std::vector<NodeProperties>& props,
+	UndoStack* undo_stack)
+{
+	std::vector<NodeStateChange> changes;
+	for (int id : state.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < props.size())
+		{
+			NodeProperties& p = props[id];
+			if (p.frozen)  // Only record if actually changing
+			{
+				changes.push_back({id, true});  // previous_value = true (was frozen)
+				p.frozen = false;
+			}
+		}
+	}
+	if (undo_stack != nullptr && !changes.empty())
+	{
+		undo_stack->PushFrozen(UndoTarget::Scene, std::move(changes));
+	}
 }

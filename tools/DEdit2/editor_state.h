@@ -64,6 +64,10 @@ struct TreeUiState
 	int rename_node_id = -1;
 	bool open_rename_popup = false;
 	char rename_buffer[128] = {};
+
+	/// Node ID to focus viewport on (set by double-click in tree).
+	/// -1 means no focus request. Caller should reset to -1 after handling.
+	int focus_request_id = -1;
 };
 
 enum class SelectionTarget

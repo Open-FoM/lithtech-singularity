@@ -6,6 +6,7 @@ void DrawMainMenuBar(
 	bool& request_reset_layout,
 	MainMenuActions& actions,
 	const std::vector<std::string>& recent_projects,
+	const std::vector<std::string>& scene_classes,
 	bool can_undo,
 	bool can_redo,
 	bool has_selection,
@@ -97,11 +98,60 @@ void DrawMainMenuBar(
 			actions.select_inverse = true;
 		}
 		ImGui::Separator();
+		if (ImGui::BeginMenu("Select by Type"))
+		{
+			if (ImGui::MenuItem("All Brushes"))
+			{
+				actions.select_brushes = true;
+			}
+			if (ImGui::MenuItem("All Lights"))
+			{
+				actions.select_lights = true;
+			}
+			if (ImGui::MenuItem("All Objects"))
+			{
+				actions.select_objects = true;
+			}
+			if (ImGui::MenuItem("All World Models"))
+			{
+				actions.select_world_models = true;
+			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::BeginMenu("Select by Class"))
+		{
+			if (scene_classes.empty())
+			{
+				ImGui::MenuItem("(no classes)", nullptr, false, false);
+			}
+			else
+			{
+				for (const auto& class_name : scene_classes)
+				{
+					if (ImGui::MenuItem(class_name.c_str()))
+					{
+						actions.select_by_class = true;
+						actions.select_class_name = class_name;
+					}
+				}
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Selection Filter..."))
+		{
+			actions.open_selection_filter = true;
+		}
+		if (ImGui::MenuItem("Advanced Selection..."))
+		{
+			actions.open_advanced_selection = true;
+		}
+		ImGui::Separator();
 		if (ImGui::MenuItem("Hide Selected", "H"))
 		{
 			actions.hide_selected = true;
 		}
-		if (ImGui::MenuItem("Unhide All", "Shift+H"))
+		if (ImGui::MenuItem("Unhide All", "Ctrl+H"))
 		{
 			actions.unhide_all = true;
 		}
@@ -110,7 +160,7 @@ void DrawMainMenuBar(
 		{
 			actions.freeze_selected = true;
 		}
-		if (ImGui::MenuItem("Unfreeze All", "Shift+F"))
+		if (ImGui::MenuItem("Unfreeze All", "Ctrl+F"))
 		{
 			actions.unfreeze_all = true;
 		}

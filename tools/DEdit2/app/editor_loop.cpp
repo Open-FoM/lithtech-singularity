@@ -6,6 +6,7 @@
 #include "app/recent_projects.h"
 #include "app/scene_loader.h"
 #include "app/world.h"
+#include "grouping/node_grouping.h"
 #include "ui/viewport_panel.h"
 #include "viewport/diligent_viewport.h"
 #include "viewport/lighting.h"
@@ -15,12 +16,14 @@
 #include "transform/mirror.h"
 #include "ui_console.h"
 #include "ui_dock.h"
+#include "ui_goto.h"
 #include "ui_project.h"
 #include "ui_properties.h"
 #include "ui_scene.h"
 #include "ui_shared.h"
 #include "ui_status_bar.h"
 #include "ui_toolbar.h"
+#include "ui_viewport.h"
 #include "ui_worlds.h"
 #include "platform_macos.h"
 
@@ -370,10 +373,13 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     const bool has_world = !session.scene_nodes.empty();
     // Keep document dirty state in sync with undo stack position
     session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
+    const std::vector<std::string> scene_classes = CollectSceneClasses(
+      session.scene_nodes, session.scene_props);
     DrawMainMenuBar(
       request_reset_layout,
       menu_actions,
       session.recent_projects,
+      scene_classes,
       session.undo_stack.CanUndo(),
       session.undo_stack.CanRedo(),
       has_selection,
@@ -475,34 +481,52 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         {
           SelectInverse(session.scene_panel, session.scene_nodes, session.scene_props);
         }
-        // Visibility commands: H = Hide Selected, Shift+H = Unhide All, Alt+H = Hide Unselected
+        // Visibility commands: H = Hide Selected, Shift+H = Unhide Selected,
+        // Ctrl+H = Unhide All, Alt+H = Hide Unselected
         if (ImGui::IsKeyPressed(ImGuiKey_H, false))
         {
-          if (io.KeyShift)
+          if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
           {
-            UnhideAll(session.scene_props);
+            UnhideAllWithUndo(session.scene_props, &session.undo_stack);
+            session.document_state.MarkDirty();
           }
-          else if (io.KeyAlt)
+          else if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt)
           {
-            HideUnselected(session.scene_panel, session.scene_nodes, session.scene_props);
+            UnhideSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
+            session.document_state.MarkDirty();
           }
-          else if (HasSelection(session.scene_panel))
+          else if (io.KeyAlt && !io.KeyCtrl && !io.KeyShift)
           {
-            HideSelected(session.scene_panel, session.scene_props);
+            HideUnselectedWithUndo(session.scene_panel, session.scene_nodes,
+                                   session.scene_props, &session.undo_stack);
+            session.document_state.MarkDirty();
+          }
+          else if (!io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          {
+            HideSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             ClearSelection(session.scene_panel);
+            session.document_state.MarkDirty();
           }
         }
-        // Freeze commands: F = Freeze Selected, Shift+F = Unfreeze All
+        // Freeze commands: F = Freeze Selected, Shift+F = Unfreeze Selected,
+        // Ctrl+F = Unfreeze All
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
         {
-          if (io.KeyShift)
+          if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
           {
-            UnfreezeAll(session.scene_props);
+            UnfreezeAllWithUndo(session.scene_props, &session.undo_stack);
+            session.document_state.MarkDirty();
           }
-          else if (HasSelection(session.scene_panel))
+          else if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt)
           {
-            FreezeSelected(session.scene_panel, session.scene_props);
+            UnfreezeSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
+            session.document_state.MarkDirty();
+          }
+          else if (!io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          {
+            FreezeSelectedWithUndo(session.scene_panel, session.scene_props, &session.undo_stack);
             ClearSelection(session.scene_panel);
+            session.document_state.MarkDirty();
           }
         }
         // Mirror commands: Ctrl+Shift+X/Y/Z
@@ -518,6 +542,37 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           }
           // Note: Ctrl+Shift+Z is also Redo shortcut on some systems, so mirror Z may conflict
           // Users can still use the menu for Mirror Z
+        }
+        // Group commands: Ctrl+G = Group, Ctrl+Shift+G = Ungroup
+        if (ImGui::IsKeyPressed(ImGuiKey_G, false))
+        {
+          if (io.KeyCtrl && io.KeyShift && !io.KeyAlt)
+          {
+            // Ungroup: only works when a single container is selected
+            if (SelectionCount(session.scene_panel) == 1)
+            {
+              int container_id = session.scene_panel.primary_selection;
+              if (container_id >= 0 && static_cast<size_t>(container_id) < session.scene_nodes.size() &&
+                  session.scene_nodes[container_id].is_folder)
+              {
+                if (UngroupContainer(container_id, session.scene_nodes, session.scene_props,
+                                     session.scene_panel, &session.undo_stack))
+                {
+                  session.document_state.MarkDirty();
+                }
+              }
+            }
+          }
+          else if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && HasSelection(session.scene_panel))
+          {
+            // Group selected nodes
+            GroupResult result = GroupSelectedNodes(
+              session.scene_panel, session.scene_nodes, session.scene_props, &session.undo_stack);
+            if (result.success)
+            {
+              session.document_state.MarkDirty();
+            }
+          }
         }
       }
 
@@ -568,15 +623,22 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         CycleActiveViewport(session.multi_viewport);
       }
+      // F3: Open Go To Node dialog
+      if (ImGui::IsKeyPressed(ImGuiKey_F3, false) && !session.scene_nodes.empty())
+      {
+        OpenGoToDialog(session.goto_dialog);
+      }
     }
     if (trigger_undo)
     {
-      session.undo_stack.Undo(session.project_nodes, session.scene_nodes);
+      session.undo_stack.Undo(session.project_nodes, session.scene_nodes,
+                              session.project_props, session.scene_props);
       session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
     }
     if (trigger_redo)
     {
-      session.undo_stack.Redo(session.project_nodes, session.scene_nodes);
+      session.undo_stack.Redo(session.project_nodes, session.scene_nodes,
+                              session.project_props, session.scene_props);
       session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
     }
 
@@ -594,6 +656,27 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (menu_actions.select_inverse)
       {
         SelectInverse(session.scene_panel, session.scene_nodes, session.scene_props);
+      }
+      if (menu_actions.select_brushes)
+      {
+        SelectByType(session.scene_panel, session.scene_nodes, session.scene_props, "Brush");
+      }
+      if (menu_actions.select_lights)
+      {
+        SelectByType(session.scene_panel, session.scene_nodes, session.scene_props, "Light");
+      }
+      if (menu_actions.select_objects)
+      {
+        SelectByType(session.scene_panel, session.scene_nodes, session.scene_props, "Object");
+      }
+      if (menu_actions.select_world_models)
+      {
+        SelectByType(session.scene_panel, session.scene_nodes, session.scene_props, "WorldModel");
+      }
+      if (menu_actions.select_by_class)
+      {
+        SelectByClass(session.scene_panel, session.scene_nodes, session.scene_props,
+          menu_actions.select_class_name);
       }
       if (menu_actions.hide_selected && HasSelection(session.scene_panel))
       {
@@ -626,6 +709,16 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Z);
       }
+    }
+
+    // Handle selection filter dialog
+    if (menu_actions.open_selection_filter)
+    {
+      session.selection_filter_dialog.open = true;
+    }
+    if (menu_actions.open_advanced_selection)
+    {
+      session.advanced_selection_dialog.open = true;
     }
 
     // Handle view mode changes from menu
@@ -1008,6 +1101,23 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         session.scene_error = session.scene_panel.error;
       }
+
+      // Handle double-click focus request from Scene Tree
+      const int focus_id = session.scene_panel.tree_ui.focus_request_id;
+      if (focus_id >= 0 && static_cast<size_t>(focus_id) < session.scene_props.size())
+      {
+        const NodeProperties& focus_props = session.scene_props[focus_id];
+        float bounds_min[3], bounds_max[3];
+        bool has_bounds = ComputeSelectionBounds(
+          session.scene_panel, session.scene_nodes, session.scene_props,
+          bounds_min, bounds_max);
+        FocusViewportOn(
+          session.multi_viewport.ActiveViewport(),
+          focus_props.position,
+          has_bounds ? bounds_min : nullptr,
+          has_bounds ? bounds_max : nullptr);
+        session.scene_panel.tree_ui.focus_request_id = -1;  // Clear request
+      }
     }
     if (session.panel_visibility.show_properties)
     {
@@ -1072,11 +1182,38 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     // Draw modal dialogs
     DrawPrimitiveDialog(session);
     DrawSavePromptDialog(session.save_prompt_dialog);
+    DrawSelectionFilterDialog(session.selection_filter_dialog, session.selection_filter);
+    DrawAdvancedSelectionDialog(
+      session.advanced_selection_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props);
+
+    // Draw Go To Node dialog and handle result
+    GoToResult goto_result = DrawGoToDialog(
+      session.goto_dialog,
+      session.scene_nodes,
+      session.scene_props);
+    if (goto_result.accepted && goto_result.selected_id >= 0)
+    {
+      // Select the node
+      SelectNode(session.scene_panel, goto_result.selected_id);
+      session.active_target = SelectionTarget::Scene;
+
+      // Focus viewport on the node
+      if (static_cast<size_t>(goto_result.selected_id) < session.scene_props.size())
+      {
+        const NodeProperties& focus_props = session.scene_props[goto_result.selected_id];
+        FocusViewportOn(session.multi_viewport.ActiveViewport(), focus_props.position, nullptr, nullptr);
+      }
+    }
 
     ViewportPanelResult viewport_result = DrawViewportPanel(
       diligent,
       session.multi_viewport,
       session.scene_panel,
+      session.selection_filter,
+      session.depth_cycle,
       session.scene_nodes,
       session.scene_props,
       session.active_target);
@@ -1099,6 +1236,37 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         sel_mode = SelectionMode::Toggle;
       }
       ModifySelection(session.scene_panel, viewport_result.clicked_scene_id, sel_mode);
+      session.active_target = SelectionTarget::Scene;
+    }
+
+    // Handle marquee selection results
+    if (!viewport_result.marquee_selected_ids.empty())
+    {
+      if (viewport_result.marquee_subtractive)
+      {
+        // Remove selected nodes
+        for (int node_id : viewport_result.marquee_selected_ids)
+        {
+          ModifySelection(session.scene_panel, node_id, SelectionMode::Remove);
+        }
+      }
+      else if (viewport_result.marquee_additive)
+      {
+        // Add to selection
+        for (int node_id : viewport_result.marquee_selected_ids)
+        {
+          ModifySelection(session.scene_panel, node_id, SelectionMode::Add);
+        }
+      }
+      else
+      {
+        // Replace selection
+        ClearSelection(session.scene_panel);
+        for (int node_id : viewport_result.marquee_selected_ids)
+        {
+          ModifySelection(session.scene_panel, node_id, SelectionMode::Add);
+        }
+      }
       session.active_target = SelectionTarget::Scene;
     }
 
@@ -1170,6 +1338,18 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       status_info.current_tool = session.tools_panel.selected_tool;
       status_info.show_fps = session.viewport_panel().show_fps;
       status_info.fps = 1.0f / io.DeltaTime;
+      status_info.filter_active = session.selection_filter.filter_active;
+      if (session.selection_filter.filter_active)
+      {
+        static char filter_status_buf[32];
+        snprintf(filter_status_buf, sizeof(filter_status_buf), "%zu/7",
+          session.selection_filter.enabled_types.size());
+        status_info.filter_status = filter_status_buf;
+      }
+      if (!viewport_result.depth_cycle_status.empty())
+      {
+        status_info.depth_cycle_status = viewport_result.depth_cycle_status.c_str();
+      }
       DrawStatusBar(status_info);
     }
 

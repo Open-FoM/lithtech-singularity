@@ -59,6 +59,56 @@ void UndoStack::PushMove(UndoTarget target, int node_id, int old_parent, int new
 	Push(std::move(action));
 }
 
+void UndoStack::PushVisibility(UndoTarget target, std::vector<NodeStateChange> changes)
+{
+	if (changes.empty())
+	{
+		return;
+	}
+	UndoAction action;
+	action.type = UndoActionType::ChangeVisibility;
+	action.target = target;
+	action.state_changes = std::move(changes);
+	Push(std::move(action));
+}
+
+void UndoStack::PushFrozen(UndoTarget target, std::vector<NodeStateChange> changes)
+{
+	if (changes.empty())
+	{
+		return;
+	}
+	UndoAction action;
+	action.type = UndoActionType::ChangeFrozen;
+	action.target = target;
+	action.state_changes = std::move(changes);
+	Push(std::move(action));
+}
+
+void UndoStack::Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
+                     std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props)
+{
+	if (!CanUndo())
+	{
+		return;
+	}
+
+	cursor_ -= 1;
+	Apply(actions_[cursor_], true, project_nodes, scene_nodes, &project_props, &scene_props);
+}
+
+void UndoStack::Redo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
+                     std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props)
+{
+	if (!CanRedo())
+	{
+		return;
+	}
+
+	Apply(actions_[cursor_], false, project_nodes, scene_nodes, &project_props, &scene_props);
+	cursor_ += 1;
+}
+
 void UndoStack::Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes)
 {
 	if (!CanUndo())
@@ -67,7 +117,7 @@ void UndoStack::Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>
 	}
 
 	cursor_ -= 1;
-	Apply(actions_[cursor_], true, project_nodes, scene_nodes);
+	Apply(actions_[cursor_], true, project_nodes, scene_nodes, nullptr, nullptr);
 }
 
 void UndoStack::Redo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes)
@@ -77,7 +127,7 @@ void UndoStack::Redo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>
 		return;
 	}
 
-	Apply(actions_[cursor_], false, project_nodes, scene_nodes);
+	Apply(actions_[cursor_], false, project_nodes, scene_nodes, nullptr, nullptr);
 	cursor_ += 1;
 }
 
@@ -95,13 +145,46 @@ void UndoStack::Apply(
 	const UndoAction& action,
 	bool undo,
 	std::vector<TreeNode>& project_nodes,
-	std::vector<TreeNode>& scene_nodes)
+	std::vector<TreeNode>& scene_nodes,
+	std::vector<NodeProperties>* project_props,
+	std::vector<NodeProperties>* scene_props)
 {
 	std::vector<TreeNode>* nodes = ResolveNodes(action.target, project_nodes, scene_nodes);
-	if (!nodes)
+	if (nodes == nullptr)
 	{
 		return;
 	}
+
+	// Handle visibility and frozen changes (need props)
+	if (action.type == UndoActionType::ChangeVisibility ||
+	    action.type == UndoActionType::ChangeFrozen)
+	{
+		std::vector<NodeProperties>* props = (action.target == UndoTarget::Project)
+			? project_props : scene_props;
+		if (props == nullptr)
+		{
+			return;  // Can't apply visibility/frozen without props
+		}
+		for (const auto& change : action.state_changes)
+		{
+			if (change.node_id >= 0 && change.node_id < static_cast<int>(props->size()))
+			{
+				NodeProperties& p = (*props)[change.node_id];
+				if (action.type == UndoActionType::ChangeVisibility)
+				{
+					// Undo restores previous value, redo applies the opposite
+					p.visible = undo ? change.previous_value : !change.previous_value;
+				}
+				else
+				{
+					p.frozen = undo ? change.previous_value : !change.previous_value;
+				}
+			}
+		}
+		return;
+	}
+
+	// Handle node-based actions
 	if (action.node_id < 0 || action.node_id >= static_cast<int>(nodes->size()))
 	{
 		return;
@@ -111,7 +194,7 @@ void UndoStack::Apply(
 	switch (action.type)
 	{
 		case UndoActionType::CreateNode:
-			node.deleted = undo ? true : false;
+			node.deleted = undo;
 			break;
 		case UndoActionType::DeleteNode:
 			node.deleted = undo ? action.prev_deleted : true;
@@ -122,6 +205,10 @@ void UndoStack::Apply(
 		case UndoActionType::MoveNode:
 			MoveNode(*nodes, action.node_id, undo ? action.new_parent : action.old_parent,
 				undo ? action.old_parent : action.new_parent);
+			break;
+		case UndoActionType::ChangeVisibility:
+		case UndoActionType::ChangeFrozen:
+			// Already handled above
 			break;
 	}
 }

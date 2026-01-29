@@ -1,5 +1,8 @@
 #include "ui_shared.h"
 
+#include "grouping/node_grouping.h"
+
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -117,27 +120,6 @@ bool IsWorldFilePath(const fs::path& path)
 {
 	const std::string ext = ToLowerAscii(path.extension().string());
 	return ext == ".ltc" || ext == ".lta" || ext == ".tbw" || ext == ".dat";
-}
-
-int FindParentId(const std::vector<TreeNode>& nodes, int node_id, int target_id)
-{
-	if (node_id < 0 || node_id >= static_cast<int>(nodes.size()))
-	{
-		return -1;
-	}
-	for (int child_id : nodes[node_id].children)
-	{
-		if (child_id == target_id)
-		{
-			return node_id;
-		}
-		int nested = FindParentId(nodes, child_id, target_id);
-		if (nested != -1)
-		{
-			return nested;
-		}
-	}
-	return -1;
 }
 
 bool NodeMatchesFilter(const std::vector<TreeNode>& nodes, int node_id, const ImGuiTextFilter& filter)
@@ -367,6 +349,56 @@ void DrawTreeNodes(
 		{
 			selected_id = node_id;
 			active_target = target;
+		}
+	}
+	// Double-click to request viewport focus on this node
+	if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+	{
+		ui_state.focus_request_id = node_id;
+	}
+
+	// Drag-drop for scene nodes (reparenting)
+	if (is_scene && node_id != 0)
+	{
+		// Drag source: allow dragging non-root scene nodes
+		if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+		{
+			ImGui::SetDragDropPayload("SCENE_NODE", &node_id, sizeof(int));
+			ImGui::Text("Move: %s", node.name.c_str());
+			ImGui::EndDragDropSource();
+		}
+
+		// Drop target: only folders can accept drops
+		if (node.is_folder && ImGui::BeginDragDropTarget())
+		{
+			if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE"))
+			{
+				const int dropped_id = *static_cast<const int*>(payload->Data);
+				// Validate: can't drop onto self, can't drop ancestor onto descendant
+				if (dropped_id != node_id && !IsDescendantOf(nodes, node_id, dropped_id))
+				{
+					// Find current parent of dropped node
+					const int old_parent = FindParentId(nodes, 0, dropped_id);
+					if (old_parent >= 0 && old_parent != node_id)
+					{
+						// Remove from old parent
+						auto& old_children = nodes[old_parent].children;
+						old_children.erase(
+							std::remove(old_children.begin(), old_children.end(), dropped_id),
+							old_children.end());
+
+						// Add to new parent (this node)
+						nodes[node_id].children.push_back(dropped_id);
+
+						// Record undo
+						if (undo_stack != nullptr)
+						{
+							undo_stack->PushMove(ToUndoTarget(target), dropped_id, old_parent, node_id);
+						}
+					}
+				}
+			}
+			ImGui::EndDragDropTarget();
 		}
 	}
 
