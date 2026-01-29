@@ -62,6 +62,8 @@ struct MainMenuActions
 	bool mirror_z = false;
 	bool rotate_selection = false;
 	bool mirror_selection_dialog = false;
+	bool open_marker_dialog = false;
+	bool reset_marker = false;
 	bool open_selection_filter = false;
 	bool open_advanced_selection = false;
 	ViewModeAction view_mode = ViewModeAction::None;

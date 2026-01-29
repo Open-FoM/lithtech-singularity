@@ -39,6 +39,12 @@ struct ViewportPanelState
 	float fly_speed = 800.0f;
 	float grid_spacing = 64.0f;
 	float grid_origin[3] = {0.0f, 0.0f, 0.0f};
+
+	/// Construction marker position (origin for primitive creation).
+	float marker_position[3] = {0.0f, 0.0f, 0.0f};
+	/// Whether to display the construction marker.
+	bool show_marker = true;
+
 	enum class GizmoMode
 	{
 		Translate,

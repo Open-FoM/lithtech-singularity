@@ -92,6 +92,12 @@ int main(int argc, char** argv)
       : Diligent::TEX_FORMAT_RGBA8_UNORM,
     Diligent::TEX_FORMAT_D32_FLOAT,
     diligent.grid_renderer);
+  diligent.marker_ready = InitMarkerRenderer(
+    diligent.engine.device,
+    diligent.engine.swapchain ? diligent.engine.swapchain->GetDesc().ColorBufferFormat
+      : Diligent::TEX_FORMAT_RGBA8_UNORM,
+    Diligent::TEX_FORMAT_D32_FLOAT,
+    diligent.marker_renderer);
   SetEngineProjectRoot(diligent.engine, session.project_root);
 
   if (!session.project_root.empty())

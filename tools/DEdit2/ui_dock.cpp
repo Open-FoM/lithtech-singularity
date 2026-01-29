@@ -297,6 +297,18 @@ void DrawMainMenuBar(
 			}
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Marker"))
+		{
+			if (ImGui::MenuItem("Set Marker Position...", "Shift+M"))
+			{
+				actions.open_marker_dialog = true;
+			}
+			if (ImGui::MenuItem("Reset Marker to Origin", "Ctrl+M"))
+			{
+				actions.reset_marker = true;
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::Separator();
 		if (viewport_display != nullptr && viewport_display->show_fps != nullptr)
 		{

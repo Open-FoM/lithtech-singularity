@@ -6,6 +6,7 @@
 #include "app/recent_projects.h"
 #include "app/scene_loader.h"
 #include "app/world.h"
+#include "grid/grid_settings.h"
 #include "grouping/node_grouping.h"
 #include "ui/viewport_panel.h"
 #include "viewport/diligent_viewport.h"
@@ -95,6 +96,27 @@ int CreateBrushFromPrimitive(
   scene_nodes[0].children.push_back(new_id);
 
   return new_id;
+}
+
+/// Sets all primitive dialog centers to the marker position.
+void SetPrimitiveCentersToMarker(PrimitiveDialogState& dialog, const ViewportPanelState& viewport)
+{
+  const float* marker = viewport.marker_position;
+  dialog.box_params.center[0] = marker[0];
+  dialog.box_params.center[1] = marker[1];
+  dialog.box_params.center[2] = marker[2];
+  dialog.cylinder_params.center[0] = marker[0];
+  dialog.cylinder_params.center[1] = marker[1];
+  dialog.cylinder_params.center[2] = marker[2];
+  dialog.pyramid_params.center[0] = marker[0];
+  dialog.pyramid_params.center[1] = marker[1];
+  dialog.pyramid_params.center[2] = marker[2];
+  dialog.sphere_params.center[0] = marker[0];
+  dialog.sphere_params.center[1] = marker[1];
+  dialog.sphere_params.center[2] = marker[2];
+  dialog.plane_params.center[0] = marker[0];
+  dialog.plane_params.center[1] = marker[1];
+  dialog.plane_params.center[2] = marker[2];
 }
 
 /// Draws the primitive creation dialog and handles creation.
@@ -438,6 +460,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     }
     if (toolbar_result.create_primitive != PrimitiveType::None)
     {
+      SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
       session.primitive_dialog.open = true;
       session.primitive_dialog.type = toolbar_result.create_primitive;
     }
@@ -661,6 +684,33 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Scale;
       }
 
+      // Grid controls
+      // G: Toggle grid visibility (plain G without modifiers; Ctrl+G is Group)
+      if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      {
+        session.viewport_panel().show_grid = !session.viewport_panel().show_grid;
+      }
+      // [: Halve grid spacing
+      if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket, false))
+      {
+        session.viewport_panel().grid_spacing = grid::HalveSpacing(session.viewport_panel().grid_spacing);
+        // Keep snap step in sync with grid when snapping is enabled
+        if (session.viewport_panel().snap_translate)
+        {
+          session.viewport_panel().snap_translate_step = session.viewport_panel().grid_spacing;
+        }
+      }
+      // ]: Double grid spacing
+      if (ImGui::IsKeyPressed(ImGuiKey_RightBracket, false))
+      {
+        session.viewport_panel().grid_spacing = grid::DoubleSpacing(session.viewport_panel().grid_spacing);
+        // Keep snap step in sync with grid when snapping is enabled
+        if (session.viewport_panel().snap_translate)
+        {
+          session.viewport_panel().snap_translate_step = session.viewport_panel().grid_spacing;
+        }
+      }
+
       // Nudge keys (arrow keys for XY/XZ movement, Page Up/Down for depth)
       if (session.active_target == SelectionTarget::Scene && HasSelection(session.scene_panel))
       {
@@ -791,6 +841,21 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       }
     }
 
+    // Handle marker dialog
+    if (menu_actions.open_marker_dialog)
+    {
+      session.marker_dialog.position[0] = session.viewport_panel().marker_position[0];
+      session.marker_dialog.position[1] = session.viewport_panel().marker_position[1];
+      session.marker_dialog.position[2] = session.viewport_panel().marker_position[2];
+      session.marker_dialog.open = true;
+    }
+    if (menu_actions.reset_marker)
+    {
+      session.viewport_panel().marker_position[0] = 0.0f;
+      session.viewport_panel().marker_position[1] = 0.0f;
+      session.viewport_panel().marker_position[2] = 0.0f;
+    }
+
     // Handle selection filter dialog
     if (menu_actions.open_selection_filter)
     {
@@ -846,6 +911,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     // Handle primitive creation menu action
     if (menu_actions.create_primitive != PrimitiveType::None)
     {
+      SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
       session.primitive_dialog.open = true;
       session.primitive_dialog.type = menu_actions.create_primitive;
     }
@@ -1224,6 +1290,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     session.panel_visibility.show_tools = session.tools_panel.visible;
     if (tools_result.create_primitive != PrimitiveType::None)
     {
+      SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
       session.primitive_dialog.open = true;
       session.primitive_dialog.type = tools_result.create_primitive;
     }
@@ -1255,6 +1322,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     DrawPrimitivePopup(popup_primitive);
     if (popup_primitive != PrimitiveType::None)
     {
+      SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
       session.primitive_dialog.open = true;
       session.primitive_dialog.type = popup_primitive;
     }
@@ -1280,6 +1348,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.scene_nodes,
       session.scene_props,
       &session.undo_stack);
+    DrawMarkerDialog(session.marker_dialog, session.viewport_panel());
 
     // Draw Go To Node dialog and handle result
     GoToResult goto_result = DrawGoToDialog(
@@ -1361,6 +1430,36 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         }
       }
       session.active_target = SelectionTarget::Scene;
+    }
+
+    // Marker controls (require viewport interaction data)
+    if (!io.WantCaptureKeyboard)
+    {
+      // M: Set marker at cursor position
+      if (ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      {
+        if (viewport_result.hovered_hit_valid)
+        {
+          session.viewport_panel().marker_position[0] = viewport_result.hovered_hit_pos.x;
+          session.viewport_panel().marker_position[1] = viewport_result.hovered_hit_pos.y;
+          session.viewport_panel().marker_position[2] = viewport_result.hovered_hit_pos.z;
+        }
+      }
+      // Ctrl+M: Reset marker to origin
+      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyShift && !io.KeyAlt)
+      {
+        session.viewport_panel().marker_position[0] = 0.0f;
+        session.viewport_panel().marker_position[1] = 0.0f;
+        session.viewport_panel().marker_position[2] = 0.0f;
+      }
+      // Shift+M: Open marker position dialog
+      if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_M, false) && !io.KeyCtrl && !io.KeyAlt)
+      {
+        session.marker_dialog.position[0] = session.viewport_panel().marker_position[0];
+        session.marker_dialog.position[1] = session.viewport_panel().marker_position[1];
+        session.marker_dialog.position[2] = session.viewport_panel().marker_position[2];
+        session.marker_dialog.open = true;
+      }
     }
 
     const NodeProperties* world_props = FindWorldProperties(session.scene_props);

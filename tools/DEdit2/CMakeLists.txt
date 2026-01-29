@@ -112,6 +112,7 @@ target_compile_definitions (
 add_library (
 	ltjs_dedit2_core
 	STATIC
+		grid/grid_settings.cpp
 		path_utils.cpp
 		app/string_utils.cpp
 		app/project.cpp
@@ -185,6 +186,7 @@ target_sources (
 		app_main.cpp
 		app/editor_loop.cpp
 		brush/brush_primitive.cpp
+		marker_render.cpp
 		selection/depth_cycle.cpp
 		selection/marquee_selection.cpp
 		transform/mirror.cpp
@@ -221,6 +223,7 @@ target_sources (
 		ui_console.cpp
 		ui_dock.cpp
 		ui_goto.cpp
+		ui_marker.cpp
 		ui_status_bar.cpp
 		ui_toolbar.cpp
 		ui_tools_dock.cpp

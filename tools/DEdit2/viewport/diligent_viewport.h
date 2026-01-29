@@ -7,6 +7,7 @@
 
 #include "de_objects.h"
 #include "engine_render.h"
+#include "marker_render.h"
 #include "viewport_render.h"
 
 #include <array>
@@ -48,6 +49,8 @@ struct DiligentContext
 
 	ViewportGridRenderer grid_renderer;
 	bool grid_ready = false;
+	MarkerRenderer marker_renderer;
+	bool marker_ready = false;
 	std::vector<std::unique_ptr<WorldModelInstance>> sky_world_models;
 	std::vector<LTObject*> sky_objects;
 	std::vector<std::string> sky_world_model_names;

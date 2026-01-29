@@ -327,7 +327,26 @@ void RenderViewport(
     diligent_vp.MaxDepth = 1.0f;
     ctx.engine.context->SetViewports(1, &diligent_vp, 0, 0);
 
+    // Rebuild grid if view mode or spacing changed
+    const GridPlane plane = GetGridPlaneForViewMode(viewport_state);
+    RebuildGridIfNeeded(ctx.grid_renderer, plane, viewport_state.grid_spacing);
+
     DrawViewportGrid(ctx.engine.context, ctx.grid_renderer, viewport_state.show_grid, viewport_state.show_axes);
+
+    // Draw construction marker
+    if (ctx.marker_ready)
+    {
+      // Calculate marker scale based on camera distance for consistent screen size
+      float marker_scale = 50.0f; // Base size in world units
+      if (IsOrthographicView(viewport_state))
+      {
+        // Scale with zoom for orthographic views
+        marker_scale = viewport_state.ortho_zoom * 30.0f;
+      }
+      UpdateMarkerConstants(ctx.engine.context, ctx.marker_renderer,
+                            viewport_state.marker_position, view_proj, marker_scale);
+      DrawMarker(ctx.engine.context, ctx.marker_renderer, viewport_state.show_marker);
+    }
   }
 
   if (ctx.engine.render_struct && ctx.engine.render_struct->m_bInitted)

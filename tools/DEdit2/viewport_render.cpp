@@ -65,8 +65,60 @@ Diligent::float4x4 LookAtLH(const Diligent::float3& eye, const Diligent::float3&
 	return LookAtLH(eye, target, Diligent::float3(0.0f, 1.0f, 0.0f));
 }
 
+/// Create a grid vertex at position based on plane orientation.
+/// @param a First coordinate on the grid plane.
+/// @param b Second coordinate on the grid plane.
+/// @param plane Which plane the grid lies on.
+/// @return 3D position with the appropriate axis at zero.
+Diligent::float3 MakeGridPosition(float a, float b, GridPlane plane)
+{
+	switch (plane)
+	{
+	case GridPlane::XZ:
+		return Diligent::float3(a, 0.0f, b); // a=X, b=Z, Y=0
+	case GridPlane::XY:
+		return Diligent::float3(a, b, 0.0f); // a=X, b=Y, Z=0
+	case GridPlane::YZ:
+		return Diligent::float3(0.0f, b, a); // a=Z, b=Y, X=0
+	}
+	return Diligent::float3(a, 0.0f, b);
+}
+
+/// Get axis colors appropriate for the grid plane.
+/// Returns colors for the two in-plane axes and the perpendicular axis.
+void GetAxisColors(
+	GridPlane plane,
+	Diligent::float4& axis_a_color,
+	Diligent::float4& axis_b_color,
+	Diligent::float4& axis_perp_color)
+{
+	const Diligent::float4 axis_x_color(0.9f, 0.35f, 0.35f, 1.0f);
+	const Diligent::float4 axis_y_color(0.35f, 0.9f, 0.45f, 1.0f);
+	const Diligent::float4 axis_z_color(0.35f, 0.55f, 0.9f, 1.0f);
+
+	switch (plane)
+	{
+	case GridPlane::XZ:
+		axis_a_color = axis_x_color;    // X axis
+		axis_b_color = axis_z_color;    // Z axis
+		axis_perp_color = axis_y_color; // Y axis (perpendicular)
+		break;
+	case GridPlane::XY:
+		axis_a_color = axis_x_color;    // X axis
+		axis_b_color = axis_y_color;    // Y axis
+		axis_perp_color = axis_z_color; // Z axis (perpendicular)
+		break;
+	case GridPlane::YZ:
+		axis_a_color = axis_z_color;    // Z axis (mapped to 'a')
+		axis_b_color = axis_y_color;    // Y axis
+		axis_perp_color = axis_x_color; // X axis (perpendicular)
+		break;
+	}
+}
+
 void BuildGridVertices(
 	const ViewportGridRenderer& renderer,
+	GridPlane plane,
 	std::vector<GridVertex>& out_vertices,
 	uint32_t& out_grid_count,
 	uint32_t& out_axis_count)
@@ -85,30 +137,54 @@ void BuildGridVertices(
 	const int major_every = std::max(1, renderer.major_line_every);
 	const Diligent::float4 minor_color(0.35f, 0.37f, 0.40f, 0.6f);
 	const Diligent::float4 major_color(0.55f, 0.58f, 0.62f, 0.8f);
-	const Diligent::float4 axis_x_color(0.9f, 0.35f, 0.35f, 1.0f);
-	const Diligent::float4 axis_z_color(0.35f, 0.55f, 0.9f, 1.0f);
-	const Diligent::float4 axis_y_color(0.35f, 0.9f, 0.45f, 1.0f);
 
+	// Generate grid lines on the specified plane
 	for (int i = -line_count; i <= line_count; ++i)
 	{
 		const float coord = static_cast<float>(i) * spacing;
 		const bool is_major = (i % major_every) == 0;
 		const Diligent::float4 color = is_major ? major_color : minor_color;
 
-		out_vertices.push_back({Diligent::float3(coord, 0.0f, -extent), color});
-		out_vertices.push_back({Diligent::float3(coord, 0.0f, extent), color});
-		out_vertices.push_back({Diligent::float3(-extent, 0.0f, coord), color});
-		out_vertices.push_back({Diligent::float3(extent, 0.0f, coord), color});
+		// Lines parallel to 'b' axis (varying 'a')
+		out_vertices.push_back({MakeGridPosition(coord, -extent, plane), color});
+		out_vertices.push_back({MakeGridPosition(coord, extent, plane), color});
+		// Lines parallel to 'a' axis (varying 'b')
+		out_vertices.push_back({MakeGridPosition(-extent, coord, plane), color});
+		out_vertices.push_back({MakeGridPosition(extent, coord, plane), color});
 	}
 
 	const uint32_t grid_count = static_cast<uint32_t>(out_vertices.size());
 
-	out_vertices.push_back({Diligent::float3(-extent, 0.0f, 0.0f), axis_x_color});
-	out_vertices.push_back({Diligent::float3(extent, 0.0f, 0.0f), axis_x_color});
-	out_vertices.push_back({Diligent::float3(0.0f, 0.0f, -extent), axis_z_color});
-	out_vertices.push_back({Diligent::float3(0.0f, 0.0f, extent), axis_z_color});
-	out_vertices.push_back({Diligent::float3(0.0f, 0.0f, 0.0f), axis_y_color});
-	out_vertices.push_back({Diligent::float3(0.0f, extent * 0.12f, 0.0f), axis_y_color});
+	// Get axis colors for this plane
+	Diligent::float4 axis_a_color, axis_b_color, axis_perp_color;
+	GetAxisColors(plane, axis_a_color, axis_b_color, axis_perp_color);
+
+	// Draw the two in-plane axes
+	out_vertices.push_back({MakeGridPosition(-extent, 0.0f, plane), axis_a_color});
+	out_vertices.push_back({MakeGridPosition(extent, 0.0f, plane), axis_a_color});
+	out_vertices.push_back({MakeGridPosition(0.0f, -extent, plane), axis_b_color});
+	out_vertices.push_back({MakeGridPosition(0.0f, extent, plane), axis_b_color});
+
+	// Draw a small indicator for the perpendicular axis
+	const float perp_len = extent * 0.12f;
+	switch (plane)
+	{
+	case GridPlane::XZ:
+		// Y axis indicator
+		out_vertices.push_back({Diligent::float3(0.0f, 0.0f, 0.0f), axis_perp_color});
+		out_vertices.push_back({Diligent::float3(0.0f, perp_len, 0.0f), axis_perp_color});
+		break;
+	case GridPlane::XY:
+		// Z axis indicator
+		out_vertices.push_back({Diligent::float3(0.0f, 0.0f, 0.0f), axis_perp_color});
+		out_vertices.push_back({Diligent::float3(0.0f, 0.0f, perp_len), axis_perp_color});
+		break;
+	case GridPlane::YZ:
+		// X axis indicator
+		out_vertices.push_back({Diligent::float3(0.0f, 0.0f, 0.0f), axis_perp_color});
+		out_vertices.push_back({Diligent::float3(perp_len, 0.0f, 0.0f), axis_perp_color});
+		break;
+	}
 
 	const uint32_t axis_count = static_cast<uint32_t>(out_vertices.size()) - grid_count;
 	out_grid_count = grid_count;
@@ -128,10 +204,15 @@ bool InitViewportGridRenderer(
 		return false;
 	}
 
+	// Store device for later buffer rebuilds
+	renderer.device = device;
+	renderer.cached_plane = GridPlane::XZ;
+	renderer.cached_spacing = renderer.grid_spacing;
+
 	std::vector<GridVertex> vertices;
 	uint32_t grid_count = 0;
 	uint32_t axis_count = 0;
-	BuildGridVertices(renderer, vertices, grid_count, axis_count);
+	BuildGridVertices(renderer, renderer.cached_plane, vertices, grid_count, axis_count);
 	if (vertices.empty())
 	{
 		return false;
@@ -140,9 +221,10 @@ bool InitViewportGridRenderer(
 	renderer.grid_vertex_count = grid_count;
 	renderer.axis_vertex_count = axis_count;
 
+	// Use USAGE_DEFAULT so we can recreate the buffer when plane/spacing changes
 	Diligent::BufferDesc vb_desc;
 	vb_desc.Name = "DEdit2 Viewport Grid VB";
-	vb_desc.Usage = Diligent::USAGE_IMMUTABLE;
+	vb_desc.Usage = Diligent::USAGE_DEFAULT;
 	vb_desc.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 	vb_desc.Size = static_cast<Diligent::Uint64>(vertices.size() * sizeof(GridVertex));
 
@@ -418,4 +500,72 @@ Diligent::float4x4 ComputeViewportViewProj(
 	const float fov = Diligent::PI_F / 4.0f;
 	const Diligent::float4x4 proj = Diligent::float4x4::Projection(fov, std::max(0.01f, aspect_ratio), near_z, far_z, false);
 	return view * proj;
+}
+
+GridPlane GetGridPlaneForViewMode(const ViewportPanelState& state)
+{
+	switch (state.view_mode)
+	{
+	case ViewportPanelState::ViewMode::Top:
+	case ViewportPanelState::ViewMode::Bottom:
+	case ViewportPanelState::ViewMode::Perspective:
+		return GridPlane::XZ; // Horizontal ground plane
+	case ViewportPanelState::ViewMode::Front:
+	case ViewportPanelState::ViewMode::Back:
+		return GridPlane::XY; // Vertical plane facing camera
+	case ViewportPanelState::ViewMode::Left:
+	case ViewportPanelState::ViewMode::Right:
+		return GridPlane::YZ; // Vertical plane facing camera
+	}
+	return GridPlane::XZ;
+}
+
+void RebuildGridIfNeeded(
+	ViewportGridRenderer& renderer,
+	GridPlane plane,
+	float spacing)
+{
+	// Check if rebuild is needed
+	if (renderer.cached_plane == plane && renderer.cached_spacing == spacing)
+	{
+		return;
+	}
+
+	// Ensure we have a device to rebuild with
+	if (!renderer.device)
+	{
+		return;
+	}
+
+	// Update cached state
+	renderer.cached_plane = plane;
+	renderer.cached_spacing = spacing;
+	renderer.grid_spacing = spacing;
+
+	// Rebuild vertices
+	std::vector<GridVertex> vertices;
+	uint32_t grid_count = 0;
+	uint32_t axis_count = 0;
+	BuildGridVertices(renderer, plane, vertices, grid_count, axis_count);
+	if (vertices.empty())
+	{
+		return;
+	}
+
+	renderer.grid_vertex_count = grid_count;
+	renderer.axis_vertex_count = axis_count;
+
+	// Recreate vertex buffer
+	Diligent::BufferDesc vb_desc;
+	vb_desc.Name = "DEdit2 Viewport Grid VB";
+	vb_desc.Usage = Diligent::USAGE_DEFAULT;
+	vb_desc.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+	vb_desc.Size = static_cast<Diligent::Uint64>(vertices.size() * sizeof(GridVertex));
+
+	Diligent::BufferData vb_data;
+	vb_data.pData = vertices.data();
+	vb_data.DataSize = vb_desc.Size;
+
+	renderer.vertex_buffer.Release();
+	renderer.device->CreateBuffer(vb_desc, &vb_data, &renderer.vertex_buffer);
 }
