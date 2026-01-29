@@ -211,7 +211,43 @@ float GetToolbarHeight()
   return 32.0f;
 }
 
-ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo)
+namespace {
+
+/// Draw a snap toggle icon.
+void DrawSnapIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, bool enabled, bool hovered)
+{
+  const ImU32 bg_color = enabled ? IM_COL32(70, 130, 80, 255)
+    : (hovered ? IM_COL32(60, 60, 70, 255) : IM_COL32(45, 45, 50, 255));
+  const ImU32 fg_color = enabled ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 255);
+
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float w = max.x - min.x;
+  const float h = max.y - min.y;
+  const float s = std::min(w, h) * 0.30f;
+
+  draw_list->AddRectFilled(min, max, bg_color, 3.0f);
+
+  // Draw a magnet-like snap icon (grid with snap lines)
+  const float grid_size = s * 0.4f;
+  draw_list->AddRect(
+    ImVec2(cx - grid_size, cy - grid_size),
+    ImVec2(cx + grid_size, cy + grid_size),
+    fg_color, 0.0f, 0, 1.2f);
+  draw_list->AddLine(ImVec2(cx, cy - grid_size), ImVec2(cx, cy + grid_size), fg_color, 1.0f);
+  draw_list->AddLine(ImVec2(cx - grid_size, cy), ImVec2(cx + grid_size, cy), fg_color, 1.0f);
+
+  // Add corner dots to suggest snap points
+  const float dot_r = s * 0.1f;
+  draw_list->AddCircleFilled(ImVec2(cx - grid_size, cy - grid_size), dot_r, fg_color);
+  draw_list->AddCircleFilled(ImVec2(cx + grid_size, cy - grid_size), dot_r, fg_color);
+  draw_list->AddCircleFilled(ImVec2(cx - grid_size, cy + grid_size), dot_r, fg_color);
+  draw_list->AddCircleFilled(ImVec2(cx + grid_size, cy + grid_size), dot_r, fg_color);
+}
+
+} // namespace
+
+ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, bool snap_enabled)
 {
   ToolbarResult result{};
 
@@ -349,6 +385,35 @@ ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo)
       {
         ImGui::BeginTooltip();
         ImGui::Text("Redo (Cmd+Shift+Z)");
+        ImGui::EndTooltip();
+      }
+
+      ImGui::SameLine();
+    }
+
+    // Separator
+    ImGui::SameLine(0.0f, 8.0f);
+    ImGui::TextDisabled("|");
+    ImGui::SameLine(0.0f, 8.0f);
+
+    // Snap toggle button
+    {
+      const ImVec2 pos = ImGui::GetCursorScreenPos();
+      const bool clicked = ImGui::InvisibleButton("##tb_snap", ImVec2(button_size, button_size));
+      const bool hovered = ImGui::IsItemHovered();
+
+      DrawSnapIcon(draw_list, pos, ImVec2(pos.x + button_size, pos.y + button_size), snap_enabled, hovered);
+
+      if (clicked)
+      {
+        result.snap_toggled = true;
+      }
+
+      if (hovered)
+      {
+        ImGui::BeginTooltip();
+        ImGui::Text("Toggle Snap (%s)", snap_enabled ? "ON" : "OFF");
+        ImGui::Text("Hold Ctrl while dragging to temporarily %s snap", snap_enabled ? "disable" : "enable");
         ImGui::EndTooltip();
       }
     }

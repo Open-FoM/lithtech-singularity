@@ -1,5 +1,7 @@
 #include "viewport_gizmo.h"
 
+#include "ui_scene.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -10,6 +12,9 @@ constexpr int kRingSegments = 64;
 constexpr float kRingRadiusScale = 0.65f;
 constexpr float kPickThreshold = 9.0f;
 constexpr float kLabelOffset = 8.0f;
+constexpr float kPlaneHandleScale = 0.25f;   ///< Plane handle position relative to axis length
+constexpr float kUniformScaleBoxScale = 0.12f; ///< Center box size for uniform scale
+constexpr float kScreenRingScale = 1.2f;     ///< Screen-space ring radius scale
 
 Diligent::float3 Cross(const Diligent::float3& a, const Diligent::float3& b)
 {
@@ -121,6 +126,14 @@ ImU32 AxisColor(ViewportPanelState::GizmoAxis axis, bool active)
 			return active ? IM_COL32(120, 255, 140, 255) : IM_COL32(90, 220, 110, 220);
 		case ViewportPanelState::GizmoAxis::Z:
 			return active ? IM_COL32(120, 170, 255, 255) : IM_COL32(90, 140, 220, 220);
+		case ViewportPanelState::GizmoAxis::XY:
+			return active ? IM_COL32(200, 200, 120, 255) : IM_COL32(160, 160, 90, 180);
+		case ViewportPanelState::GizmoAxis::XZ:
+			return active ? IM_COL32(200, 120, 200, 255) : IM_COL32(160, 90, 160, 180);
+		case ViewportPanelState::GizmoAxis::YZ:
+			return active ? IM_COL32(120, 200, 200, 255) : IM_COL32(90, 160, 160, 180);
+		case ViewportPanelState::GizmoAxis::All:
+			return active ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 200, 200, 200);
 		default:
 			return IM_COL32(200, 200, 200, 200);
 	}
@@ -136,6 +149,14 @@ const char* AxisLabel(ViewportPanelState::GizmoAxis axis)
 			return "Y";
 		case ViewportPanelState::GizmoAxis::Z:
 			return "Z";
+		case ViewportPanelState::GizmoAxis::XY:
+			return "XY";
+		case ViewportPanelState::GizmoAxis::XZ:
+			return "XZ";
+		case ViewportPanelState::GizmoAxis::YZ:
+			return "YZ";
+		case ViewportPanelState::GizmoAxis::All:
+			return "All";
 		default:
 			return "";
 	}
@@ -352,6 +373,7 @@ void DrawGizmo(
 	}
 	else
 	{
+		// Draw axis handles
 		for (const auto& handle : state.handles)
 		{
 			if (handle.screen_len <= 0.0f)
@@ -379,6 +401,65 @@ void DrawGizmo(
 				viewport_pos.x + handle.end.x + dir_norm.x * kLabelOffset,
 				viewport_pos.y + handle.end.y + dir_norm.y * kLabelOffset);
 			draw_list->AddText(label_pos, color, AxisLabel(handle.axis));
+		}
+
+		// Draw plane handles (small squares at axis pair intersections) for translate mode
+		if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Translate)
+		{
+			// XY plane handle
+			const GizmoHandle& x_handle = state.handles[0];
+			const GizmoHandle& y_handle = state.handles[1];
+			const GizmoHandle& z_handle = state.handles[2];
+
+			auto draw_plane_handle = [&](const GizmoHandle& h1, const GizmoHandle& h2, ViewportPanelState::GizmoAxis plane_axis) {
+				if (h1.screen_len <= 0.0f || h2.screen_len <= 0.0f)
+				{
+					return;
+				}
+				const float offset1 = h1.screen_len * kPlaneHandleScale;
+				const float offset2 = h2.screen_len * kPlaneHandleScale;
+				const ImVec2 dir1((h1.end.x - h1.start.x) / h1.screen_len, (h1.end.y - h1.start.y) / h1.screen_len);
+				const ImVec2 dir2((h2.end.x - h2.start.x) / h2.screen_len, (h2.end.y - h2.start.y) / h2.screen_len);
+
+				ImVec2 corners[4] = {
+					ImVec2(state.origin_screen.x, state.origin_screen.y),
+					ImVec2(state.origin_screen.x + dir1.x * offset1, state.origin_screen.y + dir1.y * offset1),
+					ImVec2(state.origin_screen.x + dir1.x * offset1 + dir2.x * offset2, state.origin_screen.y + dir1.y * offset1 + dir2.y * offset2),
+					ImVec2(state.origin_screen.x + dir2.x * offset2, state.origin_screen.y + dir2.y * offset2)
+				};
+
+				const bool active = panel.gizmo_axis == plane_axis && panel.gizmo_dragging;
+				const ImU32 fill_color = AxisColor(plane_axis, active);
+				const ImU32 fill_alpha = active ? IM_COL32(255, 255, 255, 100) : IM_COL32(255, 255, 255, 60);
+				const ImU32 combined = (fill_color & 0x00FFFFFF) | (fill_alpha & 0xFF000000);
+
+				draw_list->AddQuadFilled(
+					ImVec2(viewport_pos.x + corners[0].x, viewport_pos.y + corners[0].y),
+					ImVec2(viewport_pos.x + corners[1].x, viewport_pos.y + corners[1].y),
+					ImVec2(viewport_pos.x + corners[2].x, viewport_pos.y + corners[2].y),
+					ImVec2(viewport_pos.x + corners[3].x, viewport_pos.y + corners[3].y),
+					combined);
+			};
+
+			draw_plane_handle(x_handle, y_handle, ViewportPanelState::GizmoAxis::XY);
+			draw_plane_handle(x_handle, z_handle, ViewportPanelState::GizmoAxis::XZ);
+			draw_plane_handle(y_handle, z_handle, ViewportPanelState::GizmoAxis::YZ);
+		}
+
+		// Draw center box for uniform scale
+		if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Scale)
+		{
+			const float box_size = state.handles[0].screen_len * kUniformScaleBoxScale;
+			if (box_size > 2.0f)
+			{
+				const bool active = panel.gizmo_axis == ViewportPanelState::GizmoAxis::All && panel.gizmo_dragging;
+				const ImU32 color = AxisColor(ViewportPanelState::GizmoAxis::All, active);
+				const ImVec2 center(viewport_pos.x + state.origin_screen.x, viewport_pos.y + state.origin_screen.y);
+				draw_list->AddRectFilled(
+					ImVec2(center.x - box_size, center.y - box_size),
+					ImVec2(center.x + box_size, center.y + box_size),
+					color);
+			}
 		}
 	}
 }
@@ -569,5 +650,609 @@ bool UpdateGizmoInteraction(
 	panel.gizmo_start_scale[0] = props.scale[0];
 	panel.gizmo_start_scale[1] = props.scale[1];
 	panel.gizmo_start_scale[2] = props.scale[2];
+	return true;
+}
+
+bool BuildGizmoDrawStateMultiSelect(
+	const ViewportPanelState& panel,
+	const ScenePanelState& scene_panel,
+	const std::vector<TreeNode>& nodes,
+	const std::vector<NodeProperties>& props,
+	const Diligent::float3& cam_pos,
+	const Diligent::float4x4& view_proj,
+	const ImVec2& viewport_size,
+	GizmoDrawState& out_state)
+{
+	if (!HasSelection(scene_panel))
+	{
+		return false;
+	}
+
+	// Compute selection center
+	const std::array<float, 3> center = ComputeSelectionCenter(scene_panel, props);
+
+	// Get primary selection for rotation reference (when using local space)
+	const int primary_id = scene_panel.primary_selection;
+	const bool has_valid_primary = primary_id >= 0 &&
+		static_cast<size_t>(primary_id) < props.size() &&
+		static_cast<size_t>(primary_id) < nodes.size() &&
+		!nodes[primary_id].deleted && !nodes[primary_id].is_folder;
+
+	// Create a temporary props struct for building gizmo state
+	NodeProperties temp_props;
+	temp_props.visible = true;
+	temp_props.position[0] = center[0];
+	temp_props.position[1] = center[1];
+	temp_props.position[2] = center[2];
+
+	// Use primary selection's rotation for local space gizmo orientation
+	if (has_valid_primary)
+	{
+		temp_props.rotation[0] = props[primary_id].rotation[0];
+		temp_props.rotation[1] = props[primary_id].rotation[1];
+		temp_props.rotation[2] = props[primary_id].rotation[2];
+	}
+
+	// Build the basic gizmo state
+	if (!BuildGizmoDrawState(panel, temp_props, cam_pos, view_proj, viewport_size, out_state))
+	{
+		return false;
+	}
+
+	// Mark as multi-select and collect affected node IDs
+	out_state.is_multi_select = SelectionCount(scene_panel) > 1;
+	out_state.affected_node_ids.clear();
+
+	const size_t count = std::min(nodes.size(), props.size());
+	for (int id : scene_panel.selected_ids)
+	{
+		if (id >= 0 && static_cast<size_t>(id) < count &&
+			!nodes[id].deleted && !nodes[id].is_folder && !props[id].frozen)
+		{
+			out_state.affected_node_ids.push_back(id);
+		}
+	}
+
+	return !out_state.affected_node_ids.empty();
+}
+
+bool UpdateGizmoInteractionMultiSelect(
+	ViewportPanelState& panel,
+	GizmoDrawState& state,
+	const ScenePanelState& scene_panel,
+	const std::vector<TreeNode>& nodes,
+	std::vector<NodeProperties>& props,
+	const ImVec2& mouse_local,
+	bool mouse_down,
+	bool mouse_clicked,
+	UndoStack* undo_stack)
+{
+	if (!state.origin_visible || state.affected_node_ids.empty())
+	{
+		if (panel.gizmo_dragging && !mouse_down)
+		{
+			panel.gizmo_dragging = false;
+			panel.gizmo_axis = ViewportPanelState::GizmoAxis::None;
+		}
+		return false;
+	}
+
+	const bool shift_held = ImGui::GetIO().KeyShift;
+	const bool ctrl_held = ImGui::GetIO().KeyCtrl;
+	const float fine_adjust_factor = shift_held ? 0.1f : 1.0f;
+
+	// Determine effective snap state (Ctrl toggles snap)
+	const bool snap_translate_eff = panel.snap_translate != ctrl_held;
+	const bool snap_rotate_eff = panel.snap_rotate != ctrl_held;
+	const bool snap_scale_eff = panel.snap_scale != ctrl_held;
+
+	if (panel.gizmo_dragging)
+	{
+		// Check for Escape to cancel
+		if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+		{
+			// Restore all transforms from start state
+			for (size_t i = 0; i < state.affected_node_ids.size(); ++i)
+			{
+				const int id = state.affected_node_ids[i];
+				if (id < 0 || static_cast<size_t>(id) >= props.size())
+				{
+					continue;
+				}
+				if (i < state.start_transforms.size())
+				{
+					const TransformState& start = state.start_transforms[i];
+					props[id].position[0] = start.position[0];
+					props[id].position[1] = start.position[1];
+					props[id].position[2] = start.position[2];
+					props[id].rotation[0] = start.rotation[0];
+					props[id].rotation[1] = start.rotation[1];
+					props[id].rotation[2] = start.rotation[2];
+					props[id].scale[0] = start.scale[0];
+					props[id].scale[1] = start.scale[1];
+					props[id].scale[2] = start.scale[2];
+				}
+				if (i < state.start_vertices.size() && !state.start_vertices[i].empty())
+				{
+					props[id].brush_vertices = state.start_vertices[i];
+				}
+			}
+			panel.gizmo_dragging = false;
+			panel.gizmo_axis = ViewportPanelState::GizmoAxis::None;
+			return false;
+		}
+
+		if (!mouse_down)
+		{
+			// Drag ended - push undo action
+			if (undo_stack != nullptr)
+			{
+				std::vector<TransformChange> changes;
+				for (size_t i = 0; i < state.affected_node_ids.size(); ++i)
+				{
+					const int id = state.affected_node_ids[i];
+					if (id < 0 || static_cast<size_t>(id) >= props.size())
+					{
+						continue;
+					}
+					TransformChange change;
+					change.node_id = id;
+					if (i < state.start_transforms.size())
+					{
+						change.before = state.start_transforms[i];
+					}
+					change.after.position[0] = props[id].position[0];
+					change.after.position[1] = props[id].position[1];
+					change.after.position[2] = props[id].position[2];
+					change.after.rotation[0] = props[id].rotation[0];
+					change.after.rotation[1] = props[id].rotation[1];
+					change.after.rotation[2] = props[id].rotation[2];
+					change.after.scale[0] = props[id].scale[0];
+					change.after.scale[1] = props[id].scale[1];
+					change.after.scale[2] = props[id].scale[2];
+					if (i < state.start_vertices.size() && !state.start_vertices[i].empty())
+					{
+						change.before_vertices = state.start_vertices[i];
+						change.after_vertices = props[id].brush_vertices;
+					}
+					changes.push_back(std::move(change));
+				}
+				if (!changes.empty())
+				{
+					undo_stack->PushTransform(UndoTarget::Scene, std::move(changes));
+				}
+			}
+			panel.gizmo_dragging = false;
+			panel.gizmo_axis = ViewportPanelState::GizmoAxis::None;
+			return false;
+		}
+
+		// Continue dragging - apply delta to all selected nodes
+		const ImVec2 delta(
+			mouse_local.x - panel.gizmo_drag_start_mouse.x,
+			mouse_local.y - panel.gizmo_drag_start_mouse.y);
+
+		// Handle plane and uniform scale axes
+		const bool is_plane_axis = panel.gizmo_axis == ViewportPanelState::GizmoAxis::XY ||
+			panel.gizmo_axis == ViewportPanelState::GizmoAxis::XZ ||
+			panel.gizmo_axis == ViewportPanelState::GizmoAxis::YZ;
+		const bool is_uniform_scale = panel.gizmo_axis == ViewportPanelState::GizmoAxis::All;
+
+		if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Translate)
+		{
+			Diligent::float3 world_delta(0.0f, 0.0f, 0.0f);
+
+			if (is_plane_axis)
+			{
+				// Get the two handles for the plane
+				int idx1 = 0, idx2 = 1;
+				if (panel.gizmo_axis == ViewportPanelState::GizmoAxis::XZ) { idx1 = 0; idx2 = 2; }
+				else if (panel.gizmo_axis == ViewportPanelState::GizmoAxis::YZ) { idx1 = 1; idx2 = 2; }
+
+				const GizmoHandle& h1 = state.handles[idx1];
+				const GizmoHandle& h2 = state.handles[idx2];
+				if (h1.screen_len <= 0.0f || h2.screen_len <= 0.0f)
+				{
+					return false;
+				}
+
+				const ImVec2 dir1((h1.end.x - h1.start.x) / h1.screen_len, (h1.end.y - h1.start.y) / h1.screen_len);
+				const ImVec2 dir2((h2.end.x - h2.start.x) / h2.screen_len, (h2.end.y - h2.start.y) / h2.screen_len);
+				const float world_per_pixel1 = h1.world_len / h1.screen_len;
+				const float world_per_pixel2 = h2.world_len / h2.screen_len;
+
+				float scalar1 = (delta.x * dir1.x + delta.y * dir1.y) * fine_adjust_factor;
+				float scalar2 = (delta.x * dir2.x + delta.y * dir2.y) * fine_adjust_factor;
+				float delta1 = scalar1 * world_per_pixel1;
+				float delta2 = scalar2 * world_per_pixel2;
+
+				if (snap_translate_eff)
+				{
+					if (panel.snap_translate_axis[idx1]) delta1 = SnapValue(delta1, panel.snap_translate_step);
+					if (panel.snap_translate_axis[idx2]) delta2 = SnapValue(delta2, panel.snap_translate_step);
+				}
+
+				world_delta.x = h1.dir.x * delta1 + h2.dir.x * delta2;
+				world_delta.y = h1.dir.y * delta1 + h2.dir.y * delta2;
+				world_delta.z = h1.dir.z * delta1 + h2.dir.z * delta2;
+			}
+			else
+			{
+				// Single axis
+				const GizmoHandle* active = FindHandle(state, panel.gizmo_axis);
+				if (active == nullptr || active->screen_len <= 0.0f)
+				{
+					return false;
+				}
+
+				const ImVec2 axis_dir(
+					(active->end.x - active->start.x) / active->screen_len,
+					(active->end.y - active->start.y) / active->screen_len);
+				float scalar = (delta.x * axis_dir.x + delta.y * axis_dir.y) * fine_adjust_factor;
+				const float world_per_pixel = active->world_len / active->screen_len;
+				const int axis_index = active->axis_index;
+
+				float world_scalar = scalar * world_per_pixel;
+				if (snap_translate_eff && panel.snap_translate_axis[axis_index])
+				{
+					world_scalar = SnapValue(world_scalar, panel.snap_translate_step);
+				}
+
+				world_delta.x = active->dir.x * world_scalar;
+				world_delta.y = active->dir.y * world_scalar;
+				world_delta.z = active->dir.z * world_scalar;
+			}
+
+			// Apply translation delta to all affected nodes
+			for (size_t i = 0; i < state.affected_node_ids.size(); ++i)
+			{
+				const int id = state.affected_node_ids[i];
+				if (id < 0 || static_cast<size_t>(id) >= props.size())
+				{
+					continue;
+				}
+				if (i >= state.start_transforms.size())
+				{
+					continue;
+				}
+				const TransformState& start = state.start_transforms[i];
+				props[id].position[0] = start.position[0] + world_delta.x;
+				props[id].position[1] = start.position[1] + world_delta.y;
+				props[id].position[2] = start.position[2] + world_delta.z;
+
+				// Also move brush vertices if present
+				if (i < state.start_vertices.size() && !state.start_vertices[i].empty())
+				{
+					props[id].brush_vertices = state.start_vertices[i];
+					for (size_t v = 0; v < props[id].brush_vertices.size(); v += 3)
+					{
+						props[id].brush_vertices[v] += world_delta.x;
+						props[id].brush_vertices[v + 1] += world_delta.y;
+						props[id].brush_vertices[v + 2] += world_delta.z;
+					}
+				}
+			}
+		}
+		else if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Rotate)
+		{
+			const GizmoHandle* active = FindHandle(state, panel.gizmo_axis);
+			if (active == nullptr || active->screen_len <= 0.0f)
+			{
+				return false;
+			}
+			const int axis_index = active->axis_index;
+
+			const float angle_now = std::atan2(
+				mouse_local.y - state.origin_screen.y,
+				mouse_local.x - state.origin_screen.x);
+			float delta_rad = (angle_now - panel.gizmo_drag_start_angle) * fine_adjust_factor;
+			float delta_deg = delta_rad * 180.0f / kPi;
+			if (snap_rotate_eff && panel.snap_rotate_axis[axis_index])
+			{
+				delta_deg = SnapValue(delta_deg, panel.snap_rotate_step);
+			}
+			delta_rad = delta_deg * kPi / 180.0f;
+
+			// Build rotation matrix for the delta
+			Diligent::float3x3 delta_rot;
+			if (axis_index == 0)
+			{
+				delta_rot = Diligent::float3x3::RotationX(delta_rad);
+			}
+			else if (axis_index == 1)
+			{
+				delta_rot = Diligent::float3x3::RotationY(delta_rad);
+			}
+			else
+			{
+				delta_rot = Diligent::float3x3::RotationZ(delta_rad);
+			}
+
+			// Apply rotation to all affected nodes around the gizmo origin
+			for (size_t i = 0; i < state.affected_node_ids.size(); ++i)
+			{
+				const int id = state.affected_node_ids[i];
+				if (id < 0 || static_cast<size_t>(id) >= props.size())
+				{
+					continue;
+				}
+				if (i >= state.start_transforms.size())
+				{
+					continue;
+				}
+				const TransformState& start = state.start_transforms[i];
+
+				// Rotate position around gizmo origin
+				Diligent::float3 offset(
+					start.position[0] - state.origin.x,
+					start.position[1] - state.origin.y,
+					start.position[2] - state.origin.z);
+				Diligent::float3 rotated = delta_rot * offset;
+				props[id].position[0] = state.origin.x + rotated.x;
+				props[id].position[1] = state.origin.y + rotated.y;
+				props[id].position[2] = state.origin.z + rotated.z;
+
+				// Compose rotation with node's existing rotation
+				const Diligent::float3x3 base = EulerToMatrixXYZ(start.rotation);
+				Diligent::float3x3 combined;
+				if (panel.rotation_space == ViewportPanelState::GizmoSpace::World)
+				{
+					combined = Diligent::float3x3::Mul(delta_rot, base);
+				}
+				else
+				{
+					combined = Diligent::float3x3::Mul(base, delta_rot);
+				}
+				MatrixToEulerXYZ(combined, props[id].rotation);
+
+				// Rotate brush vertices if present
+				if (i < state.start_vertices.size() && !state.start_vertices[i].empty())
+				{
+					props[id].brush_vertices = state.start_vertices[i];
+					for (size_t v = 0; v < props[id].brush_vertices.size(); v += 3)
+					{
+						Diligent::float3 vert_offset(
+							props[id].brush_vertices[v] - state.origin.x,
+							props[id].brush_vertices[v + 1] - state.origin.y,
+							props[id].brush_vertices[v + 2] - state.origin.z);
+						Diligent::float3 vert_rotated = delta_rot * vert_offset;
+						props[id].brush_vertices[v] = state.origin.x + vert_rotated.x;
+						props[id].brush_vertices[v + 1] = state.origin.y + vert_rotated.y;
+						props[id].brush_vertices[v + 2] = state.origin.z + vert_rotated.z;
+					}
+				}
+			}
+		}
+		else // Scale
+		{
+			float delta_scale = 0.0f;
+			if (is_uniform_scale)
+			{
+				// Use average of X and Y mouse delta for uniform scale
+				const float avg_delta = (delta.x + delta.y) * 0.5f * fine_adjust_factor;
+				delta_scale = avg_delta * 0.01f;
+				if (snap_scale_eff)
+				{
+					delta_scale = SnapValue(delta_scale, panel.snap_scale_step);
+				}
+			}
+			else
+			{
+				// Single axis scale
+				const GizmoHandle* active = FindHandle(state, panel.gizmo_axis);
+				if (active == nullptr || active->screen_len <= 0.0f)
+				{
+					return false;
+				}
+
+				const ImVec2 axis_dir(
+					(active->end.x - active->start.x) / active->screen_len,
+					(active->end.y - active->start.y) / active->screen_len);
+				const float scalar = (delta.x * axis_dir.x + delta.y * axis_dir.y) * fine_adjust_factor;
+				delta_scale = scalar * 0.01f;
+				if (snap_scale_eff && panel.snap_scale_axis[active->axis_index])
+				{
+					delta_scale = SnapValue(delta_scale, panel.snap_scale_step);
+				}
+			}
+
+			for (size_t i = 0; i < state.affected_node_ids.size(); ++i)
+			{
+				const int id = state.affected_node_ids[i];
+				if (id < 0 || static_cast<size_t>(id) >= props.size())
+				{
+					continue;
+				}
+				if (i >= state.start_transforms.size())
+				{
+					continue;
+				}
+				const TransformState& start = state.start_transforms[i];
+				props[id].scale[0] = start.scale[0];
+				props[id].scale[1] = start.scale[1];
+				props[id].scale[2] = start.scale[2];
+
+				if (is_uniform_scale)
+				{
+					// Apply to all axes
+					props[id].scale[0] = std::max(0.01f, props[id].scale[0] + delta_scale);
+					props[id].scale[1] = std::max(0.01f, props[id].scale[1] + delta_scale);
+					props[id].scale[2] = std::max(0.01f, props[id].scale[2] + delta_scale);
+				}
+				else
+				{
+					// Single axis
+					const GizmoHandle* active = FindHandle(state, panel.gizmo_axis);
+					if (active != nullptr)
+					{
+						props[id].scale[active->axis_index] = std::max(0.01f, props[id].scale[active->axis_index] + delta_scale);
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	// Not dragging - check for click to start drag
+	if (!mouse_clicked)
+	{
+		return false;
+	}
+
+	// Hit test gizmo handles
+	float best_dist = kPickThreshold;
+	ViewportPanelState::GizmoAxis hit_axis = ViewportPanelState::GizmoAxis::None;
+	if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Rotate)
+	{
+		for (const auto& handle : state.handles)
+		{
+			const float ring_radius = handle.world_len * kRingRadiusScale;
+			ImVec2 prev;
+			bool prev_valid = false;
+			for (int seg = 0; seg <= kRingSegments; ++seg)
+			{
+				const float angle = static_cast<float>(seg) / static_cast<float>(kRingSegments) * 2.0f * kPi;
+				ImVec2 screen_point;
+				if (!ComputeRingPoint(state, handle, ring_radius, angle, screen_point))
+				{
+					prev_valid = false;
+					continue;
+				}
+				if (prev_valid)
+				{
+					const float dist = DistancePointToSegment(mouse_local, prev, screen_point);
+					if (dist < best_dist)
+					{
+						best_dist = dist;
+						hit_axis = handle.axis;
+					}
+				}
+				prev = screen_point;
+				prev_valid = true;
+			}
+		}
+	}
+	else
+	{
+		// Test axis handles
+		for (const auto& handle : state.handles)
+		{
+			if (handle.screen_len <= 0.0f)
+			{
+				continue;
+			}
+			const float dist = DistancePointToSegment(mouse_local, handle.start, handle.end);
+			if (dist < best_dist)
+			{
+				best_dist = dist;
+				hit_axis = handle.axis;
+			}
+		}
+
+		// Test plane handles for translate mode
+		if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Translate)
+		{
+			auto test_plane_handle = [&](const GizmoHandle& h1, const GizmoHandle& h2, ViewportPanelState::GizmoAxis plane_axis) {
+				if (h1.screen_len <= 0.0f || h2.screen_len <= 0.0f)
+				{
+					return;
+				}
+				const float offset1 = h1.screen_len * kPlaneHandleScale;
+				const float offset2 = h2.screen_len * kPlaneHandleScale;
+				const ImVec2 dir1((h1.end.x - h1.start.x) / h1.screen_len, (h1.end.y - h1.start.y) / h1.screen_len);
+				const ImVec2 dir2((h2.end.x - h2.start.x) / h2.screen_len, (h2.end.y - h2.start.y) / h2.screen_len);
+
+				// Check if point is inside the quad
+				const ImVec2 local_mouse(mouse_local.x - state.origin_screen.x, mouse_local.y - state.origin_screen.y);
+				const float u = (local_mouse.x * dir1.x + local_mouse.y * dir1.y);
+				const float v = (local_mouse.x * dir2.x + local_mouse.y * dir2.y);
+				if (u >= 0.0f && u <= offset1 && v >= 0.0f && v <= offset2)
+				{
+					hit_axis = plane_axis;
+					best_dist = 0.0f;
+				}
+			};
+
+			test_plane_handle(state.handles[0], state.handles[1], ViewportPanelState::GizmoAxis::XY);
+			test_plane_handle(state.handles[0], state.handles[2], ViewportPanelState::GizmoAxis::XZ);
+			test_plane_handle(state.handles[1], state.handles[2], ViewportPanelState::GizmoAxis::YZ);
+		}
+
+		// Test center box for uniform scale
+		if (panel.gizmo_mode == ViewportPanelState::GizmoMode::Scale)
+		{
+			const float box_size = state.handles[0].screen_len * kUniformScaleBoxScale;
+			if (box_size > 2.0f)
+			{
+				const float dx = mouse_local.x - state.origin_screen.x;
+				const float dy = mouse_local.y - state.origin_screen.y;
+				if (std::fabs(dx) <= box_size && std::fabs(dy) <= box_size)
+				{
+					hit_axis = ViewportPanelState::GizmoAxis::All;
+					best_dist = 0.0f;
+				}
+			}
+		}
+	}
+
+	if (hit_axis == ViewportPanelState::GizmoAxis::None)
+	{
+		return false;
+	}
+
+	// Start dragging - store start transforms for all affected nodes
+	panel.gizmo_dragging = true;
+	panel.gizmo_axis = hit_axis;
+	panel.gizmo_drag_start_mouse = mouse_local;
+	panel.gizmo_drag_start_angle = std::atan2(
+		mouse_local.y - state.origin_screen.y,
+		mouse_local.x - state.origin_screen.x);
+
+	state.start_transforms.clear();
+	state.start_vertices.clear();
+	state.start_transforms.reserve(state.affected_node_ids.size());
+	state.start_vertices.reserve(state.affected_node_ids.size());
+
+	for (int id : state.affected_node_ids)
+	{
+		if (id < 0 || static_cast<size_t>(id) >= props.size())
+		{
+			state.start_transforms.emplace_back();
+			state.start_vertices.emplace_back();
+			continue;
+		}
+		TransformState start;
+		start.position[0] = props[id].position[0];
+		start.position[1] = props[id].position[1];
+		start.position[2] = props[id].position[2];
+		start.rotation[0] = props[id].rotation[0];
+		start.rotation[1] = props[id].rotation[1];
+		start.rotation[2] = props[id].rotation[2];
+		start.scale[0] = props[id].scale[0];
+		start.scale[1] = props[id].scale[1];
+		start.scale[2] = props[id].scale[2];
+		state.start_transforms.push_back(start);
+		state.start_vertices.push_back(props[id].brush_vertices);
+	}
+
+	// Also store in panel for backwards compatibility
+	if (!state.affected_node_ids.empty())
+	{
+		const int first_id = state.affected_node_ids[0];
+		if (first_id >= 0 && static_cast<size_t>(first_id) < props.size())
+		{
+			panel.gizmo_start_pos[0] = props[first_id].position[0];
+			panel.gizmo_start_pos[1] = props[first_id].position[1];
+			panel.gizmo_start_pos[2] = props[first_id].position[2];
+			panel.gizmo_start_rot[0] = props[first_id].rotation[0];
+			panel.gizmo_start_rot[1] = props[first_id].rotation[1];
+			panel.gizmo_start_rot[2] = props[first_id].rotation[2];
+			panel.gizmo_start_scale[0] = props[first_id].scale[0];
+			panel.gizmo_start_scale[1] = props[first_id].scale[1];
+			panel.gizmo_start_scale[2] = props[first_id].scale[2];
+		}
+	}
+
 	return true;
 }

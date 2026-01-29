@@ -18,7 +18,8 @@ enum class UndoActionType
 	RenameNode,
 	MoveNode,
 	ChangeVisibility,
-	ChangeFrozen
+	ChangeFrozen,
+	TransformNode
 };
 
 /// Stores the previous visibility/frozen state for a single node.
@@ -26,6 +27,26 @@ struct NodeStateChange
 {
 	int node_id = -1;
 	bool previous_value = false;
+};
+
+/// Stores the complete transform state for a node.
+struct TransformState
+{
+	float position[3] = {0.0f, 0.0f, 0.0f};
+	float rotation[3] = {0.0f, 0.0f, 0.0f};
+	float scale[3] = {1.0f, 1.0f, 1.0f};
+};
+
+/// Stores transform change for a single node (before/after states).
+struct TransformChange
+{
+	int node_id = -1;
+	TransformState before;
+	TransformState after;
+	std::vector<float> before_vertices;      ///< Brush vertices before transform
+	std::vector<float> after_vertices;       ///< Brush vertices after transform
+	std::vector<uint32_t> before_indices;    ///< Brush indices before transform (for mirror winding)
+	std::vector<uint32_t> after_indices;     ///< Brush indices after transform (for mirror winding)
 };
 
 struct UndoAction
@@ -41,6 +62,9 @@ struct UndoAction
 
 	/// For ChangeVisibility/ChangeFrozen: batch of affected nodes and their previous values.
 	std::vector<NodeStateChange> state_changes;
+
+	/// For TransformNode: batch of transform changes (supports multi-selection).
+	std::vector<TransformChange> transform_changes;
 };
 
 class UndoStack
@@ -67,6 +91,11 @@ public:
 	/// @param target Which tree the nodes belong to.
 	/// @param changes Vector of node IDs and their previous frozen values.
 	void PushFrozen(UndoTarget target, std::vector<NodeStateChange> changes);
+
+	/// Push a batch transform change (supports multi-selection).
+	/// @param target Which tree the nodes belong to.
+	/// @param changes Vector of transform changes with before/after states.
+	void PushTransform(UndoTarget target, std::vector<TransformChange> changes);
 
 	void Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
 	          std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props);

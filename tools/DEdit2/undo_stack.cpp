@@ -85,6 +85,19 @@ void UndoStack::PushFrozen(UndoTarget target, std::vector<NodeStateChange> chang
 	Push(std::move(action));
 }
 
+void UndoStack::PushTransform(UndoTarget target, std::vector<TransformChange> changes)
+{
+	if (changes.empty())
+	{
+		return;
+	}
+	UndoAction action;
+	action.type = UndoActionType::TransformNode;
+	action.target = target;
+	action.transform_changes = std::move(changes);
+	Push(std::move(action));
+}
+
 void UndoStack::Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
                      std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props)
 {
@@ -184,6 +197,50 @@ void UndoStack::Apply(
 		return;
 	}
 
+	// Handle transform changes (need props)
+	if (action.type == UndoActionType::TransformNode)
+	{
+		std::vector<NodeProperties>* props = (action.target == UndoTarget::Project)
+			? project_props : scene_props;
+		if (props == nullptr)
+		{
+			return;  // Can't apply transform without props
+		}
+		for (const auto& change : action.transform_changes)
+		{
+			if (change.node_id < 0 || change.node_id >= static_cast<int>(props->size()))
+			{
+				continue;
+			}
+			NodeProperties& p = (*props)[change.node_id];
+			const TransformState& state = undo ? change.before : change.after;
+			p.position[0] = state.position[0];
+			p.position[1] = state.position[1];
+			p.position[2] = state.position[2];
+			p.rotation[0] = state.rotation[0];
+			p.rotation[1] = state.rotation[1];
+			p.rotation[2] = state.rotation[2];
+			p.scale[0] = state.scale[0];
+			p.scale[1] = state.scale[1];
+			p.scale[2] = state.scale[2];
+
+			// Restore brush vertices if present
+			const std::vector<float>& verts = undo ? change.before_vertices : change.after_vertices;
+			if (!verts.empty())
+			{
+				p.brush_vertices = verts;
+			}
+
+			// Restore brush indices if present (for mirror winding)
+			const std::vector<uint32_t>& indices = undo ? change.before_indices : change.after_indices;
+			if (!indices.empty())
+			{
+				p.brush_indices = indices;
+			}
+		}
+		return;
+	}
+
 	// Handle node-based actions
 	if (action.node_id < 0 || action.node_id >= static_cast<int>(nodes->size()))
 	{
@@ -208,6 +265,7 @@ void UndoStack::Apply(
 			break;
 		case UndoActionType::ChangeVisibility:
 		case UndoActionType::ChangeFrozen:
+		case UndoActionType::TransformNode:
 			// Already handled above
 			break;
 	}

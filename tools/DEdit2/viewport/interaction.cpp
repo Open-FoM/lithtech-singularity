@@ -6,6 +6,7 @@
 #include "selection/selection_filter.h"
 #include "ui_scene.h"
 #include "ui_viewport.h"
+#include "undo_stack.h"
 #include "viewport/scene_filters.h"
 #include "viewport_gizmo.h"
 #include "viewport_picking.h"
@@ -18,6 +19,9 @@
 namespace {
 /// Persistent marquee state across frames.
 MarqueeState g_marquee_state;
+
+/// Persistent gizmo state for multi-selection tracking.
+GizmoDrawState g_gizmo_state;
 } // namespace
 
 ViewportInteractionResult UpdateViewportInteraction(
@@ -31,7 +35,8 @@ ViewportInteractionResult UpdateViewportInteraction(
   const ImVec2& viewport_pos,
   const ImVec2& viewport_size,
   bool drew_image,
-  bool hovered)
+  bool hovered,
+  UndoStack* undo_stack)
 {
   ViewportInteractionResult result{};
   if (!drew_image)
@@ -39,40 +44,38 @@ ViewportInteractionResult UpdateViewportInteraction(
     return result;
   }
 
-  if (hovered && active_target == SelectionTarget::Scene)
+  if (hovered && active_target == SelectionTarget::Scene && HasSelection(scene_panel))
   {
-    const int selected_id = scene_panel.primary_selection;
-    const size_t count = std::min(scene_nodes.size(), scene_props.size());
-    if (selected_id >= 0 && static_cast<size_t>(selected_id) < count)
+    const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
+    const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
+
+    Diligent::float3 cam_pos;
+    Diligent::float3 cam_forward;
+    Diligent::float3 cam_right;
+    Diligent::float3 cam_up;
+    ComputeCameraBasis(viewport_panel, cam_pos, cam_forward, cam_right, cam_up);
+
+    // Only rebuild gizmo geometry when not dragging (preserve start transforms during drag)
+    if (!viewport_panel.gizmo_dragging)
     {
-      const TreeNode& node = scene_nodes[selected_id];
-      NodeProperties& props = scene_props[selected_id];
-      if (!node.deleted && !node.is_folder && !props.frozen &&
-        SceneNodePassesFilters(scene_panel, selected_id, scene_nodes, scene_props))
+      BuildGizmoDrawStateMultiSelect(
+        viewport_panel, scene_panel, scene_nodes, scene_props,
+        cam_pos, view_proj, viewport_size, g_gizmo_state);
+    }
+
+    if (g_gizmo_state.origin_visible)
+    {
+      DrawGizmo(viewport_panel, g_gizmo_state, viewport_pos, ImGui::GetWindowDrawList());
+      const ImVec2 mouse_local(
+        ImGui::GetIO().MousePos.x - viewport_pos.x,
+        ImGui::GetIO().MousePos.y - viewport_pos.y);
+      const bool mouse_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+      const bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+      if (UpdateGizmoInteractionMultiSelect(
+        viewport_panel, g_gizmo_state, scene_panel, scene_nodes, scene_props,
+        mouse_local, mouse_down, mouse_clicked, undo_stack))
       {
-        const float aspect = viewport_size.y > 0.0f ? (viewport_size.x / viewport_size.y) : 1.0f;
-        const Diligent::float4x4 view_proj = ComputeViewportViewProj(viewport_panel, aspect);
-
-        Diligent::float3 cam_pos;
-        Diligent::float3 cam_forward;
-        Diligent::float3 cam_right;
-        Diligent::float3 cam_up;
-        ComputeCameraBasis(viewport_panel, cam_pos, cam_forward, cam_right, cam_up);
-
-        GizmoDrawState gizmo_state{};
-        if (BuildGizmoDrawState(viewport_panel, props, cam_pos, view_proj, viewport_size, gizmo_state))
-        {
-          DrawGizmo(viewport_panel, gizmo_state, viewport_pos, ImGui::GetWindowDrawList());
-          const ImVec2 mouse_local(
-            ImGui::GetIO().MousePos.x - viewport_pos.x,
-            ImGui::GetIO().MousePos.y - viewport_pos.y);
-          const bool mouse_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-          const bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-          if (UpdateGizmoInteraction(viewport_panel, gizmo_state, props, mouse_local, mouse_down, mouse_clicked))
-          {
-            result.gizmo_consumed_click = true;
-          }
-        }
+        result.gizmo_consumed_click = true;
       }
     }
   }

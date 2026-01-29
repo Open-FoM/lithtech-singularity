@@ -181,6 +181,14 @@ void DrawMainMenuBar(
 			}
 			ImGui::EndMenu();
 		}
+		if (ImGui::MenuItem("Rotate Selection...", "Ctrl+Shift+R"))
+		{
+			actions.rotate_selection = true;
+		}
+		if (ImGui::MenuItem("Mirror Selection...", nullptr))
+		{
+			actions.mirror_selection_dialog = true;
+		}
 		ImGui::Separator();
 		ImGui::MenuItem("Preferences...", nullptr, false, false);
 		ImGui::EndMenu();

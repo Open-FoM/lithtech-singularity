@@ -14,6 +14,7 @@
 #include "viewport/world_settings.h"
 
 #include "transform/mirror.h"
+#include "transform/nudge.h"
 #include "ui_console.h"
 #include "ui_dock.h"
 #include "ui_goto.h"
@@ -389,10 +390,26 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       &viewport_display_flags);
 
     // Draw toolbar
+    const bool snap_enabled = session.viewport_panel().snap_translate ||
+      session.viewport_panel().snap_rotate || session.viewport_panel().snap_scale;
     ToolbarResult toolbar_result = DrawToolbar(
       session.tools_panel,
       session.undo_stack.CanUndo(),
-      session.undo_stack.CanRedo());
+      session.undo_stack.CanRedo(),
+      snap_enabled);
+    if (toolbar_result.snap_toggled)
+    {
+      // Toggle all snap modes together
+      const bool new_snap = !snap_enabled;
+      session.viewport_panel().snap_translate = new_snap;
+      session.viewport_panel().snap_rotate = new_snap;
+      session.viewport_panel().snap_scale = new_snap;
+      // Link translate snap step to grid spacing
+      if (new_snap)
+      {
+        session.viewport_panel().snap_translate_step = session.viewport_panel().grid_spacing;
+      }
+    }
     if (toolbar_result.undo_requested)
     {
       menu_actions.undo = true;
@@ -628,6 +645,59 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         OpenGoToDialog(session.goto_dialog);
       }
+      // W: Translate gizmo mode
+      if (ImGui::IsKeyPressed(ImGuiKey_W, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      {
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Translate;
+      }
+      // E: Rotate gizmo mode
+      if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      {
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Rotate;
+      }
+      // R: Scale gizmo mode
+      if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt)
+      {
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Scale;
+      }
+
+      // Nudge keys (arrow keys for XY/XZ movement, Page Up/Down for depth)
+      if (session.active_target == SelectionTarget::Scene && HasSelection(session.scene_panel))
+      {
+        const NudgeIncrement increment = io.KeyCtrl ? NudgeIncrement::Small :
+          (io.KeyShift ? NudgeIncrement::Large : NudgeIncrement::Normal);
+
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Left, increment, &session.undo_stack);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Right, increment, &session.undo_stack);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Up, increment, &session.undo_stack);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Down, increment, &session.undo_stack);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_PageUp, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Forward, increment, &session.undo_stack);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_PageDown, false))
+        {
+          NudgeSelection(session.viewport_panel(), session.scene_panel, session.scene_nodes,
+            session.scene_props, NudgeDirection::Back, increment, &session.undo_stack);
+        }
+      }
     }
     if (trigger_undo)
     {
@@ -708,6 +778,16 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (menu_actions.mirror_z && HasSelection(session.scene_panel))
       {
         MirrorSelection(session.scene_panel, session.scene_nodes, session.scene_props, MirrorAxis::Z);
+      }
+      // Rotate selection dialog
+      if (menu_actions.rotate_selection && HasSelection(session.scene_panel))
+      {
+        session.rotate_dialog.open = true;
+      }
+      // Mirror selection dialog
+      if (menu_actions.mirror_selection_dialog && HasSelection(session.scene_panel))
+      {
+        session.mirror_dialog.open = true;
       }
     }
 
@@ -1188,6 +1268,18 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.scene_panel,
       session.scene_nodes,
       session.scene_props);
+    DrawRotateDialog(
+      session.rotate_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack);
+    DrawMirrorDialog(
+      session.mirror_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack);
 
     // Draw Go To Node dialog and handle result
     GoToResult goto_result = DrawGoToDialog(
@@ -1216,7 +1308,8 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.depth_cycle,
       session.scene_nodes,
       session.scene_props,
-      session.active_target);
+      session.active_target,
+      &session.undo_stack);
 
     overlay_state = viewport_result.overlays;
     if (viewport_result.clicked_scene_id >= 0)

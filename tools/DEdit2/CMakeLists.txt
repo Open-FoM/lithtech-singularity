@@ -37,22 +37,6 @@ if (NOT TARGET SDL3::SDL3)
 	find_package (SDL3 3.2.0 REQUIRED)
 endif ()
 
-if (LTJS_BUILD_TESTS)
-	include (CTest)
-	enable_testing ()
-
-	include (FetchContent)
-	set (BUILD_GMOCK OFF CACHE BOOL "Disable gmock for DEdit2 tests." FORCE)
-	set (INSTALL_GTEST OFF CACHE BOOL "Disable GoogleTest install for DEdit2 tests." FORCE)
-	FetchContent_Declare (
-		googletest
-		GIT_REPOSITORY https://github.com/google/googletest.git
-		GIT_TAG v1.14.0
-	)
-	FetchContent_MakeAvailable (googletest)
-	add_subdirectory (tests)
-endif ()
-
 if (NOT TARGET Diligent-GraphicsEngineVk-static)
 	set (DILIGENT_NO_DIRECT3D12 ON CACHE BOOL "Disable D3D12 backend" FORCE)
 	set (DILIGENT_NO_OPENGL ON CACHE BOOL "Disable OpenGL backend" FORCE)
@@ -125,6 +109,58 @@ target_compile_definitions (
 		LTJS_USE_DILIGENT_RENDER
 )
 
+add_library (
+	ltjs_dedit2_core
+	STATIC
+		path_utils.cpp
+		app/string_utils.cpp
+		app/project.cpp
+		app/node_props.cpp
+		app/world_core.cpp
+		grouping/node_grouping.cpp
+		selection/selection_filter.cpp
+		selection/selection_query.cpp
+		tree_nodes.cpp
+		ui_scene.cpp
+		ui_shared.cpp
+		undo_stack.cpp
+		${LTJS_ROOT}/libs/imgui/imgui.cpp
+		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp
+		${LTJS_ROOT}/libs/imgui/imgui_tables.cpp
+		${LTJS_ROOT}/libs/imgui/imgui_widgets.cpp
+)
+
+set_target_properties (
+	ltjs_dedit2_core
+	PROPERTIES
+		CXX_STANDARD 20
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+)
+
+target_include_directories (
+	ltjs_dedit2_core
+	PUBLIC
+		${CMAKE_CURRENT_LIST_DIR}
+		${LTJS_ROOT}/libs/imgui
+)
+
+if (LTJS_BUILD_TESTS)
+	include (CTest)
+	enable_testing ()
+
+	include (FetchContent)
+	set (BUILD_GMOCK OFF CACHE BOOL "Disable gmock for DEdit2 tests." FORCE)
+	set (INSTALL_GTEST OFF CACHE BOOL "Disable GoogleTest install for DEdit2 tests." FORCE)
+	FetchContent_Declare (
+		googletest
+		GIT_REPOSITORY https://github.com/google/googletest.git
+		GIT_TAG v1.14.0
+	)
+	FetchContent_MakeAvailable (googletest)
+	add_subdirectory (tests)
+endif ()
+
 add_executable (${PROJECT_NAME})
 
 ltjs_add_defaults (${PROJECT_NAME})
@@ -149,22 +185,18 @@ target_sources (
 		app_main.cpp
 		app/editor_loop.cpp
 		brush/brush_primitive.cpp
-		grouping/node_grouping.cpp
 		selection/depth_cycle.cpp
 		selection/marquee_selection.cpp
-		selection/selection_filter.cpp
-		selection/selection_query.cpp
 		transform/mirror.cpp
+		transform/nudge.cpp
+		transform/rotate_dialog.cpp
+		transform/mirror_dialog.cpp
 		app/document_state.h
 		app/editor_paths.cpp
 		app/editor_session.h
-		app/node_props.cpp
-		app/project.cpp
 		app/project_utils.cpp
-		app/world_core.cpp
 		app/recent_projects.cpp
 		app/scene_loader.cpp
-		app/string_utils.cpp
 		app/world.cpp
 		ui/viewport_panel.cpp
 		viewport/diligent_viewport.cpp
@@ -184,7 +216,6 @@ target_sources (
 		engine_sprite.cpp
 		engine_render.cpp
 		lt_stream.cpp
-		path_utils.cpp
 		texture_cache.cpp
 		texture_effect_group.cpp
 		ui_console.cpp
@@ -195,15 +226,12 @@ target_sources (
 		ui_tools_dock.cpp
 		ui_project.cpp
 		ui_worlds.cpp
-		ui_scene.cpp
 		ui_viewport.cpp
 		multi_viewport.cpp
 		viewport_picking.cpp
 		viewport_gizmo.cpp
 		viewport_render.cpp
-		undo_stack.cpp
 		ui_properties.cpp
-		ui_shared.cpp
 		platform_macos.mm
 		${LTJS_ROOT}/engine/libs/ltamgr/ltabitfile.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltacompressedfile.cpp
@@ -231,10 +259,6 @@ target_sources (
 		${LTJS_ROOT}/engine/runtime/kernel/toport/src/bindmgr.cpp
 		${LTJS_ROOT}/engine/runtime/kernel/src/sys/linux/ltlibraryloader.cpp
 		dsys_stub.cpp
-		${LTJS_ROOT}/libs/imgui/imgui.cpp
-		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp
-		${LTJS_ROOT}/libs/imgui/imgui_tables.cpp
-		${LTJS_ROOT}/libs/imgui/imgui_widgets.cpp
 		${LTJS_ROOT}/libs/imgui/misc/cpp/imgui_stdlib.cpp
 		${LTJS_ROOT}/libs/imgui/backends/imgui_impl_sdl3.cpp
 		${LTJS_ROOT}/libs/diligent/DiligentTools/Imgui/src/ImGuiDiligentRenderer.cpp
@@ -281,6 +305,7 @@ target_include_directories (
 target_link_libraries (
 	${PROJECT_NAME}
 	PRIVATE
+		ltjs_dedit2_core
 		ltjs_lib_diligent_render
 		ltjs_lib_world
 		ltjs_lib_model

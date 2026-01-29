@@ -129,7 +129,8 @@ ViewportPanelResult DrawViewportPanel(
   DepthCycleState& depth_cycle,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,
-  SelectionTarget active_target)
+  SelectionTarget active_target,
+  UndoStack* undo_stack)
 {
   // Get the active viewport for convenience
   ViewportPanelState& viewport_panel = multi_viewport.ActiveViewport();
@@ -770,7 +771,8 @@ ViewportPanelResult DrawViewportPanel(
             child_pos,
             child_avail,
             slot_drew_image,
-            hovered);
+            hovered,
+            undo_stack);
 
           result.overlays = interaction.overlays;
           result.hovered_scene_id = interaction.hovered_scene_id;

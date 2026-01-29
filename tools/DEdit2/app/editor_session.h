@@ -7,6 +7,8 @@
 #include "selection/depth_cycle.h"
 #include "selection/selection_filter.h"
 #include "selection/selection_query.h"
+#include "transform/mirror_dialog.h"
+#include "transform/rotate_dialog.h"
 #include "undo_stack.h"
 #include "ui_console.h"
 #include "ui_dock.h"
@@ -121,4 +123,10 @@ struct EditorSession
 
   /// Go To Node dialog state.
   GoToDialogState goto_dialog;
+
+  /// Rotate selection dialog state.
+  RotateDialogState rotate_dialog;
+
+  /// Mirror selection dialog state.
+  MirrorDialogState mirror_dialog;
 };

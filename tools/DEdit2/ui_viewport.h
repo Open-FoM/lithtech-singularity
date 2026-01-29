@@ -50,7 +50,11 @@ struct ViewportPanelState
 		None,
 		X,
 		Y,
-		Z
+		Z,
+		XY,  ///< Plane handle for XY movement
+		XZ,  ///< Plane handle for XZ movement
+		YZ,  ///< Plane handle for YZ movement
+		All  ///< Uniform scale (all axes together)
 	};
 	enum class GizmoSpace
 	{

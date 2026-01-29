@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+class UndoStack;
 struct DepthCycleState;
 struct ImVec2;
 struct NodeProperties;
@@ -47,4 +48,5 @@ ViewportInteractionResult UpdateViewportInteraction(
   const ImVec2& viewport_pos,
   const ImVec2& viewport_size,
   bool drew_image,
-  bool hovered);
+  bool hovered,
+  UndoStack* undo_stack);

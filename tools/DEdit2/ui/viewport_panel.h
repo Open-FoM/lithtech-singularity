@@ -35,6 +35,8 @@ struct ViewportPanelResult
   std::string depth_cycle_status;
 };
 
+class UndoStack;
+
 /// Draw the multi-viewport panel with layout support.
 ViewportPanelResult DrawViewportPanel(
   DiligentContext& diligent,
@@ -44,4 +46,5 @@ ViewportPanelResult DrawViewportPanel(
   DepthCycleState& depth_cycle,
   std::vector<TreeNode>& scene_nodes,
   std::vector<NodeProperties>& scene_props,
-  SelectionTarget active_target);
+  SelectionTarget active_target,
+  UndoStack* undo_stack);
