@@ -53,6 +53,24 @@ struct MainMenuActions
 	ViewModeAction view_mode = ViewModeAction::None;
 	std::optional<ViewportLayout> layout_change;
 	bool cycle_viewport = false;
+	bool toggle_fps = false;
+	bool reset_panel_visibility = false;
+	bool reset_splitters = false;
+};
+
+/// FPS display state pointer for View menu.
+struct ViewportDisplayFlags {
+	bool* show_fps = nullptr;
+};
+
+/// Panel visibility flags for the main menu.
+struct PanelVisibilityFlags {
+  bool* show_project = nullptr;
+  bool* show_worlds = nullptr;
+  bool* show_scene = nullptr;
+  bool* show_properties = nullptr;
+  bool* show_console = nullptr;
+  bool* show_tools = nullptr;
 };
 
 void DrawMainMenuBar(
@@ -61,5 +79,7 @@ void DrawMainMenuBar(
 	const std::vector<std::string>& recent_projects,
 	bool can_undo,
 	bool can_redo,
-	bool* show_tools_panel = nullptr);
+	bool has_selection,
+	PanelVisibilityFlags* panels = nullptr,
+	ViewportDisplayFlags* viewport_display = nullptr);
 void EnsureDockLayout(ImGuiID dockspace_id, const ImGuiViewport* viewport, bool force_reset);

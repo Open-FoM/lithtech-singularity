@@ -19,8 +19,9 @@
 #include "rendererconsolevars.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -700,6 +701,7 @@ ViewportPanelResult DrawViewportPanel(
       content_origin.x, content_origin.y,
       content_avail.x, content_avail.y,
       slot,
+      multi_viewport.splitter_h, multi_viewport.splitter_v,
       slot_x, slot_y, slot_w, slot_h);
 
     const bool is_active = (slot == multi_viewport.active_viewport);
@@ -822,22 +824,163 @@ ViewportPanelResult DrawViewportPanel(
     ImGui::EndChild();
     ImGui::PopStyleVar();
 
-    // Draw active viewport border highlight
-    if (is_active && visible_count > 1)
+    // Draw view mode header bar and border for all viewports
     {
       ImDrawList* draw_list = ImGui::GetWindowDrawList();
-      draw_list->AddRect(
+      constexpr float header_height = 18.0f;
+
+      // Header bar background
+      const ImU32 header_bg = is_active
+        ? IM_COL32(60, 100, 160, 220)
+        : IM_COL32(45, 45, 50, 200);
+      draw_list->AddRectFilled(
         ImVec2(slot_x, slot_y),
-        ImVec2(slot_x + slot_w, slot_y + slot_h),
-        IM_COL32(100, 180, 255, 255),
-        0.0f, 0, 2.0f);
+        ImVec2(slot_x + slot_w, slot_y + header_height),
+        header_bg);
+
+      // View mode label
+      const ImU32 label_color = is_active
+        ? IM_COL32(255, 255, 255, 255)
+        : IM_COL32(180, 180, 190, 200);
+      const ImVec2 label_pos(slot_x + 6.0f, slot_y + 2.0f);
+      draw_list->AddText(label_pos, label_color, view_mode_name);
+
+      // Draw border (thicker for active viewport)
+      if (visible_count > 1)
+      {
+        const float border_thickness = is_active ? 3.0f : 1.0f;
+        const ImU32 border_color = is_active
+          ? IM_COL32(100, 180, 255, 255)
+          : IM_COL32(60, 60, 70, 180);
+        draw_list->AddRect(
+          ImVec2(slot_x, slot_y),
+          ImVec2(slot_x + slot_w, slot_y + slot_h),
+          border_color,
+          0.0f, 0, border_thickness);
+      }
+
+      // Double-click on header to maximize/restore
+      const ImVec2 header_min(slot_x, slot_y);
+      const ImVec2 header_max(slot_x + slot_w, slot_y + header_height);
+      const ImVec2 mouse_pos = ImGui::GetMousePos();
+      if (mouse_pos.x >= header_min.x && mouse_pos.x <= header_max.x &&
+          mouse_pos.y >= header_min.y && mouse_pos.y <= header_max.y)
+      {
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        {
+          ToggleMaximizeViewport(multi_viewport, slot);
+        }
+      }
+
+      // FPS display in header (right side)
+      if (slot_state.show_fps)
+      {
+        // Calculate FPS from ImGui frame time
+        const float fps = 1.0f / ImGui::GetIO().DeltaTime;
+        char fps_text[16];
+        snprintf(fps_text, sizeof(fps_text), "%.0f FPS", fps);
+        const ImVec2 fps_size = ImGui::CalcTextSize(fps_text);
+        const ImVec2 fps_pos(slot_x + slot_w - fps_size.x - 8.0f, slot_y + 2.0f);
+        draw_list->AddText(fps_pos, IM_COL32(180, 200, 180, 255), fps_text);
+      }
+    }
+  }
+
+  // Handle splitter dragging for multi-viewport layouts
+  if (visible_count > 1 && !multi_viewport.maximized)
+  {
+    constexpr float splitter_size = 6.0f;
+    constexpr float half_splitter = splitter_size * 0.5f;
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    // Calculate splitter positions based on current layout
+    const float h_split_x = content_origin.x + content_avail.x * multi_viewport.splitter_h;
+    const float v_split_y = content_origin.y + content_avail.y * multi_viewport.splitter_v;
+
+    bool hovering_h_splitter = false;
+    bool hovering_v_splitter = false;
+
+    // Check for horizontal splitter (vertical line) - for TwoVertical, ThreeLeft, Quad
+    if (multi_viewport.layout == ViewportLayout::TwoVertical ||
+        multi_viewport.layout == ViewportLayout::ThreeLeft ||
+        multi_viewport.layout == ViewportLayout::Quad)
+    {
+      const ImVec2 h_min(h_split_x - half_splitter, content_origin.y);
+      const ImVec2 h_max(h_split_x + half_splitter, content_origin.y + content_avail.y);
+      hovering_h_splitter = mouse_pos.x >= h_min.x && mouse_pos.x <= h_max.x &&
+                            mouse_pos.y >= h_min.y && mouse_pos.y <= h_max.y;
     }
 
-    // Draw view mode label in corner for all viewports
+    // Check for vertical splitter (horizontal line) - for TwoHorizontal, ThreeTop, Quad
+    if (multi_viewport.layout == ViewportLayout::TwoHorizontal ||
+        multi_viewport.layout == ViewportLayout::ThreeTop ||
+        multi_viewport.layout == ViewportLayout::Quad)
     {
-      ImDrawList* draw_list = ImGui::GetWindowDrawList();
-      const ImVec2 label_pos(slot_x + 6.0f, slot_y + 4.0f);
-      draw_list->AddText(label_pos, IM_COL32(200, 200, 210, 200), view_mode_name);
+      const ImVec2 v_min(content_origin.x, v_split_y - half_splitter);
+      const ImVec2 v_max(content_origin.x + content_avail.x, v_split_y + half_splitter);
+      hovering_v_splitter = mouse_pos.x >= v_min.x && mouse_pos.x <= v_max.x &&
+                            mouse_pos.y >= v_min.y && mouse_pos.y <= v_max.y;
+    }
+
+    // Set cursor and handle drag
+    static bool dragging_h = false;
+    static bool dragging_v = false;
+
+    if (hovering_h_splitter || dragging_h)
+    {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+    else if (hovering_v_splitter || dragging_v)
+    {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+    }
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+      if (hovering_h_splitter)
+      {
+        dragging_h = true;
+      }
+      else if (hovering_v_splitter)
+      {
+        dragging_v = true;
+      }
+    }
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+    {
+      dragging_h = false;
+      dragging_v = false;
+    }
+
+    if (dragging_h && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+    {
+      const float new_h = (mouse_pos.x - content_origin.x) / content_avail.x;
+      multi_viewport.splitter_h = std::clamp(new_h, 0.15f, 0.85f);
+    }
+
+    if (dragging_v && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+    {
+      const float new_v = (mouse_pos.y - content_origin.y) / content_avail.y;
+      multi_viewport.splitter_v = std::clamp(new_v, 0.15f, 0.85f);
+    }
+
+    // Draw splitter highlights when hovering
+    const ImU32 splitter_color = IM_COL32(100, 150, 200, 100);
+    if (hovering_h_splitter || dragging_h)
+    {
+      draw_list->AddRectFilled(
+        ImVec2(h_split_x - half_splitter, content_origin.y),
+        ImVec2(h_split_x + half_splitter, content_origin.y + content_avail.y),
+        splitter_color);
+    }
+    if (hovering_v_splitter || dragging_v)
+    {
+      draw_list->AddRectFilled(
+        ImVec2(content_origin.x, v_split_y - half_splitter),
+        ImVec2(content_origin.x + content_avail.x, v_split_y + half_splitter),
+        splitter_color);
     }
   }
 

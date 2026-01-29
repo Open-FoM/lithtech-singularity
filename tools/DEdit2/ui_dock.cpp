@@ -8,7 +8,9 @@ void DrawMainMenuBar(
 	const std::vector<std::string>& recent_projects,
 	bool can_undo,
 	bool can_redo,
-	bool* show_tools_panel)
+	bool has_selection,
+	PanelVisibilityFlags* panels,
+	ViewportDisplayFlags* viewport_display)
 {
 	if (!ImGui::BeginMainMenuBar())
 	{
@@ -17,6 +19,8 @@ void DrawMainMenuBar(
 
 	if (ImGui::BeginMenu("File"))
 	{
+		ImGui::MenuItem("New World", "Ctrl+N", false, false);
+		ImGui::Separator();
 		if (ImGui::MenuItem("Open Folder..."))
 		{
 			actions.open_project_folder = true;
@@ -41,6 +45,9 @@ void DrawMainMenuBar(
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();
+		ImGui::MenuItem("Save", "Ctrl+S", false, false);
+		ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, false);
+		ImGui::Separator();
 		ImGui::MenuItem("Exit", nullptr, false, false);
 		ImGui::EndMenu();
 	}
@@ -55,6 +62,12 @@ void DrawMainMenuBar(
 		{
 			actions.redo = true;
 		}
+		ImGui::Separator();
+		// Clipboard operations not yet implemented - keep disabled
+		ImGui::MenuItem("Cut", "Cmd+X", false, false);
+		ImGui::MenuItem("Copy", "Cmd+C", false, false);
+		ImGui::MenuItem("Paste", "Cmd+V", false, false);
+		ImGui::MenuItem("Delete", "Del", false, false);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Select All", "Cmd+A"))
 		{
@@ -212,6 +225,18 @@ void DrawMainMenuBar(
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();
+		if (viewport_display != nullptr && viewport_display->show_fps != nullptr)
+		{
+			if (ImGui::MenuItem("Show FPS", nullptr, *viewport_display->show_fps))
+			{
+				*viewport_display->show_fps = !*viewport_display->show_fps;
+			}
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem("Reset Splitters"))
+		{
+			actions.reset_splitters = true;
+		}
 		if (ImGui::MenuItem("Reset Layout"))
 		{
 			request_reset_layout = true;
@@ -221,12 +246,59 @@ void DrawMainMenuBar(
 
 	if (ImGui::BeginMenu("Window"))
 	{
-		if (show_tools_panel != nullptr)
+		if (ImGui::BeginMenu("Panels"))
 		{
-			if (ImGui::MenuItem("Tools", nullptr, *show_tools_panel))
+			if (panels != nullptr)
 			{
-				*show_tools_panel = !*show_tools_panel;
+				if (panels->show_project != nullptr)
+				{
+					if (ImGui::MenuItem("Project", nullptr, *panels->show_project))
+					{
+						*panels->show_project = !*panels->show_project;
+					}
+				}
+				if (panels->show_worlds != nullptr)
+				{
+					if (ImGui::MenuItem("Worlds", nullptr, *panels->show_worlds))
+					{
+						*panels->show_worlds = !*panels->show_worlds;
+					}
+				}
+				if (panels->show_scene != nullptr)
+				{
+					if (ImGui::MenuItem("Scene", nullptr, *panels->show_scene))
+					{
+						*panels->show_scene = !*panels->show_scene;
+					}
+				}
+				if (panels->show_properties != nullptr)
+				{
+					if (ImGui::MenuItem("Properties", nullptr, *panels->show_properties))
+					{
+						*panels->show_properties = !*panels->show_properties;
+					}
+				}
+				if (panels->show_console != nullptr)
+				{
+					if (ImGui::MenuItem("Console", nullptr, *panels->show_console))
+					{
+						*panels->show_console = !*panels->show_console;
+					}
+				}
+				if (panels->show_tools != nullptr)
+				{
+					if (ImGui::MenuItem("Tools", nullptr, *panels->show_tools))
+					{
+						*panels->show_tools = !*panels->show_tools;
+					}
+				}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Reset Panel Visibility"))
+				{
+					actions.reset_panel_visibility = true;
+				}
 			}
+			ImGui::EndMenu();
 		}
 		ImGui::EndMenu();
 	}

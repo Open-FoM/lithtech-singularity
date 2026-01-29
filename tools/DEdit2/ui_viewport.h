@@ -149,6 +149,7 @@ struct ViewportPanelState
 	bool show_light_icons = true;
 	bool light_icon_occlusion = true;
 	bool lightmaps_autoloaded = false;
+	bool show_fps = false;
 };
 
 void ResetViewportPanel(ViewportPanelState& state, const ImVec2& size);

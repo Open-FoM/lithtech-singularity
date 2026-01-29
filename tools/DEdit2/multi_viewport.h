@@ -38,6 +38,16 @@ struct MultiViewportState
   /// Used to sync orthographic viewports when no perspective view is active.
   float last_perspective_target[3] = {0.0f, 0.0f, 0.0f};
 
+  /// Splitter positions (0.0-1.0 range).
+  /// For Quad layout: splitter_h is horizontal divider, splitter_v is vertical divider.
+  float splitter_h = 0.5f;   ///< Horizontal splitter position (left/right split)
+  float splitter_v = 0.5f;   ///< Vertical splitter position (top/bottom split)
+
+  /// Maximize state.
+  bool maximized = false;
+  int maximized_slot = -1;
+  ViewportLayout pre_maximize_layout = ViewportLayout::Quad;
+
   /// Returns the currently active viewport state.
   [[nodiscard]] ViewportPanelState& ActiveViewport()
   {
@@ -77,6 +87,8 @@ void SyncOrthoViewportsToPerspective(MultiViewportState& state);
 /// Returns the viewport rectangle for a given slot in the current layout.
 /// @param area Total available area for all viewports.
 /// @param slot Slot index (0-3).
+/// @param splitter_h Horizontal splitter position (0.0-1.0).
+/// @param splitter_v Vertical splitter position (0.0-1.0).
 /// @param out_x Output X position.
 /// @param out_y Output Y position.
 /// @param out_width Output width.
@@ -85,4 +97,13 @@ void GetViewportSlotRect(
     ViewportLayout layout,
     float area_x, float area_y, float area_width, float area_height,
     int slot,
+    float splitter_h, float splitter_v,
     float& out_x, float& out_y, float& out_width, float& out_height);
+
+/// Toggle maximize state for a viewport slot.
+/// If not maximized, switches to single layout showing the specified slot.
+/// If maximized, restores the previous layout.
+void ToggleMaximizeViewport(MultiViewportState& state, int slot);
+
+/// Reset splitters to default (0.5, 0.5) positions.
+void ResetSplitters(MultiViewportState& state);

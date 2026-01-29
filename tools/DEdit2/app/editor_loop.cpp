@@ -18,6 +18,8 @@
 #include "ui_properties.h"
 #include "ui_scene.h"
 #include "ui_shared.h"
+#include "ui_status_bar.h"
+#include "ui_toolbar.h"
 #include "ui_worlds.h"
 #include "platform_macos.h"
 
@@ -306,13 +308,64 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     ImGui::DockSpaceOverViewport(dockspace_id, viewport, dockspace_flags);
 
     MainMenuActions menu_actions{};
+    const bool has_selection = (session.active_target == SelectionTarget::Scene) && HasSelection(session.scene_panel);
+    PanelVisibilityFlags panel_flags{
+      &session.panel_visibility.show_project,
+      &session.panel_visibility.show_worlds,
+      &session.panel_visibility.show_scene,
+      &session.panel_visibility.show_properties,
+      &session.panel_visibility.show_console,
+      &session.panel_visibility.show_tools
+    };
+    ViewportDisplayFlags viewport_display_flags{
+      &session.viewport_panel().show_fps
+    };
     DrawMainMenuBar(
       request_reset_layout,
       menu_actions,
       session.recent_projects,
       session.undo_stack.CanUndo(),
       session.undo_stack.CanRedo(),
-      &session.tools_panel.visible);
+      has_selection,
+      &panel_flags,
+      &viewport_display_flags);
+
+    // Draw toolbar
+    ToolbarResult toolbar_result = DrawToolbar(
+      session.tools_panel,
+      session.undo_stack.CanUndo(),
+      session.undo_stack.CanRedo());
+    if (toolbar_result.undo_requested)
+    {
+      menu_actions.undo = true;
+    }
+    if (toolbar_result.redo_requested)
+    {
+      menu_actions.redo = true;
+    }
+    if (toolbar_result.tool_changed)
+    {
+      // Map tool selection to gizmo mode
+      switch (toolbar_result.new_tool)
+      {
+      case EditorTool::Move:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Translate;
+        break;
+      case EditorTool::Rotate:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Rotate;
+        break;
+      case EditorTool::Scale:
+        session.viewport_panel().gizmo_mode = ViewportPanelState::GizmoMode::Scale;
+        break;
+      default:
+        break;
+      }
+    }
+    if (toolbar_result.create_primitive != PrimitiveType::None)
+    {
+      session.primitive_dialog.open = true;
+      session.primitive_dialog.type = toolbar_result.create_primitive;
+    }
 
     ImGuiIO& io = ImGui::GetIO();
     bool trigger_undo = menu_actions.undo;
@@ -549,6 +602,12 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.primitive_dialog.type = menu_actions.create_primitive;
     }
 
+    // Handle reset splitters
+    if (menu_actions.reset_splitters)
+    {
+      ResetSplitters(session.multi_viewport);
+    }
+
     if (menu_actions.open_project_folder)
     {
       std::string selected_path;
@@ -581,18 +640,27 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       PushRecentProject(session.recent_projects, session.project_root);
     }
 
-    ProjectContextAction project_action{};
-    DrawProjectPanel(
-      session.project_panel,
-      session.project_root,
-      session.project_nodes,
-      session.project_props,
-      session.active_target,
-      &project_action,
-      &session.undo_stack);
-    if (session.project_panel.error != session.project_error)
+    // Handle reset panel visibility
+    if (menu_actions.reset_panel_visibility)
     {
-      session.project_error = session.project_panel.error;
+      session.panel_visibility = PanelVisibility{};
+    }
+
+    ProjectContextAction project_action{};
+    if (session.panel_visibility.show_project)
+    {
+      DrawProjectPanel(
+        session.project_panel,
+        session.project_root,
+        session.project_nodes,
+        session.project_props,
+        session.active_target,
+        &project_action,
+        &session.undo_stack);
+      if (session.project_panel.error != session.project_error)
+      {
+        session.project_error = session.project_panel.error;
+      }
     }
     if (project_action.load_world)
     {
@@ -610,7 +678,10 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.world_settings_cache);
     }
     WorldBrowserAction world_action{};
-    DrawWorldBrowserPanel(session.world_browser, session.project_root, world_action);
+    if (session.panel_visibility.show_worlds)
+    {
+      DrawWorldBrowserPanel(session.world_browser, session.project_root, world_action);
+    }
     if (world_action.load_world)
     {
       LoadSceneWorld(
@@ -626,25 +697,37 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.active_target,
         session.world_settings_cache);
     }
-    DrawScenePanel(session.scene_panel, session.scene_nodes, session.scene_props, session.active_target, &session.undo_stack);
-    if (session.scene_panel.error != session.scene_error)
+    if (session.panel_visibility.show_scene)
     {
-      session.scene_error = session.scene_panel.error;
+      DrawScenePanel(session.scene_panel, session.scene_nodes, session.scene_props, session.active_target, &session.undo_stack);
+      if (session.scene_panel.error != session.scene_error)
+      {
+        session.scene_error = session.scene_panel.error;
+      }
     }
-    DrawPropertiesPanel(
-      session.active_target,
-      session.project_nodes,
-      session.project_props,
-      session.project_panel.selected_id,
-      session.scene_nodes,
-      session.scene_props,
-      session.scene_panel.primary_selection,
-      session.project_root);
+    if (session.panel_visibility.show_properties)
+    {
+      DrawPropertiesPanel(
+        session.active_target,
+        session.project_nodes,
+        session.project_props,
+        session.project_panel.selected_id,
+        session.scene_nodes,
+        session.scene_props,
+        session.scene_panel.primary_selection,
+        session.project_root);
+    }
 
-    DrawConsolePanel(session.console_panel);
+    if (session.panel_visibility.show_console)
+    {
+      DrawConsolePanel(session.console_panel);
+    }
 
     // Draw tools panel and handle tool selection
+    // Sync panel visibility with tools panel state
+    session.tools_panel.visible = session.panel_visibility.show_tools;
     ToolsPanelResult tools_result = DrawToolsPanel(session.tools_panel);
+    session.panel_visibility.show_tools = session.tools_panel.visible;
     if (tools_result.create_primitive != PrimitiveType::None)
     {
       session.primitive_dialog.open = true;
@@ -757,7 +840,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
 
     const float clear_color[] = {0.10f, 0.11f, 0.12f, 1.0f};
     diligent.engine.context->ClearRenderTarget(back_rtv, clear_color, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    if (back_dsv)
+    if (back_dsv != nullptr)
     {
       diligent.engine.context->ClearDepthStencil(
         back_dsv,
@@ -765,6 +848,24 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         1.0f,
         0,
         Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    }
+
+    // Draw status bar
+    {
+      StatusBarInfo status_info;
+      status_info.grid_spacing = session.viewport_panel().grid_spacing;
+      status_info.cursor_valid = viewport_result.hovered_hit_valid;
+      if (viewport_result.hovered_hit_valid)
+      {
+        status_info.cursor_pos[0] = viewport_result.hovered_hit_pos.x;
+        status_info.cursor_pos[1] = viewport_result.hovered_hit_pos.y;
+        status_info.cursor_pos[2] = viewport_result.hovered_hit_pos.z;
+      }
+      status_info.selection_count = SelectionCount(session.scene_panel);
+      status_info.current_tool = session.tools_panel.selected_tool;
+      status_info.show_fps = session.viewport_panel().show_fps;
+      status_info.fps = 1.0f / io.DeltaTime;
+      DrawStatusBar(status_info);
     }
 
     diligent.imgui->Render(diligent.engine.context);

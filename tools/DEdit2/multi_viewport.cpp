@@ -224,6 +224,7 @@ void GetViewportSlotRect(
     ViewportLayout layout,
     float area_x, float area_y, float area_width, float area_height,
     int slot,
+    float splitter_h, float splitter_v,
     float& out_x, float& out_y, float& out_width, float& out_height)
 {
   // Default: full area
@@ -235,6 +236,10 @@ void GetViewportSlotRect(
   // Small gap between viewports
   constexpr float gap = 2.0f;
 
+  // Clamp splitters to valid range
+  splitter_h = std::clamp(splitter_h, 0.15f, 0.85f);
+  splitter_v = std::clamp(splitter_v, 0.15f, 0.85f);
+
   switch (layout)
   {
   case ViewportLayout::Single:
@@ -243,38 +248,49 @@ void GetViewportSlotRect(
 
   case ViewportLayout::TwoVertical:
     // Two side-by-side viewports
-    out_width = (area_width - gap) * 0.5f;
-    if (slot == 0)
     {
-      // Left viewport
-    }
-    else if (slot == 1)
-    {
-      // Right viewport
-      out_x = area_x + out_width + gap;
+      const float left_width = (area_width - gap) * splitter_h;
+      const float right_width = area_width - left_width - gap;
+      if (slot == 0)
+      {
+        // Left viewport
+        out_width = left_width;
+      }
+      else if (slot == 1)
+      {
+        // Right viewport
+        out_x = area_x + left_width + gap;
+        out_width = right_width;
+      }
     }
     break;
 
   case ViewportLayout::TwoHorizontal:
     // Two stacked viewports
-    out_height = (area_height - gap) * 0.5f;
-    if (slot == 0)
     {
-      // Top viewport
-    }
-    else if (slot == 1)
-    {
-      // Bottom viewport
-      out_y = area_y + out_height + gap;
+      const float top_height = (area_height - gap) * splitter_v;
+      const float bottom_height = area_height - top_height - gap;
+      if (slot == 0)
+      {
+        // Top viewport
+        out_height = top_height;
+      }
+      else if (slot == 1)
+      {
+        // Bottom viewport
+        out_y = area_y + top_height + gap;
+        out_height = bottom_height;
+      }
     }
     break;
 
   case ViewportLayout::ThreeLeft:
     // Large left viewport (slot 0), two small on right (slots 1, 2)
     {
-      const float left_width = (area_width - gap) * 0.6f;
+      const float left_width = (area_width - gap) * splitter_h;
       const float right_width = area_width - left_width - gap;
-      const float right_height = (area_height - gap) * 0.5f;
+      const float top_height = (area_height - gap) * splitter_v;
+      const float bottom_height = area_height - top_height - gap;
 
       if (slot == 0)
       {
@@ -286,15 +302,15 @@ void GetViewportSlotRect(
         // Top right viewport
         out_x = area_x + left_width + gap;
         out_width = right_width;
-        out_height = right_height;
+        out_height = top_height;
       }
       else if (slot == 2)
       {
         // Bottom right viewport
         out_x = area_x + left_width + gap;
-        out_y = area_y + right_height + gap;
+        out_y = area_y + top_height + gap;
         out_width = right_width;
-        out_height = area_height - right_height - gap;
+        out_height = bottom_height;
       }
     }
     break;
@@ -302,9 +318,10 @@ void GetViewportSlotRect(
   case ViewportLayout::ThreeTop:
     // Large top viewport (slot 0), two small on bottom (slots 1, 2)
     {
-      const float top_height = (area_height - gap) * 0.6f;
+      const float top_height = (area_height - gap) * splitter_v;
       const float bottom_height = area_height - top_height - gap;
-      const float bottom_width = (area_width - gap) * 0.5f;
+      const float left_width = (area_width - gap) * splitter_h;
+      const float right_width = area_width - left_width - gap;
 
       if (slot == 0)
       {
@@ -315,42 +332,49 @@ void GetViewportSlotRect(
       {
         // Bottom left viewport
         out_y = area_y + top_height + gap;
-        out_width = bottom_width;
+        out_width = left_width;
         out_height = bottom_height;
       }
       else if (slot == 2)
       {
         // Bottom right viewport
-        out_x = area_x + bottom_width + gap;
+        out_x = area_x + left_width + gap;
         out_y = area_y + top_height + gap;
-        out_width = area_width - bottom_width - gap;
+        out_width = right_width;
         out_height = bottom_height;
       }
     }
     break;
 
   case ViewportLayout::Quad:
-    // 2x2 grid
+    // 2x2 grid with adjustable splitters
     {
-      const float half_width = (area_width - gap) * 0.5f;
-      const float half_height = (area_height - gap) * 0.5f;
-
-      out_width = half_width;
-      out_height = half_height;
+      const float left_width = (area_width - gap) * splitter_h;
+      const float right_width = area_width - left_width - gap;
+      const float top_height = (area_height - gap) * splitter_v;
+      const float bottom_height = area_height - top_height - gap;
 
       switch (slot)
       {
       case 0: // Top left
+        out_width = left_width;
+        out_height = top_height;
         break;
       case 1: // Top right
-        out_x = area_x + half_width + gap;
+        out_x = area_x + left_width + gap;
+        out_width = right_width;
+        out_height = top_height;
         break;
       case 2: // Bottom left
-        out_y = area_y + half_height + gap;
+        out_y = area_y + top_height + gap;
+        out_width = left_width;
+        out_height = bottom_height;
         break;
       case 3: // Bottom right
-        out_x = area_x + half_width + gap;
-        out_y = area_y + half_height + gap;
+        out_x = area_x + left_width + gap;
+        out_y = area_y + top_height + gap;
+        out_width = right_width;
+        out_height = bottom_height;
         break;
       default:
         break;
@@ -358,4 +382,58 @@ void GetViewportSlotRect(
     }
     break;
   }
+}
+
+void ToggleMaximizeViewport(MultiViewportState& state, int slot)
+{
+  if (state.maximized)
+  {
+    // Swap the viewport back to its original slot before restoring layout
+    if (state.maximized_slot != 0 && state.maximized_slot > 0 && state.maximized_slot < kMaxViewports)
+    {
+      std::swap(state.viewports[0], state.viewports[state.maximized_slot]);
+    }
+
+    // Restore previous layout
+    state.layout = state.pre_maximize_layout;
+    state.maximized = false;
+    state.maximized_slot = -1;
+
+    // Update visibility
+    const int visible_count = state.VisibleViewportCount();
+    for (int i = 0; i < kMaxViewports; ++i)
+    {
+      state.viewports[i].visible = (i < visible_count);
+    }
+  }
+  else
+  {
+    // Save current layout and maximize
+    state.pre_maximize_layout = state.layout;
+    state.maximized_slot = slot;
+    state.maximized = true;
+
+    // Switch to single viewport showing the specified slot
+    state.layout = ViewportLayout::Single;
+    state.active_viewport = 0;
+
+    // Swap the maximized viewport to slot 0
+    if (slot != 0)
+    {
+      std::swap(state.viewports[0], state.viewports[slot]);
+    }
+
+    // Update visibility
+    state.viewports[0].visible = true;
+    for (int i = 1; i < kMaxViewports; ++i)
+    {
+      state.viewports[i].visible = false;
+    }
+  }
+}
+
+void ResetSplitters(MultiViewportState& state)
+{
+  state.splitter_h = 0.5f;
+  state.splitter_v = 0.5f;
 }

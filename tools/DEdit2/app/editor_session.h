@@ -29,6 +29,16 @@ struct PrimitiveDialogState {
   PlaneParams plane_params;
 };
 
+/// Panel visibility settings for the editor.
+struct PanelVisibility {
+  bool show_project = true;
+  bool show_worlds = true;
+  bool show_scene = true;
+  bool show_properties = true;
+  bool show_console = true;
+  bool show_tools = true;
+};
+
 struct EditorSession
 {
   std::string project_root;
@@ -36,6 +46,9 @@ struct EditorSession
   std::string project_error;
   std::string scene_error;
   std::vector<std::string> recent_projects;
+
+  /// Panel visibility settings.
+  PanelVisibility panel_visibility;
 
   std::vector<NodeProperties> project_props;
   std::vector<NodeProperties> scene_props;

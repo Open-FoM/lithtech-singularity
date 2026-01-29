@@ -162,6 +162,8 @@ target_sources (
 		texture_effect_group.cpp
 		ui_console.cpp
 		ui_dock.cpp
+		ui_status_bar.cpp
+		ui_toolbar.cpp
 		ui_tools_dock.cpp
 		ui_project.cpp
 		ui_worlds.cpp
