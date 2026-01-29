@@ -30,4 +30,3 @@ PickRay BuildPickRay(
 bool TryGetNodePickPosition(const NodeProperties& props, float out[3]);
 bool TryGetNodeBounds(const NodeProperties& props, float out_min[3], float out_max[3]);
 bool RaycastNode(const NodeProperties& props, const PickRay& ray, float& out_t);
-bool RaycastBrush(const NodeProperties& props, const PickRay& ray, float& out_t);
