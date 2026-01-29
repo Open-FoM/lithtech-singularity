@@ -5,6 +5,7 @@
 #include "app/project_utils.h"
 #include "app/recent_projects.h"
 #include "app/scene_loader.h"
+#include "app/world.h"
 #include "ui/viewport_panel.h"
 #include "viewport/diligent_viewport.h"
 #include "viewport/lighting.h"
@@ -252,6 +253,52 @@ void DrawPrimitiveDialog(EditorSession& session)
   }
 }
 
+/// Draws the save prompt dialog and updates the result.
+void DrawSavePromptDialog(SavePromptDialogState& dialog)
+{
+  if (!dialog.open)
+  {
+    return;
+  }
+
+  const char* title = "Save Changes?";
+  ImGui::OpenPopup(title);
+
+  ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+  if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+  {
+    ImGui::Text("You have unsaved changes. Do you want to save them?");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::Button("Save", ImVec2(80, 0)))
+    {
+      dialog.result = SavePromptResult::Save;
+      dialog.open = false;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Don't Save", ImVec2(100, 0)))
+    {
+      dialog.result = SavePromptResult::DontSave;
+      dialog.open = false;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(80, 0)))
+    {
+      dialog.result = SavePromptResult::Cancel;
+      dialog.open = false;
+      ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+  }
+}
+
 }  // namespace
 
 void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession& session)
@@ -320,6 +367,9 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     ViewportDisplayFlags viewport_display_flags{
       &session.viewport_panel().show_fps
     };
+    const bool has_world = !session.scene_nodes.empty();
+    // Keep document dirty state in sync with undo stack position
+    session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
     DrawMainMenuBar(
       request_reset_layout,
       menu_actions,
@@ -327,6 +377,8 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.undo_stack.CanUndo(),
       session.undo_stack.CanRedo(),
       has_selection,
+      has_world,
+      session.document_state.IsDirty(),
       &panel_flags,
       &viewport_display_flags);
 
@@ -372,6 +424,27 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     bool trigger_redo = menu_actions.redo;
     if (!io.WantCaptureKeyboard)
     {
+      // File operations: Cmd+N (New), Cmd+O (Open), Cmd+S (Save), Cmd+Shift+S (Save As)
+      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))
+      {
+        menu_actions.new_world = true;
+      }
+      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false))
+      {
+        menu_actions.open_world = true;
+      }
+      if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+      {
+        if (io.KeyShift)
+        {
+          menu_actions.save_world_as = true;
+        }
+        else if (has_world)
+        {
+          menu_actions.save_world = true;
+        }
+      }
+
       if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
       {
         if (io.KeyShift)
@@ -499,10 +572,12 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     if (trigger_undo)
     {
       session.undo_stack.Undo(session.project_nodes, session.scene_nodes);
+      session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
     }
     if (trigger_redo)
     {
       session.undo_stack.Redo(session.project_nodes, session.scene_nodes);
+      session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
     }
 
     // Handle menu-triggered selection/visibility commands
@@ -640,6 +715,235 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       PushRecentProject(session.recent_projects, session.project_root);
     }
 
+    // Handle world file operations
+    // Lambda to perform New World action
+    auto doNewWorld = [&]() {
+      World new_world = CreateEmptyWorld("Untitled");
+      session.scene_nodes = std::move(new_world.nodes);
+      session.scene_props = std::move(new_world.properties);
+      session.world_file.clear();
+      session.scene_error.clear();
+      session.scene_panel = ScenePanelState{};
+      session.active_target = SelectionTarget::Scene;
+      session.document_state.Reset();
+      session.undo_stack.Clear();
+    };
+
+    // Lambda to perform Open World action
+    auto doOpenWorld = [&](const std::string& path) {
+      LoadSceneWorld(
+        path,
+        diligent,
+        session.project_root,
+        session.world_file,
+        session.viewport_panel(),
+        session.scene_nodes,
+        session.scene_props,
+        session.scene_panel,
+        session.scene_error,
+        session.active_target,
+        session.world_settings_cache);
+      session.document_state.Reset();
+      session.undo_stack.Clear();
+    };
+
+    // Lambda to save the current world
+    auto doSaveWorld = [&]() -> bool {
+      if (session.world_file.empty())
+      {
+        // Need Save As - prompt for path
+        std::string selected_path;
+        const std::string initial_dir = session.project_root.empty()
+          ? std::filesystem::current_path().string()
+          : session.project_root;
+        if (!SaveFileDialog(initial_dir, "Untitled", "lta", "LithTech World", selected_path))
+        {
+          return false;  // User cancelled
+        }
+        session.world_file = selected_path;
+      }
+
+      World world;
+      world.source_path = session.world_file;
+      world.nodes = session.scene_nodes;
+      world.properties = session.scene_props;
+      world.ExtractWorldProperties();
+
+      WorldFormat format = DetectWorldFormat(session.world_file);
+      if (format == WorldFormat::Unknown || format == WorldFormat::Binary)
+      {
+        format = WorldFormat::LTA;
+      }
+
+      std::string save_error;
+      if (SaveWorld(world, session.world_file, format, save_error))
+      {
+        session.document_state.MarkSaved(session.undo_stack.GetPosition());
+        return true;
+      }
+      session.scene_error = "Save failed: " + save_error;
+      return false;
+    };
+
+    if (menu_actions.new_world)
+    {
+      if (session.document_state.IsDirty() && has_world)
+      {
+        // Prompt to save
+        session.save_prompt_dialog.open = true;
+        session.save_prompt_dialog.trigger = SavePromptTrigger::NewWorld;
+        session.save_prompt_dialog.result = SavePromptResult::Pending;
+        session.save_prompt_dialog.pending_world_path.clear();
+      }
+      else
+      {
+        doNewWorld();
+      }
+    }
+    if (menu_actions.open_world)
+    {
+      std::string selected_path;
+      const std::string initial_dir = session.project_root.empty()
+        ? std::filesystem::current_path().string()
+        : session.project_root;
+      if (OpenFileDialog(initial_dir, {"lta", "ltc"}, "World Files", selected_path))
+      {
+        if (session.document_state.IsDirty() && has_world)
+        {
+          // Prompt to save
+          session.save_prompt_dialog.open = true;
+          session.save_prompt_dialog.trigger = SavePromptTrigger::OpenWorld;
+          session.save_prompt_dialog.result = SavePromptResult::Pending;
+          session.save_prompt_dialog.pending_world_path = selected_path;
+        }
+        else
+        {
+          doOpenWorld(selected_path);
+        }
+      }
+    }
+
+    // Handle save prompt dialog results
+    if (!session.save_prompt_dialog.open &&
+        session.save_prompt_dialog.result != SavePromptResult::Pending)
+    {
+      SavePromptTrigger trigger = session.save_prompt_dialog.trigger;
+      SavePromptResult result = session.save_prompt_dialog.result;
+      std::string pending_path = session.save_prompt_dialog.pending_world_path;
+
+      // Reset dialog state
+      session.save_prompt_dialog.trigger = SavePromptTrigger::None;
+      session.save_prompt_dialog.result = SavePromptResult::Pending;
+      session.save_prompt_dialog.pending_world_path.clear();
+
+      if (result == SavePromptResult::Cancel)
+      {
+        // User cancelled, do nothing
+      }
+      else if (result == SavePromptResult::Save)
+      {
+        // Save first, then proceed if successful
+        if (doSaveWorld())
+        {
+          switch (trigger)
+          {
+          case SavePromptTrigger::NewWorld:
+            doNewWorld();
+            break;
+          case SavePromptTrigger::OpenWorld:
+            doOpenWorld(pending_path);
+            break;
+          default:
+            break;
+          }
+        }
+      }
+      else if (result == SavePromptResult::DontSave)
+      {
+        // Proceed without saving
+        switch (trigger)
+        {
+        case SavePromptTrigger::NewWorld:
+          doNewWorld();
+          break;
+        case SavePromptTrigger::OpenWorld:
+          doOpenWorld(pending_path);
+          break;
+        default:
+          break;
+        }
+      }
+    }
+    if (menu_actions.save_world && has_world)
+    {
+      if (session.world_file.empty())
+      {
+        // No existing file, treat as Save As
+        menu_actions.save_world_as = true;
+      }
+      else
+      {
+        // Save to existing path
+        World world;
+        world.source_path = session.world_file;
+        world.nodes = session.scene_nodes;
+        world.properties = session.scene_props;
+        world.ExtractWorldProperties();
+
+        WorldFormat format = DetectWorldFormat(session.world_file);
+        if (format == WorldFormat::Unknown || format == WorldFormat::Binary)
+        {
+          format = WorldFormat::LTA;
+        }
+
+        std::string save_error;
+        if (SaveWorld(world, session.world_file, format, save_error))
+        {
+          session.document_state.MarkSaved(session.undo_stack.GetPosition());
+        }
+        else
+        {
+          session.scene_error = "Save failed: " + save_error;
+        }
+      }
+    }
+    if (menu_actions.save_world_as && has_world)
+    {
+      std::string selected_path;
+      const std::string initial_dir = session.world_file.empty()
+        ? (session.project_root.empty() ? std::filesystem::current_path().string() : session.project_root)
+        : std::filesystem::path(session.world_file).parent_path().string();
+      const std::string default_name = session.world_file.empty()
+        ? "Untitled"
+        : std::filesystem::path(session.world_file).stem().string();
+
+      if (SaveFileDialog(initial_dir, default_name, "lta", "LithTech World", selected_path))
+      {
+        World world;
+        world.source_path = selected_path;
+        world.nodes = session.scene_nodes;
+        world.properties = session.scene_props;
+        world.ExtractWorldProperties();
+
+        WorldFormat format = DetectWorldFormat(selected_path);
+        if (format == WorldFormat::Unknown || format == WorldFormat::Binary)
+        {
+          format = WorldFormat::LTA;
+        }
+
+        std::string save_error;
+        if (SaveWorld(world, selected_path, format, save_error))
+        {
+          session.world_file = selected_path;
+          session.document_state.MarkSaved(session.undo_stack.GetPosition());
+        }
+        else
+        {
+          session.scene_error = "Save failed: " + save_error;
+        }
+      }
+    }
+
     // Handle reset panel visibility
     if (menu_actions.reset_panel_visibility)
     {
@@ -767,6 +1071,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
 
     // Draw modal dialogs
     DrawPrimitiveDialog(session);
+    DrawSavePromptDialog(session.save_prompt_dialog);
 
     ViewportPanelResult viewport_result = DrawViewportPanel(
       diligent,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brush/brush_primitive.h"
+#include "document_state.h"
 #include "editor_state.h"
 #include "multi_viewport.h"
 #include "undo_stack.h"
@@ -27,6 +28,30 @@ struct PrimitiveDialogState {
   PyramidParams pyramid_params;
   SphereParams sphere_params;
   PlaneParams plane_params;
+};
+
+/// Action that triggered the save prompt dialog.
+enum class SavePromptTrigger {
+  None,
+  NewWorld,
+  OpenWorld,
+  CloseApplication
+};
+
+/// Result from the save prompt dialog.
+enum class SavePromptResult {
+  Pending,   ///< Dialog still open, no user action yet
+  Save,      ///< User chose to save
+  DontSave,  ///< User chose not to save
+  Cancel     ///< User cancelled the action
+};
+
+/// State for the save prompt dialog.
+struct SavePromptDialogState {
+  bool open = false;
+  SavePromptTrigger trigger = SavePromptTrigger::None;
+  SavePromptResult result = SavePromptResult::Pending;
+  std::string pending_world_path;  ///< World path to open after save prompt (for OpenWorld trigger)
 };
 
 /// Panel visibility settings for the editor.
@@ -70,6 +95,13 @@ struct EditorSession
 
   UndoStack undo_stack;
 
+  /// Document dirty state tracking.
+  DocumentState document_state;
+
+  /// Recent worlds list (separate from recent projects).
+  std::vector<std::string> recent_worlds;
+
   PrimitiveDialogState primitive_dialog;
   ToolsPanelState tools_panel;
+  SavePromptDialogState save_prompt_dialog;
 };

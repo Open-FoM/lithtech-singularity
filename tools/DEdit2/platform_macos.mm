@@ -8,6 +8,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 void* CreateMetalView(SDL_Window* window)
 {
@@ -83,4 +84,126 @@ bool OpenFolderDialog(const std::string& initial_dir, std::string& out_path)
 	}
 
 	return false;
+}
+
+bool OpenFileDialog(
+    const std::string& initial_dir,
+    const std::vector<std::string>& filter_extensions,
+    const std::string& filter_description,
+    std::string& out_path)
+{
+	@autoreleasepool
+	{
+		NSOpenPanel* panel = [NSOpenPanel openPanel];
+		panel.canChooseFiles = YES;
+		panel.canChooseDirectories = NO;
+		panel.allowsMultipleSelection = NO;
+		panel.treatsFilePackagesAsDirectories = YES;
+
+		if (!initial_dir.empty())
+		{
+			NSString* initialPath = [NSString stringWithUTF8String:initial_dir.c_str()];
+			if (initialPath != nil)
+			{
+				panel.directoryURL = [NSURL fileURLWithPath:initialPath];
+			}
+		}
+
+		// Set allowed file types
+		if (!filter_extensions.empty())
+		{
+			NSMutableArray<UTType*>* types = [NSMutableArray array];
+			for (const auto& ext : filter_extensions)
+			{
+				NSString* extStr = [NSString stringWithUTF8String:ext.c_str()];
+				UTType* type = [UTType typeWithFilenameExtension:extStr];
+				if (type != nil)
+				{
+					[types addObject:type];
+				}
+			}
+			if (types.count > 0)
+			{
+				panel.allowedContentTypes = types;
+			}
+		}
+
+		if ([panel runModal] == NSModalResponseOK)
+		{
+			NSURL* url = [panel URL];
+			if (url != nil)
+			{
+				out_path = std::string([[url path] UTF8String]);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool SaveFileDialog(
+    const std::string& initial_dir,
+    const std::string& default_name,
+    const std::string& filter_extension,
+    const std::string& filter_description,
+    std::string& out_path)
+{
+	@autoreleasepool
+	{
+		NSSavePanel* panel = [NSSavePanel savePanel];
+		panel.canCreateDirectories = YES;
+		panel.treatsFilePackagesAsDirectories = YES;
+
+		if (!initial_dir.empty())
+		{
+			NSString* initialPath = [NSString stringWithUTF8String:initial_dir.c_str()];
+			if (initialPath != nil)
+			{
+				panel.directoryURL = [NSURL fileURLWithPath:initialPath];
+			}
+		}
+
+		if (!default_name.empty())
+		{
+			NSString* name = [NSString stringWithUTF8String:default_name.c_str()];
+			panel.nameFieldStringValue = name;
+		}
+
+		// Set allowed file type
+		if (!filter_extension.empty())
+		{
+			NSString* extStr = [NSString stringWithUTF8String:filter_extension.c_str()];
+			UTType* type = [UTType typeWithFilenameExtension:extStr];
+			if (type != nil)
+			{
+				panel.allowedContentTypes = @[type];
+			}
+		}
+
+		if ([panel runModal] == NSModalResponseOK)
+		{
+			NSURL* url = [panel URL];
+			if (url != nil)
+			{
+				out_path = std::string([[url path] UTF8String]);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void OpenPathInFileManager(const std::string& path)
+{
+	@autoreleasepool
+	{
+		NSString* pathStr = [NSString stringWithUTF8String:path.c_str()];
+		if (pathStr != nil)
+		{
+			NSURL* url = [NSURL fileURLWithPath:pathStr];
+			[[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[url]];
+		}
+	}
 }

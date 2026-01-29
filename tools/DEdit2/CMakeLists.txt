@@ -15,6 +15,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_LIST_DIR)
 	option (LTJS_SDL_BACKEND "Use SDL backend." ON)
 	option (LTJS_USE_PCH "Use precompiled headers." ON)
 	option (LTJS_USE_CCACHE "Use ccache if available." ON)
+	option (LTJS_BUILD_TESTS "Build unit tests." OFF)
 
 	if (LTJS_USE_CCACHE)
 		find_program (CCACHE_PROGRAM ccache)
@@ -34,6 +35,22 @@ endif ()
 
 if (NOT TARGET SDL3::SDL3)
 	find_package (SDL3 3.2.0 REQUIRED)
+endif ()
+
+if (LTJS_BUILD_TESTS)
+	include (CTest)
+	enable_testing ()
+
+	include (FetchContent)
+	set (BUILD_GMOCK OFF CACHE BOOL "Disable gmock for DEdit2 tests." FORCE)
+	set (INSTALL_GTEST OFF CACHE BOOL "Disable GoogleTest install for DEdit2 tests." FORCE)
+	FetchContent_Declare (
+		googletest
+		GIT_REPOSITORY https://github.com/google/googletest.git
+		GIT_TAG v1.14.0
+	)
+	FetchContent_MakeAvailable (googletest)
+	add_subdirectory (tests)
 endif ()
 
 if (NOT TARGET Diligent-GraphicsEngineVk-static)
@@ -133,12 +150,17 @@ target_sources (
 		app/editor_loop.cpp
 		brush/brush_primitive.cpp
 		transform/mirror.cpp
+		app/document_state.h
 		app/editor_paths.cpp
 		app/editor_session.h
+		app/node_props.cpp
+		app/project.cpp
 		app/project_utils.cpp
+		app/world_core.cpp
 		app/recent_projects.cpp
 		app/scene_loader.cpp
 		app/string_utils.cpp
+		app/world.cpp
 		ui/viewport_panel.cpp
 		viewport/diligent_viewport.cpp
 		viewport/interaction.cpp
@@ -188,6 +210,7 @@ target_sources (
 		${LTJS_ROOT}/engine/libs/ltamgr/ltanodebuilder.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltanodeiterator.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltanodreader.cpp
+		${LTJS_ROOT}/engine/libs/ltamgr/ltanodewriter.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltareader.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltautil.cpp
 		${LTJS_ROOT}/engine/libs/ltamgr/ltawriter.cpp
@@ -273,5 +296,6 @@ if (APPLE)
 			"-framework Cocoa"
 			"-framework Metal"
 			"-framework QuartzCore"
+			"-framework UniformTypeIdentifiers"
 	)
 endif ()

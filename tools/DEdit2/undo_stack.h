@@ -38,6 +38,9 @@ public:
 	bool CanUndo() const;
 	bool CanRedo() const;
 
+	/// Returns the current undo position (for dirty state tracking).
+	[[nodiscard]] size_t GetPosition() const { return cursor_; }
+
 	void PushCreate(UndoTarget target, int node_id);
 	void PushDelete(UndoTarget target, int node_id, bool prev_deleted);
 	void PushRename(UndoTarget target, int node_id, std::string before, std::string after);

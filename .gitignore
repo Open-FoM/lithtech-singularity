@@ -3,6 +3,7 @@
 .ralph/
 .claude/
 .sisyphus/
+.tickets/
 build/
 bin/
 game/

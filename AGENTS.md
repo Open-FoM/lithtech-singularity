@@ -21,6 +21,15 @@ cmake --preset engine-release && cmake --build --preset engine-release
 cmake --preset dedit2 && cmake --build --preset dedit2
 ```
 
+## Tests
+
+```bash
+# DEdit2 unit tests (Debug)
+cmake --preset dedit2-tests
+cmake --build --preset dedit2-tests
+ctest --preset dedit2-tests
+```
+
 ### Available Presets
 
 | Preset | Description | Build Directory |

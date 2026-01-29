@@ -75,6 +75,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "LTJS_BUILD_DEDIT2": "ON"
       }
+    },
+    {
+      "name": "dedit2-tests",
+      "displayName": "DEdit2 Tests (Ninja, Debug)",
+      "inherits": "base-ninja",
+      "binaryDir": "${sourceDir}/build/dedit2-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LTJS_BUILD_DEDIT2": "ON",
+        "LTJS_BUILD_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -131,6 +142,28 @@
       "targets": [
         "ltjs_dedit2"
       ]
+    },
+    {
+      "name": "dedit2-tests",
+      "displayName": "Build DEdit2 Tests",
+      "configurePreset": "dedit2-tests",
+      "targets": [
+        "ltjs_dedit2_tests"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dedit2-tests",
+      "displayName": "Run DEdit2 Tests",
+      "configurePreset": "dedit2-tests",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "parallelLevel": 4,
+        "timeout": 300
+      }
     }
   ]
 }

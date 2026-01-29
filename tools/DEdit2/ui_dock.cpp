@@ -9,6 +9,8 @@ void DrawMainMenuBar(
 	bool can_undo,
 	bool can_redo,
 	bool has_selection,
+	bool has_world,
+	bool world_dirty,
 	PanelVisibilityFlags* panels,
 	ViewportDisplayFlags* viewport_display)
 {
@@ -19,7 +21,14 @@ void DrawMainMenuBar(
 
 	if (ImGui::BeginMenu("File"))
 	{
-		ImGui::MenuItem("New World", "Ctrl+N", false, false);
+		if (ImGui::MenuItem("New World", "Cmd+N"))
+		{
+			actions.new_world = true;
+		}
+		if (ImGui::MenuItem("Open World...", "Cmd+O"))
+		{
+			actions.open_world = true;
+		}
 		ImGui::Separator();
 		if (ImGui::MenuItem("Open Folder..."))
 		{
@@ -45,8 +54,14 @@ void DrawMainMenuBar(
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();
-		ImGui::MenuItem("Save", "Ctrl+S", false, false);
-		ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, false);
+		if (ImGui::MenuItem("Save", "Cmd+S", false, has_world))
+		{
+			actions.save_world = true;
+		}
+		if (ImGui::MenuItem("Save As...", "Cmd+Shift+S", false, has_world))
+		{
+			actions.save_world_as = true;
+		}
 		ImGui::Separator();
 		ImGui::MenuItem("Exit", nullptr, false, false);
 		ImGui::EndMenu();

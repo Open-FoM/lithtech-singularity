@@ -19,6 +19,7 @@ option (LTJS_USE_CCACHE "Use ccache if available." ON)
 option (LTJS_BUILD_DEDIT "Build DEdit map editor." OFF)
 option (LTJS_BUILD_DEDIT2 "Build DEdit2 map editor." OFF)
 option (LTJS_BUILD_RENDERDEMO "Build RenderDemo game." OFF)
+option (LTJS_BUILD_TESTS "Build unit tests." OFF)
 
 if (LTJS_USE_CCACHE)
 	find_program (CCACHE_PROGRAM ccache)

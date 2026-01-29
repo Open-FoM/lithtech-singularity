@@ -34,6 +34,10 @@ enum class ViewModeAction {
 
 struct MainMenuActions
 {
+	bool new_world = false;
+	bool open_world = false;
+	bool save_world = false;
+	bool save_world_as = false;
 	bool open_project_folder = false;
 	bool open_recent_project = false;
 	std::string recent_project_path;
@@ -80,6 +84,8 @@ void DrawMainMenuBar(
 	bool can_undo,
 	bool can_redo,
 	bool has_selection,
+	bool has_world,
+	bool world_dirty,
 	PanelVisibilityFlags* panels = nullptr,
 	ViewportDisplayFlags* viewport_display = nullptr);
 void EnsureDockLayout(ImGuiID dockspace_id, const ImGuiViewport* viewport, bool force_reset);
