@@ -13,7 +13,12 @@
 #include <string>
 #include <vector>
 
+#include "brush/texture_ops/uv_types.h"
+
 namespace csg {
+
+// Import UV type from texture_ops namespace for convenience
+using texture_ops::UV;
 
 /// Tolerance constants for robust geometry operations.
 struct Tolerance {
@@ -182,13 +187,49 @@ struct CSGPlane {
 /// Convex polygon with coplanar vertices (CCW winding when viewed from front).
 struct CSGPolygon {
   std::vector<CSGVertex> vertices;
+  std::vector<UV> uvs;                             ///< Per-vertex UV coordinates (parallel to vertices)
   CSGPlane plane;
-  uint32_t material_id = 0; ///< For texture/material preservation
+  uint32_t material_id = 0;                        ///< For texture/material preservation (backward compat)
+  texture_ops::FaceProperties face_props;          ///< Full texture and surface properties
 
   CSGPolygon() = default;
+
+  /// Construct from vertices only (no UVs, default properties).
   explicit CSGPolygon(std::vector<CSGVertex> verts) : vertices(std::move(verts)) { ComputePlane(); }
+
+  /// Construct with vertices and material ID.
   CSGPolygon(std::vector<CSGVertex> verts, uint32_t material) : vertices(std::move(verts)), material_id(material) {
+    face_props.material_id = material;
     ComputePlane();
+  }
+
+  /// Construct with vertices, UVs, and face properties.
+  CSGPolygon(std::vector<CSGVertex> verts, std::vector<UV> tex_coords, const texture_ops::FaceProperties& props)
+      : vertices(std::move(verts)), uvs(std::move(tex_coords)), material_id(props.material_id), face_props(props) {
+    ComputePlane();
+    EnsureUVSize();
+  }
+
+  /// Check if polygon has valid UV coordinates (same count as vertices).
+  [[nodiscard]] bool HasUVs() const { return !uvs.empty() && uvs.size() == vertices.size(); }
+
+  /// Ensure UV array matches vertex count (fills with defaults if needed).
+  void EnsureUVSize() {
+    if (uvs.size() < vertices.size()) {
+      uvs.resize(vertices.size());
+    }
+  }
+
+  /// Compute UV centroid (average of all UVs).
+  [[nodiscard]] UV UVCentroid() const {
+    if (uvs.empty()) {
+      return UV();
+    }
+    UV sum;
+    for (const auto& uv : uvs) {
+      sum += uv;
+    }
+    return sum / static_cast<float>(uvs.size());
   }
 
   /// Compute polygon plane from vertices using Newell's method.
@@ -207,7 +248,7 @@ struct CSGPolygon {
   /// Compute polygon centroid.
   [[nodiscard]] CSGVertex Centroid() const;
 
-  /// Reverse vertex order (flip normal).
+  /// Reverse vertex order (flip normal). Also reverses UVs.
   void Flip();
 
   /// Classify entire polygon against a plane.

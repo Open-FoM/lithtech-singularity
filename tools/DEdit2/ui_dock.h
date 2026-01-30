@@ -85,6 +85,13 @@ struct MainMenuActions
 	bool geometry_flip = false;
 	bool geometry_weld = false;
 	bool geometry_extrude = false;
+
+	// Texture Operations (EPIC-10)
+	bool texture_uv_transform = false;
+	bool texture_uv_projection = false;
+	bool texture_fit = false;
+	bool texture_replace = false;
+	bool texture_surface_flags = false;
 };
 
 /// FPS display state pointer for View menu.
@@ -100,6 +107,7 @@ struct PanelVisibilityFlags {
   bool* show_properties = nullptr;
   bool* show_console = nullptr;
   bool* show_tools = nullptr;
+  bool* show_texture_browser = nullptr;  ///< EPIC-10: Texture browser panel
 };
 
 void DrawMainMenuBar(

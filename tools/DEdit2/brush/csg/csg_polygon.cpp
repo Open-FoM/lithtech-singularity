@@ -69,13 +69,23 @@ SplitResult SplitPolygonByPlane(const CSGPolygon& polygon, const CSGPlane& plane
   // Spanning case - need to split the polygon
   std::vector<CSGVertex> front_verts;
   std::vector<CSGVertex> back_verts;
+  std::vector<UV> front_uvs;
+  std::vector<UV> back_uvs;
+
+  const bool has_uvs = polygon.HasUVs();
 
   front_verts.reserve(polygon.vertices.size() + 1);
   back_verts.reserve(polygon.vertices.size() + 1);
+  if (has_uvs) {
+    front_uvs.reserve(polygon.vertices.size() + 1);
+    back_uvs.reserve(polygon.vertices.size() + 1);
+  }
 
   for (size_t i = 0; i < polygon.vertices.size(); ++i) {
     const CSGVertex& curr = polygon.vertices[i];
     const CSGVertex& next = polygon.vertices[(i + 1) % polygon.vertices.size()];
+    const UV curr_uv = has_uvs ? polygon.uvs[i] : UV();
+    const UV next_uv = has_uvs ? polygon.uvs[(i + 1) % polygon.vertices.size()] : UV();
 
     PlaneSide curr_side = plane.ClassifyPoint(curr);
     PlaneSide next_side = plane.ClassifyPoint(next);
@@ -83,12 +93,22 @@ SplitResult SplitPolygonByPlane(const CSGPolygon& polygon, const CSGPlane& plane
     // Add current vertex to appropriate list(s)
     if (curr_side == PlaneSide::Front) {
       front_verts.push_back(curr);
+      if (has_uvs) {
+        front_uvs.push_back(curr_uv);
+      }
     } else if (curr_side == PlaneSide::Back) {
       back_verts.push_back(curr);
+      if (has_uvs) {
+        back_uvs.push_back(curr_uv);
+      }
     } else {
       // On plane - add to both
       front_verts.push_back(curr);
       back_verts.push_back(curr);
+      if (has_uvs) {
+        front_uvs.push_back(curr_uv);
+        back_uvs.push_back(curr_uv);
+      }
     }
 
     // Check if edge crosses the plane
@@ -102,6 +122,13 @@ SplitResult SplitPolygonByPlane(const CSGPolygon& polygon, const CSGPlane& plane
         // Add intersection point to both polygons
         front_verts.push_back(*intersection);
         back_verts.push_back(*intersection);
+
+        // Interpolate UV at intersection point
+        if (has_uvs) {
+          UV interp_uv = UV::Lerp(curr_uv, next_uv, t);
+          front_uvs.push_back(interp_uv);
+          back_uvs.push_back(interp_uv);
+        }
       }
     }
   }
@@ -109,6 +136,10 @@ SplitResult SplitPolygonByPlane(const CSGPolygon& polygon, const CSGPlane& plane
   // Create front polygon if valid
   if (front_verts.size() >= 3) {
     CSGPolygon front_poly(std::move(front_verts), polygon.material_id);
+    front_poly.face_props = polygon.face_props;
+    if (has_uvs) {
+      front_poly.uvs = std::move(front_uvs);
+    }
     if (front_poly.IsValid()) {
       result.front.push_back(std::move(front_poly));
     }
@@ -117,6 +148,10 @@ SplitResult SplitPolygonByPlane(const CSGPolygon& polygon, const CSGPlane& plane
   // Create back polygon if valid
   if (back_verts.size() >= 3) {
     CSGPolygon back_poly(std::move(back_verts), polygon.material_id);
+    back_poly.face_props = polygon.face_props;
+    if (has_uvs) {
+      back_poly.uvs = std::move(back_uvs);
+    }
     if (back_poly.IsValid()) {
       result.back.push_back(std::move(back_poly));
     }

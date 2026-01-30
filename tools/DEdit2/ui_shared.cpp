@@ -451,7 +451,7 @@ void DrawTreeNodes(
 		ImGui::PopStyleColor();
 	}
 
-	if (ImGui::BeginPopupContextItem())
+	if (ImGui::BeginPopupContextItem("TreeNodeContext"))
 	{
 		selected_id = node_id;
 		active_target = target;

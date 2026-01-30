@@ -208,6 +208,33 @@ void DrawMainMenuBar(
 			actions.mirror_selection_dialog = true;
 		}
 		ImGui::Separator();
+		if (ImGui::BeginMenu("Textures"))
+		{
+			if (ImGui::MenuItem("UV Transform...", "U"))
+			{
+				actions.texture_uv_transform = true;
+			}
+			if (ImGui::MenuItem("UV Projection...", "Shift+U"))
+			{
+				actions.texture_uv_projection = true;
+			}
+			if (ImGui::MenuItem("Fit Texture..."))
+			{
+				actions.texture_fit = true;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Replace Texture...", primary("H").c_str()))
+			{
+				actions.texture_replace = true;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Surface Flags..."))
+			{
+				actions.texture_surface_flags = true;
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::Separator();
 		ImGui::MenuItem("Preferences...", nullptr, false, false);
 		ImGui::EndMenu();
 	}
@@ -440,6 +467,13 @@ void DrawMainMenuBar(
 					if (ImGui::MenuItem("Tools", nullptr, *panels->show_tools))
 					{
 						*panels->show_tools = !*panels->show_tools;
+					}
+				}
+				if (panels->show_texture_browser != nullptr)
+				{
+					if (ImGui::MenuItem("Texture Browser", nullptr, *panels->show_texture_browser))
+					{
+						*panels->show_texture_browser = !*panels->show_texture_browser;
 					}
 				}
 				ImGui::Separator();

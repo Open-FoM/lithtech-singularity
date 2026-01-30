@@ -125,6 +125,12 @@ add_library (
 		brush/geometry_ops/flip_normal.cpp
 		brush/geometry_ops/vertex_weld.cpp
 		brush/geometry_ops/face_extrude.cpp
+		brush/texture_ops/texture_applicator.cpp
+		brush/texture_ops/uv_transform.cpp
+		brush/texture_ops/uv_projection.cpp
+		brush/texture_ops/uv_fit.cpp
+		brush/texture_ops/texture_replace.cpp
+		brush/texture_ops/surface_flags.cpp
 		geometry/geometry_mode_state.cpp
 		geometry/subobject_picking.cpp
 		geometry/subobject_selection.cpp
@@ -140,6 +146,7 @@ add_library (
 		tree_nodes.cpp
 		ui_scene.cpp
 		ui_shared.cpp
+		ui_texture_browser.cpp
 		undo_stack.cpp
 		${LTJS_ROOT}/libs/imgui/imgui.cpp
 		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp
@@ -217,6 +224,11 @@ target_sources (
 		brush/geometry_dialogs/geometry_ops_ui.cpp
 		brush/geometry_dialogs/vertex_weld_dialog.cpp
 		brush/geometry_dialogs/face_extrude_dialog.cpp
+		brush/texture_dialogs/uv_transform_dialog.cpp
+		brush/texture_dialogs/uv_projection_dialog.cpp
+		brush/texture_dialogs/uv_fit_dialog.cpp
+		brush/texture_dialogs/texture_replace_dialog.cpp
+		brush/texture_dialogs/surface_flags_dialog.cpp
 		app/document_state.h
 		app/editor_paths.cpp
 		app/editor_session.h
@@ -225,6 +237,7 @@ target_sources (
 		app/scene_loader.cpp
 		app/world.cpp
 		ui/viewport_panel.cpp
+		viewport/brush_renderer.cpp
 		viewport/diligent_viewport.cpp
 		viewport/interaction.cpp
 		viewport/lighting.cpp
@@ -301,6 +314,7 @@ target_include_directories (
 		${LTJS_ROOT}/libs/imgui
 		${LTJS_ROOT}/libs/imgui/backends
 		${LTJS_ROOT}/libs/diligent
+		${LTJS_ROOT}/libs/diligent/DiligentCore
 		${LTJS_ROOT}/libs/lith
 		${LTJS_ROOT}/libs/stdlith
 		${LTJS_ROOT}/libs/diligent/DiligentCore/Primitives/interface

@@ -26,6 +26,15 @@ add_executable (
 	${CMAKE_CURRENT_LIST_DIR}/geometry_mode_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/subobject_picking_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/geometry_ops_tests.cpp
+	# Texturing system tests (EPIC-10)
+	${CMAKE_CURRENT_LIST_DIR}/uv_types_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/texture_browser_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/texture_applicator_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/uv_transform_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/uv_projection_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/uv_fit_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/texture_replace_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/surface_flags_tests.cpp
 )
 
 set_target_properties (

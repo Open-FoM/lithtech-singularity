@@ -142,6 +142,9 @@ CSGVertex CSGPolygon::Centroid() const {
 
 void CSGPolygon::Flip() {
   std::reverse(vertices.begin(), vertices.end());
+  if (!uvs.empty()) {
+    std::reverse(uvs.begin(), uvs.end());
+  }
   plane = plane.Flipped();
 }
 

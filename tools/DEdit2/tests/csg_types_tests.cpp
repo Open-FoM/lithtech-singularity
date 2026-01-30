@@ -252,6 +252,91 @@ TEST(CSGPolygon, ClassifyAgainstPlane_Spanning) {
 }
 
 // =============================================================================
+// CSGPolygon UV Tests
+// =============================================================================
+
+TEST(CSGPolygon, HasUVs_Empty) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)};
+  EXPECT_FALSE(poly.HasUVs());
+}
+
+TEST(CSGPolygon, HasUVs_Valid) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)};
+  poly.uvs = {UV(0, 0), UV(1, 0), UV(0, 1)};
+  EXPECT_TRUE(poly.HasUVs());
+}
+
+TEST(CSGPolygon, HasUVs_Mismatch) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)};
+  poly.uvs = {UV(0, 0), UV(1, 0)}; // Only 2 UVs for 3 vertices
+  EXPECT_FALSE(poly.HasUVs());
+}
+
+TEST(CSGPolygon, EnsureUVSize_ResizesToVertexCount) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)};
+  poly.EnsureUVSize();
+  EXPECT_EQ(poly.uvs.size(), 3u);
+  EXPECT_TRUE(poly.HasUVs());
+}
+
+TEST(CSGPolygon, EnsureUVSize_DoesNotShrink) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0)};
+  poly.uvs = {UV(0, 0), UV(1, 0), UV(0.5f, 1), UV(0.25f, 0.5f)};
+  poly.EnsureUVSize();
+  EXPECT_EQ(poly.uvs.size(), 4u); // Should not shrink
+}
+
+TEST(CSGPolygon, UVCentroid_Empty) {
+  CSGPolygon poly;
+  UV centroid = poly.UVCentroid();
+  EXPECT_FLOAT_EQ(centroid.u, 0.0f);
+  EXPECT_FLOAT_EQ(centroid.v, 0.0f);
+}
+
+TEST(CSGPolygon, UVCentroid_Valid) {
+  CSGPolygon poly;
+  poly.uvs = {UV(0, 0), UV(1, 0), UV(0, 1)};
+  UV centroid = poly.UVCentroid();
+  EXPECT_NEAR(centroid.u, 1.0f / 3.0f, 0.001f);
+  EXPECT_NEAR(centroid.v, 1.0f / 3.0f, 0.001f);
+}
+
+TEST(CSGPolygon, Flip_ReversesUVs) {
+  CSGPolygon poly;
+  poly.vertices = {CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)};
+  poly.uvs = {UV(0, 0), UV(1, 0), UV(0, 1)};
+  poly.ComputePlane();
+
+  poly.Flip();
+
+  // UVs should be reversed along with vertices
+  EXPECT_FLOAT_EQ(poly.uvs[0].u, 0.0f);
+  EXPECT_FLOAT_EQ(poly.uvs[0].v, 1.0f);
+  EXPECT_FLOAT_EQ(poly.uvs[1].u, 1.0f);
+  EXPECT_FLOAT_EQ(poly.uvs[1].v, 0.0f);
+  EXPECT_FLOAT_EQ(poly.uvs[2].u, 0.0f);
+  EXPECT_FLOAT_EQ(poly.uvs[2].v, 0.0f);
+}
+
+TEST(CSGPolygon, ConstructWithUVsAndFaceProps) {
+  texture_ops::FaceProperties props("test_texture");
+  props.material_id = 42;
+
+  CSGPolygon poly({CSGVertex(0, 0, 0), CSGVertex(1, 0, 0), CSGVertex(0, 1, 0)}, {UV(0, 0), UV(1, 0), UV(0, 1)}, props);
+
+  EXPECT_TRUE(poly.HasUVs());
+  EXPECT_EQ(poly.uvs.size(), 3u);
+  EXPECT_EQ(poly.material_id, 42u);
+  EXPECT_EQ(poly.face_props.texture_name, "test_texture");
+  EXPECT_TRUE(poly.IsValid());
+}
+
+// =============================================================================
 // CSGBrush Tests
 // =============================================================================
 

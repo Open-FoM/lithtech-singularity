@@ -333,6 +333,12 @@ void RenderViewport(
 
     DrawViewportGrid(ctx.engine.context, ctx.grid_renderer, viewport_state.show_grid, viewport_state.show_axes);
 
+    // Draw solid brushes
+    if (ctx.brush_renderer.ready)
+    {
+      DrawBrushes(ctx.engine.context, ctx.brush_renderer, view_proj);
+    }
+
     // Draw construction marker
     if (ctx.marker_ready)
     {

@@ -372,6 +372,198 @@ void DrawEntityProperties(NodeProperties& props)
 	ImGui::InputText("Class", &props.class_name);
 }
 
+void DrawBrushProperties(NodeProperties& props, const std::string& project_root, bool* open_texture_browser)
+{
+	const size_t face_count = props.brush_face_textures.size();
+	ImGui::Text("Faces: %zu", face_count);
+
+	// Button to open texture browser
+	if (ImGui::Button("Open Texture Browser") && open_texture_browser != nullptr)
+	{
+		*open_texture_browser = true;
+	}
+
+	if (face_count == 0)
+	{
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No face data available.");
+		return;
+	}
+
+	ImGui::Separator();
+
+	// Track if any changes made for marking dirty
+	bool modified = false;
+
+	// Quick buttons for all faces
+	if (ImGui::Button("Reset All UVs"))
+	{
+		for (auto& face : props.brush_face_textures)
+		{
+			face.mapping = texture_ops::TextureMapping();
+		}
+		modified = true;
+	}
+
+	ImGui::Separator();
+
+	// Draw each face in a collapsible section
+	for (size_t i = 0; i < face_count; ++i)
+	{
+		BrushFaceTextureData& face = props.brush_face_textures[i];
+		char header[64];
+		snprintf(header, sizeof(header), "Face %zu: %s###face_%zu",
+			i, face.texture_name.empty() ? "(no texture)" : face.texture_name.c_str(), i);
+
+		if (ImGui::CollapsingHeader(header))
+		{
+			ImGui::PushID(static_cast<int>(i));
+
+			// Texture name
+			if (ImGui::InputText("Texture", &face.texture_name))
+			{
+				modified = true;
+			}
+
+			// Texture preview (small)
+			if (!face.texture_name.empty())
+			{
+				DrawTexturePreview(face.texture_name.c_str(), 128.0f);
+			}
+
+			// UV Transform section
+			if (ImGui::TreeNodeEx("UV Transform", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				if (ImGui::DragFloat("Offset U", &face.mapping.offset_u, 0.01f))
+				{
+					modified = true;
+				}
+				if (ImGui::DragFloat("Offset V", &face.mapping.offset_v, 0.01f))
+				{
+					modified = true;
+				}
+				if (ImGui::DragFloat("Scale U", &face.mapping.scale_u, 0.01f, 0.001f, 100.0f))
+				{
+					modified = true;
+				}
+				if (ImGui::DragFloat("Scale V", &face.mapping.scale_v, 0.01f, 0.001f, 100.0f))
+				{
+					modified = true;
+				}
+				if (ImGui::DragFloat("Rotation", &face.mapping.rotation, 1.0f, -360.0f, 360.0f, "%.1f deg"))
+				{
+					modified = true;
+				}
+
+				if (ImGui::Button("Reset##uv"))
+				{
+					face.mapping = texture_ops::TextureMapping();
+					modified = true;
+				}
+				ImGui::TreePop();
+			}
+
+			// Surface Flags section
+			if (ImGui::TreeNodeEx("Surface Flags", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				auto flags = static_cast<texture_ops::SurfaceFlags>(face.surface_flags);
+
+				bool solid = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Solid);
+				if (ImGui::Checkbox("Solid", &solid))
+				{
+					if (solid)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Solid);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Solid);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool invisible = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Invisible);
+				if (ImGui::Checkbox("Invisible", &invisible))
+				{
+					if (invisible)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Invisible);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Invisible);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool fullbright = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Fullbright);
+				if (ImGui::Checkbox("Fullbright", &fullbright))
+				{
+					if (fullbright)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Fullbright);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Fullbright);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool sky = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Sky);
+				if (ImGui::Checkbox("Sky", &sky))
+				{
+					if (sky)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Sky);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Sky);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool portal = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Portal);
+				if (ImGui::Checkbox("Portal", &portal))
+				{
+					if (portal)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Portal);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Portal);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool mirror = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Mirror);
+				if (ImGui::Checkbox("Mirror", &mirror))
+				{
+					if (mirror)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Mirror);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Mirror);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				bool transparent = texture_ops::HasFlag(flags, texture_ops::SurfaceFlags::Transparent);
+				if (ImGui::Checkbox("Transparent", &transparent))
+				{
+					if (transparent)
+						texture_ops::SetFlag(flags, texture_ops::SurfaceFlags::Transparent);
+					else
+						texture_ops::ClearFlag(flags, texture_ops::SurfaceFlags::Transparent);
+					face.surface_flags = static_cast<uint32_t>(flags);
+					modified = true;
+				}
+
+				// Alpha reference slider (0-255)
+				int alpha = face.alpha_ref;
+				if (ImGui::SliderInt("Alpha Ref", &alpha, 0, 255))
+				{
+					face.alpha_ref = static_cast<uint8_t>(alpha);
+					modified = true;
+				}
+
+				ImGui::TreePop();
+			}
+
+			ImGui::PopID();
+			ImGui::Spacing();
+		}
+	}
+
+	// Note: modified flag could be used to mark document dirty in caller
+	(void)modified;
+}
+
 void DrawProjectProperties(
 	std::vector<TreeNode>& nodes,
 	std::vector<NodeProperties>& props,
@@ -448,7 +640,8 @@ void DrawProjectProperties(
 void DrawSceneProperties(
 	std::vector<TreeNode>& nodes,
 	std::vector<NodeProperties>& props,
-	int selected_id)
+	int selected_id,
+	bool* open_texture_browser)
 {
 	if (selected_id < 0 || selected_id >= static_cast<int>(nodes.size()) || nodes[selected_id].deleted)
 	{
@@ -503,6 +696,10 @@ void DrawSceneProperties(
 	{
 		DrawEntityProperties(node_props);
 	}
+	else if (IsType(node_props, "Brush"))
+	{
+		DrawBrushProperties(node_props, "", open_texture_browser);
+	}
 	else if (IsType(node_props, "Surface"))
 	{
 		ImGui::TextUnformatted("Material");
@@ -537,7 +734,8 @@ void DrawPropertiesPanel(
 	std::vector<TreeNode>& scene_nodes,
 	std::vector<NodeProperties>& scene_props,
 	int scene_selected_id,
-	const std::string& project_root)
+	const std::string& project_root,
+	bool* open_texture_browser)
 {
 	if (ImGui::Begin("Properties"))
 	{
@@ -547,7 +745,7 @@ void DrawPropertiesPanel(
 		}
 		else
 		{
-			DrawSceneProperties(scene_nodes, scene_props, scene_selected_id);
+			DrawSceneProperties(scene_nodes, scene_props, scene_selected_id, open_texture_browser);
 		}
 	}
 	ImGui::End();

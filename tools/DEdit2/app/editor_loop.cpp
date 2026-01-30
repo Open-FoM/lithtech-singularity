@@ -25,6 +25,12 @@
 #include "brush/geometry_dialogs/geometry_ops_ui.h"
 #include "brush/geometry_dialogs/vertex_weld_dialog.h"
 #include "brush/geometry_dialogs/face_extrude_dialog.h"
+#include "brush/texture_dialogs/uv_transform_dialog.h"
+#include "brush/texture_dialogs/uv_projection_dialog.h"
+#include "brush/texture_dialogs/uv_fit_dialog.h"
+#include "brush/texture_dialogs/texture_replace_dialog.h"
+#include "brush/texture_dialogs/surface_flags_dialog.h"
+#include "brush/texture_ops/uv_types.h"
 #include "transform/mirror.h"
 #include "transform/nudge.h"
 #include "ui_console.h"
@@ -35,6 +41,7 @@
 #include "ui_scene.h"
 #include "ui_shared.h"
 #include "ui_status_bar.h"
+#include "ui_texture_browser.h"
 #include "ui_toolbar.h"
 #include "ui_viewport.h"
 #include "ui_worlds.h"
@@ -48,8 +55,9 @@
 
 #include <SDL3/SDL.h>
 
-#include <filesystem>
+#include <cctype>
 #include <cstdio>
+#include <filesystem>
 
 namespace {
 
@@ -114,6 +122,15 @@ int CreateBrushFromPrimitive(
   NodeProperties props = MakeProps("Brush");
   props.brush_vertices = primitive.vertices;
   props.brush_indices = primitive.indices;
+
+  // Initialize brush_face_textures for each triangle face
+  const size_t face_count = primitive.indices.size() / 3;
+  props.brush_face_textures.resize(face_count);
+  for (auto& face : props.brush_face_textures)
+  {
+    face.texture_name = "default";
+    face.surface_flags = static_cast<uint32_t>(texture_ops::SurfaceFlags::Solid);
+  }
 
   // Compute centroid from vertices (consistent with loaded brushes)
   if (primitive.vertices.size() >= 3)
@@ -354,6 +371,7 @@ void DrawPrimitiveDialog(EditorSession& session)
           session.active_target = SelectionTarget::Scene;
           session.undo_stack.PushCreate(UndoTarget::Scene, new_id);
           session.document_state.MarkDirty();
+          session.scene_dirty_for_render = true;
         }
       }
 
@@ -468,6 +486,7 @@ void DrawPolygonExtrusionDialog(EditorSession& session)
           session.active_target = SelectionTarget::Scene;
           session.undo_stack.PushCreate(UndoTarget::Scene, new_id);
           session.document_state.MarkDirty();
+          session.scene_dirty_for_render = true;
         }
       }
 
@@ -589,7 +608,8 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       &session.panel_visibility.show_scene,
       &session.panel_visibility.show_properties,
       &session.panel_visibility.show_console,
-      &session.panel_visibility.show_tools
+      &session.panel_visibility.show_tools,
+      &session.panel_visibility.show_texture_browser
     };
     ViewportDisplayFlags viewport_display_flags{
       &session.viewport_panel().show_fps
@@ -933,6 +953,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           if (geo_dirty)
           {
             session.document_state.MarkDirty();
+            session.scene_dirty_for_render = true;
           }
         }
       }
@@ -993,6 +1014,22 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         else if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && session.polygon_draw.vertices.size() >= 9)
         {
           session.polygon_draw.show_extrusion_dialog = true;
+        }
+      }
+
+      // Texture operation shortcuts (EPIC-10)
+      // U: UV Transform dialog
+      if (ImGui::IsKeyPressed(ImGuiKey_U, false) && !primary_down && !io.KeyAlt)
+      {
+        if (io.KeyShift)
+        {
+          // Shift+U: UV Projection dialog
+          session.uv_projection_dialog.open = true;
+        }
+        else
+        {
+          // U: UV Transform dialog
+          session.uv_transform_dialog.open = true;
         }
       }
 
@@ -1174,6 +1211,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         if (geo_dirty)
         {
           session.document_state.MarkDirty();
+          session.scene_dirty_for_render = true;
         }
       }
       if (menu_actions.geometry_weld && HasSelection(session.scene_panel))
@@ -1183,6 +1221,28 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (menu_actions.geometry_extrude && HasSelection(session.scene_panel))
       {
         session.extrude_dialog.open = true;
+      }
+
+      // Texture operations (EPIC-10)
+      if (menu_actions.texture_uv_transform)
+      {
+        session.uv_transform_dialog.open = true;
+      }
+      if (menu_actions.texture_uv_projection)
+      {
+        session.uv_projection_dialog.open = true;
+      }
+      if (menu_actions.texture_fit)
+      {
+        session.uv_fit_dialog.open = true;
+      }
+      if (menu_actions.texture_replace)
+      {
+        session.texture_replace_dialog.open = true;
+      }
+      if (menu_actions.texture_surface_flags)
+      {
+        session.surface_flags_dialog.open = true;
       }
     }
 
@@ -1655,12 +1715,40 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.scene_nodes,
         session.scene_props,
         session.scene_panel.primary_selection,
-        session.project_root);
+        session.project_root,
+        &session.panel_visibility.show_texture_browser);
     }
 
     if (session.panel_visibility.show_console)
     {
       DrawConsolePanel(session.console_panel);
+    }
+
+    // Draw texture browser panel (EPIC-10)
+    if (session.panel_visibility.show_texture_browser)
+    {
+      TextureBrowserAction tex_action;
+      DrawTextureBrowserPanel(session.texture_browser, session.project_root, tex_action);
+      if (tex_action.apply_to_faces && !tex_action.selected_texture.empty())
+      {
+        // Apply texture to all faces of selected brushes
+        auto brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+        size_t total_faces_modified = 0;
+        for (int brush_id : brush_ids)
+        {
+          NodeProperties& brush_props = session.scene_props[brush_id];
+          for (auto& face : brush_props.brush_face_textures)
+          {
+            face.texture_name = tex_action.selected_texture;
+            ++total_faces_modified;
+          }
+        }
+        if (total_faces_modified > 0)
+        {
+          session.document_state.MarkDirty();
+          session.scene_dirty_for_render = true;
+        }
+      }
     }
 
     // Draw tools panel and handle tool selection
@@ -1742,6 +1830,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (geo_dirty)
       {
         session.document_state.MarkDirty();
+        session.scene_dirty_for_render = true;
       }
     }
     if (tools_result.geometry_weld && HasSelection(session.scene_panel))
@@ -1835,6 +1924,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     if (csg_dirty)
     {
       session.document_state.MarkDirty();
+      session.scene_dirty_for_render = true;
     }
     DrawCSGErrorPopup(session.csg_error_popup);
 
@@ -1859,6 +1949,200 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     if (geo_dirty)
     {
       session.document_state.MarkDirty();
+      session.scene_dirty_for_render = true;
+    }
+
+    // Texture operation dialogs (EPIC-10)
+    UVTransformDialogResult uv_transform_result = DrawUVTransformDialog(session.uv_transform_dialog);
+    if (uv_transform_result.apply || uv_transform_result.reset)
+    {
+      // Apply UV transform to all faces of selected brushes
+      auto brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      size_t faces_modified = 0;
+      for (int brush_id : brush_ids)
+      {
+        NodeProperties& brush_props = session.scene_props[brush_id];
+        for (auto& face : brush_props.brush_face_textures)
+        {
+          if (uv_transform_result.reset)
+          {
+            // Reset to defaults
+            face.mapping = texture_ops::TextureMapping();
+          }
+          else
+          {
+            // Apply transform values from dialog
+            face.mapping.offset_u += session.uv_transform_dialog.offset_u;
+            face.mapping.offset_v += session.uv_transform_dialog.offset_v;
+            face.mapping.scale_u *= session.uv_transform_dialog.scale_u;
+            face.mapping.scale_v *= session.uv_transform_dialog.scale_v;
+            face.mapping.rotation += session.uv_transform_dialog.rotation;
+          }
+          ++faces_modified;
+        }
+      }
+      if (faces_modified > 0)
+      {
+        session.document_state.MarkDirty();
+      }
+    }
+
+    UVProjectionDialogResult uv_projection_result = DrawUVProjectionDialog(session.uv_projection_dialog);
+    if (uv_projection_result.apply)
+    {
+      // Apply UV projection scale to all faces of selected brushes
+      auto brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      size_t faces_modified = 0;
+      for (int brush_id : brush_ids)
+      {
+        NodeProperties& brush_props = session.scene_props[brush_id];
+        for (auto& face : brush_props.brush_face_textures)
+        {
+          face.mapping.scale_u = session.uv_projection_dialog.scale_u;
+          face.mapping.scale_v = session.uv_projection_dialog.scale_v;
+          face.mapping.offset_u = 0.0f;
+          face.mapping.offset_v = 0.0f;
+          face.mapping.rotation = 0.0f;
+          ++faces_modified;
+        }
+      }
+      if (faces_modified > 0)
+      {
+        session.document_state.MarkDirty();
+      }
+    }
+
+    UVFitDialogResult uv_fit_result = DrawUVFitDialog(session.uv_fit_dialog);
+    if (uv_fit_result.apply)
+    {
+      // Fit texture to bounds - reset transform and apply scale from dialog
+      auto brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      size_t faces_modified = 0;
+      for (int brush_id : brush_ids)
+      {
+        NodeProperties& brush_props = session.scene_props[brush_id];
+        for (auto& face : brush_props.brush_face_textures)
+        {
+          face.mapping.offset_u = 0.0f;
+          face.mapping.offset_v = 0.0f;
+          face.mapping.scale_u = session.uv_fit_dialog.scale_u;
+          face.mapping.scale_v = session.uv_fit_dialog.scale_v;
+          face.mapping.rotation = 0.0f;
+          ++faces_modified;
+        }
+      }
+      if (faces_modified > 0)
+      {
+        session.document_state.MarkDirty();
+      }
+    }
+
+    TextureReplaceDialogResult texture_replace_result = DrawTextureReplaceDialog(session.texture_replace_dialog);
+    if (texture_replace_result.replace)
+    {
+      // Replace textures across scene
+      std::string old_tex(session.texture_replace_dialog.old_texture);
+      std::string new_tex(session.texture_replace_dialog.new_texture);
+      size_t replaced = 0;
+
+      if (!old_tex.empty() && !new_tex.empty())
+      {
+        // Get brushes to search (selected only or all)
+        std::vector<int> brush_ids;
+        if (session.texture_replace_dialog.selection_only)
+        {
+          brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+        }
+        else
+        {
+          // Get all brushes
+          for (size_t i = 0; i < session.scene_nodes.size(); ++i)
+          {
+            if (!session.scene_nodes[i].deleted &&
+                session.scene_props[i].type == "Brush" &&
+                !session.scene_props[i].brush_face_textures.empty())
+            {
+              brush_ids.push_back(static_cast<int>(i));
+            }
+          }
+        }
+
+        for (int brush_id : brush_ids)
+        {
+          NodeProperties& brush_props = session.scene_props[brush_id];
+          for (auto& face : brush_props.brush_face_textures)
+          {
+            // Case-insensitive comparison
+            bool match = false;
+            if (session.texture_replace_dialog.use_pattern)
+            {
+              // Simple wildcard match (just check if old_tex is contained)
+              std::string face_tex_lower = face.texture_name;
+              std::string old_tex_lower = old_tex;
+              for (char& c : face_tex_lower) c = static_cast<char>(std::tolower(c));
+              for (char& c : old_tex_lower) c = static_cast<char>(std::tolower(c));
+              match = (face_tex_lower.find(old_tex_lower) != std::string::npos);
+            }
+            else
+            {
+              std::string face_tex_lower = face.texture_name;
+              std::string old_tex_lower = old_tex;
+              for (char& c : face_tex_lower) c = static_cast<char>(std::tolower(c));
+              for (char& c : old_tex_lower) c = static_cast<char>(std::tolower(c));
+              match = (face_tex_lower == old_tex_lower);
+            }
+            if (match)
+            {
+              face.texture_name = new_tex;
+              ++replaced;
+            }
+          }
+        }
+      }
+
+      session.texture_replace_dialog.show_result = true;
+      session.texture_replace_dialog.last_replaced = replaced;
+      if (replaced > 0)
+      {
+        session.document_state.MarkDirty();
+      }
+    }
+    if (texture_replace_result.find_next)
+    {
+      // Find next: for now just close the dialog as finding/selection isn't implemented yet
+    }
+
+    SurfaceFlagsDialogResult surface_flags_result = DrawSurfaceFlagsDialog(session.surface_flags_dialog);
+    if (surface_flags_result.apply)
+    {
+      // Apply surface flags to all faces of selected brushes
+      auto brush_ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      size_t faces_modified = 0;
+
+      // Build flags from dialog state
+      uint32_t new_flags = 0;
+      if (session.surface_flags_dialog.solid) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Solid);
+      if (session.surface_flags_dialog.invisible) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Invisible);
+      if (session.surface_flags_dialog.fullbright) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Fullbright);
+      if (session.surface_flags_dialog.sky) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Sky);
+      if (session.surface_flags_dialog.portal) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Portal);
+      if (session.surface_flags_dialog.mirror) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Mirror);
+      if (session.surface_flags_dialog.transparent) new_flags |= static_cast<uint32_t>(texture_ops::SurfaceFlags::Transparent);
+
+      for (int brush_id : brush_ids)
+      {
+        NodeProperties& brush_props = session.scene_props[brush_id];
+        for (auto& face : brush_props.brush_face_textures)
+        {
+          face.surface_flags = new_flags;
+          face.alpha_ref = static_cast<uint8_t>(session.surface_flags_dialog.alpha_ref);
+          ++faces_modified;
+        }
+      }
+      if (faces_modified > 0)
+      {
+        session.document_state.MarkDirty();
+      }
     }
 
     DrawMarkerDialog(session.marker_dialog, session.viewport_panel());
@@ -2053,6 +2337,25 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.viewport_panel(),
       session.scene_nodes,
       session.scene_props);
+
+    // Update brush geometry for solid rendering if scene changed or gizmo is active
+    // Check all viewports for active gizmo drag
+    bool gizmo_active = false;
+    for (int slot = 0; slot < session.multi_viewport.VisibleViewportCount(); ++slot)
+    {
+      if (session.multi_viewport.viewports[slot].state.gizmo_dragging)
+      {
+        gizmo_active = true;
+        break;
+      }
+    }
+    if (session.scene_dirty_for_render || gizmo_active)
+    {
+      UpdateBrushGeometry(diligent.engine.device, diligent.brush_renderer,
+                          session.scene_nodes, session.scene_props,
+                          &diligent.engine.textures, diligent.engine.project_root);
+      session.scene_dirty_for_render = false;
+    }
 
     // Render all visible viewport slots
     const int visible_count = session.multi_viewport.VisibleViewportCount();

@@ -185,6 +185,8 @@ bool diligent_EnsureDevice()
 	}
 
 	Diligent::EngineVkCreateInfo engine_create_info;
+	// DEdit2 workloads can exhaust the default dynamic heap; give Vulkan more headroom.
+	engine_create_info.DynamicHeapSize = 64 << 20;
 	g_diligent_state.engine_factory->CreateDeviceAndContextsVk(engine_create_info, &g_diligent_state.render_device, &g_diligent_state.immediate_context);
 	if (!g_diligent_state.render_device || !g_diligent_state.immediate_context)
 	{

@@ -1,5 +1,7 @@
 #include "editor_state.h"
 
+#include "brush/texture_ops/uv_types.h"
+
 #include "bdefs.h"
 #include "ltanode.h"
 #include "ltanodereader.h"
@@ -2191,6 +2193,19 @@ std::vector<TreeNode> BuildSceneTree(
 			props.brush_index = brush_index;
 			props.brush_vertices = bounds.vertices;
 			props.brush_indices = bounds.indices;
+
+			// Initialize brush_face_textures if not already set
+			if (props.brush_face_textures.empty() && !bounds.indices.empty())
+			{
+				const size_t face_count = bounds.indices.size() / 3;
+				props.brush_face_textures.resize(face_count);
+				for (auto& face : props.brush_face_textures)
+				{
+					face.texture_name = "default";
+					face.surface_flags = static_cast<uint32_t>(texture_ops::SurfaceFlags::Solid);
+				}
+			}
+
 			char buffer[128];
 			std::snprintf(buffer, sizeof(buffer), "%.3f %.3f %.3f",
 				bounds.bounds_min[0], bounds.bounds_min[1], bounds.bounds_min[2]);

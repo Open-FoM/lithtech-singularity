@@ -14,10 +14,16 @@
 #include "brush/csg_dialogs/csg_join_dialog.h"
 #include "brush/csg_dialogs/csg_triangulate_dialog.h"
 #include "brush/geometry_dialogs/geometry_dialog_state.h"
+#include "brush/texture_dialogs/uv_transform_dialog.h"
+#include "brush/texture_dialogs/uv_projection_dialog.h"
+#include "brush/texture_dialogs/uv_fit_dialog.h"
+#include "brush/texture_dialogs/texture_replace_dialog.h"
+#include "brush/texture_dialogs/surface_flags_dialog.h"
 #include "geometry/geometry_mode_state.h"
 #include "transform/mirror_dialog.h"
 #include "transform/rotate_dialog.h"
 #include "ui_marker.h"
+#include "ui_texture_browser.h"
 #include "undo_stack.h"
 #include "ui_console.h"
 #include "ui_dock.h"
@@ -95,6 +101,7 @@ struct PanelVisibility {
   bool show_properties = true;
   bool show_console = true;
   bool show_tools = true;
+  bool show_texture_browser = false;  ///< EPIC-10: Texture browser panel
 };
 
 struct EditorSession
@@ -177,4 +184,18 @@ struct EditorSession
   /// Geometry operation dialogs (EPIC-09).
   VertexWeldDialogState weld_dialog;
   FaceExtrudeDialogState extrude_dialog;
+
+  /// Texture browser panel state (EPIC-10).
+  TextureBrowserState texture_browser;
+
+  /// Texture operation dialogs (EPIC-10).
+  UVTransformDialogState uv_transform_dialog;
+  UVProjectionDialogState uv_projection_dialog;
+  UVFitDialogState uv_fit_dialog;
+  TextureReplaceDialogState texture_replace_dialog;
+  SurfaceFlagsDialogState surface_flags_dialog;
+
+  /// Flag to trigger brush geometry update for rendering.
+  /// Set to true when brushes are created, modified, or deleted.
+  bool scene_dirty_for_render = true;
 };

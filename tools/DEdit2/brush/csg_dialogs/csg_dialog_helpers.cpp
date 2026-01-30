@@ -1,5 +1,7 @@
 #include "csg_dialog_helpers.h"
 
+#include "brush/texture_ops/uv_types.h"
+
 #include "imgui.h"
 
 bool ExtractBrushGeometry(const NodeProperties& props, std::vector<float>& out_vertices,
@@ -67,6 +69,15 @@ int CreateBrushFromCSGResult(std::vector<TreeNode>& scene_nodes, std::vector<Nod
   NodeProperties props = MakeProps("Brush");
   props.brush_vertices = vertices;
   props.brush_indices = indices;
+
+  // Initialize brush_face_textures for each triangle face
+  // Each face is a triangle, so face_count = indices.size() / 3
+  const size_t face_count = indices.size() / 3;
+  props.brush_face_textures.resize(face_count);
+  for (auto& face : props.brush_face_textures) {
+    face.texture_name = "default";
+    face.surface_flags = static_cast<uint32_t>(texture_ops::SurfaceFlags::Solid);
+  }
 
   // Compute centroid from vertices
   if (vertices.size() >= 3) {

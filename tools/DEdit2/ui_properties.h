@@ -10,4 +10,5 @@ void DrawPropertiesPanel(
 	std::vector<TreeNode>& scene_nodes,
 	std::vector<NodeProperties>& scene_props,
 	int scene_selected_id,
-	const std::string& project_root);
+	const std::string& project_root,
+	bool* open_texture_browser = nullptr);

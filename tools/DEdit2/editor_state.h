@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bsp_view.h"
+#include "brush/texture_ops/uv_types.h"
 
 #include <cstdint>
 #include <string>
@@ -13,6 +14,36 @@ struct TreeNode
 	std::vector<int> children;
 	bool is_folder = false;
 	bool deleted = false;
+};
+
+/// Per-face texture data for brush serialization.
+/// Stores texture properties for each face of a brush.
+struct BrushFaceTextureData
+{
+	std::string texture_name;                                            ///< Texture path/name
+	texture_ops::TextureMapping mapping;                                 ///< UV mapping parameters
+	uint32_t surface_flags = static_cast<uint32_t>(texture_ops::SurfaceFlags::Default);
+	uint8_t alpha_ref = 0;                                               ///< Alpha test reference value
+
+	/// Create from FaceProperties.
+	static BrushFaceTextureData FromFaceProperties(const texture_ops::FaceProperties& props) {
+		BrushFaceTextureData data;
+		data.texture_name = props.texture_name;
+		data.mapping = props.mapping;
+		data.surface_flags = static_cast<uint32_t>(props.flags);
+		data.alpha_ref = props.alpha_ref;
+		return data;
+	}
+
+	/// Convert to FaceProperties.
+	[[nodiscard]] texture_ops::FaceProperties ToFaceProperties() const {
+		texture_ops::FaceProperties props;
+		props.texture_name = texture_name;
+		props.mapping = mapping;
+		props.flags = static_cast<texture_ops::SurfaceFlags>(surface_flags);
+		props.alpha_ref = alpha_ref;
+		return props;
+	}
 };
 
 struct NodeProperties
@@ -55,6 +86,10 @@ struct NodeProperties
 	int brush_index = -1;
 	std::vector<float> brush_vertices;
 	std::vector<uint32_t> brush_indices;
+
+	// EPIC-10: Texture data for brushes
+	std::vector<float> brush_uvs;                        ///< Per-vertex UV coords (size = num_verts * 2)
+	std::vector<BrushFaceTextureData> brush_face_textures; ///< Per-face texture properties
 };
 
 struct TreeUiState
