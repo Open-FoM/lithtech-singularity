@@ -352,3 +352,159 @@ void DrawPolygonOutline(
     }
   }
 }
+
+void DrawSplitPlaneOverlay(
+  const float plane_point[3],
+  const float plane_normal[3],
+  float half_extent,
+  const Diligent::float4x4& view_proj,
+  const ImVec2& viewport_pos,
+  const ImVec2& viewport_size,
+  ImDrawList* draw_list,
+  unsigned int fill_color,
+  unsigned int outline_color,
+  float thickness)
+{
+  if (draw_list == nullptr || half_extent <= 0.0f)
+  {
+    return;
+  }
+
+  // Normalize the plane normal
+  float nx = plane_normal[0];
+  float ny = plane_normal[1];
+  float nz = plane_normal[2];
+  const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 1e-6f)
+  {
+    return;
+  }
+  nx /= len;
+  ny /= len;
+  nz /= len;
+
+  // Create orthonormal basis for the plane
+  // Find a vector not parallel to the normal
+  float up[3] = {0.0f, 1.0f, 0.0f};
+  if (std::abs(ny) > 0.99f)
+  {
+    up[0] = 1.0f;
+    up[1] = 0.0f;
+    up[2] = 0.0f;
+  }
+
+  // tangent = normalize(up - (up . normal) * normal)
+  const float dot = up[0] * nx + up[1] * ny + up[2] * nz;
+  float tx = up[0] - dot * nx;
+  float ty = up[1] - dot * ny;
+  float tz = up[2] - dot * nz;
+  const float tlen = std::sqrt(tx * tx + ty * ty + tz * tz);
+  if (tlen < 1e-6f)
+  {
+    return;
+  }
+  tx /= tlen;
+  ty /= tlen;
+  tz /= tlen;
+
+  // bitangent = normal x tangent
+  const float bx = ny * tz - nz * ty;
+  const float by = nz * tx - nx * tz;
+  const float bz = nx * ty - ny * tx;
+
+  // Create four corners of the plane quad
+  const float corners[4][3] = {
+    {plane_point[0] - tx * half_extent - bx * half_extent,
+     plane_point[1] - ty * half_extent - by * half_extent,
+     plane_point[2] - tz * half_extent - bz * half_extent},
+    {plane_point[0] + tx * half_extent - bx * half_extent,
+     plane_point[1] + ty * half_extent - by * half_extent,
+     plane_point[2] + tz * half_extent - bz * half_extent},
+    {plane_point[0] + tx * half_extent + bx * half_extent,
+     plane_point[1] + ty * half_extent + by * half_extent,
+     plane_point[2] + tz * half_extent + bz * half_extent},
+    {plane_point[0] - tx * half_extent + bx * half_extent,
+     plane_point[1] - ty * half_extent + by * half_extent,
+     plane_point[2] - tz * half_extent + bz * half_extent}
+  };
+
+  // Project corners to screen space
+  ImVec2 screen[4];
+  bool visible[4] = {};
+  int visible_count = 0;
+
+  for (int i = 0; i < 4; ++i)
+  {
+    visible[i] = ProjectWorldToScreen(view_proj, corners[i], viewport_size, screen[i]);
+    if (visible[i])
+    {
+      screen[i].x += viewport_pos.x;
+      screen[i].y += viewport_pos.y;
+      ++visible_count;
+    }
+  }
+
+  // Only draw if at least 3 corners are visible
+  if (visible_count < 3)
+  {
+    return;
+  }
+
+  // Draw filled quad if all visible
+  if (visible_count == 4)
+  {
+    draw_list->AddQuadFilled(screen[0], screen[1], screen[2], screen[3], fill_color);
+  }
+
+  // Draw outline edges
+  static const int edges[4][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}};
+  for (const auto& edge : edges)
+  {
+    if (visible[edge[0]] && visible[edge[1]])
+    {
+      draw_list->AddLine(screen[edge[0]], screen[edge[1]], outline_color, thickness);
+    }
+  }
+
+  // Draw normal direction indicator (small arrow from center)
+  const float center[3] = {
+    plane_point[0],
+    plane_point[1],
+    plane_point[2]
+  };
+  const float arrow_end[3] = {
+    plane_point[0] + nx * half_extent * 0.3f,
+    plane_point[1] + ny * half_extent * 0.3f,
+    plane_point[2] + nz * half_extent * 0.3f
+  };
+
+  ImVec2 center_screen;
+  ImVec2 arrow_screen;
+  if (ProjectWorldToScreen(view_proj, center, viewport_size, center_screen) &&
+      ProjectWorldToScreen(view_proj, arrow_end, viewport_size, arrow_screen))
+  {
+    center_screen.x += viewport_pos.x;
+    center_screen.y += viewport_pos.y;
+    arrow_screen.x += viewport_pos.x;
+    arrow_screen.y += viewport_pos.y;
+
+    // Draw arrow line
+    draw_list->AddLine(center_screen, arrow_screen, outline_color, thickness * 1.5f);
+
+    // Draw arrowhead
+    const float dx = arrow_screen.x - center_screen.x;
+    const float dy = arrow_screen.y - center_screen.y;
+    const float arrow_len = std::sqrt(dx * dx + dy * dy);
+    if (arrow_len > 5.0f)
+    {
+      const float head_size = 8.0f;
+      const float ndx = dx / arrow_len;
+      const float ndy = dy / arrow_len;
+      const ImVec2 p1(arrow_screen.x - ndx * head_size - ndy * head_size * 0.5f,
+                      arrow_screen.y - ndy * head_size + ndx * head_size * 0.5f);
+      const ImVec2 p2(arrow_screen.x - ndx * head_size + ndy * head_size * 0.5f,
+                      arrow_screen.y - ndy * head_size - ndx * head_size * 0.5f);
+      draw_list->AddTriangleFilled(arrow_screen, p1, p2, outline_color);
+    }
+  }
+}

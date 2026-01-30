@@ -247,6 +247,31 @@ void DrawMainMenuBar(
 			}
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Operations", has_selection))
+		{
+			if (ImGui::MenuItem("Hollow...", nullptr, false, has_selection))
+			{
+				actions.csg_hollow = true;
+			}
+			if (ImGui::MenuItem("Carve...", nullptr, false, has_selection))
+			{
+				actions.csg_carve = true;
+			}
+			if (ImGui::MenuItem("Split...", nullptr, false, has_selection))
+			{
+				actions.csg_split = true;
+			}
+			if (ImGui::MenuItem("Join...", nullptr, false, has_selection))
+			{
+				actions.csg_join = true;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Triangulate", nullptr, false, has_selection))
+			{
+				actions.csg_triangulate = true;
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::EndMenu();
 	}
 

@@ -74,3 +74,27 @@ void DrawPolygonOutline(
   unsigned int line_color,
   unsigned int vertex_color,
   float thickness);
+
+/// Draw a split plane preview overlay.
+/// The plane is rendered as a semi-transparent quad with an outline.
+/// @param plane_point A point on the plane (world space).
+/// @param plane_normal The plane normal (normalized).
+/// @param half_extent The half-size of the plane quad.
+/// @param view_proj The view-projection matrix.
+/// @param viewport_pos Top-left corner of the viewport in screen coordinates.
+/// @param viewport_size Size of the viewport.
+/// @param draw_list ImGui draw list to render to.
+/// @param fill_color Color of the plane fill (with alpha for transparency).
+/// @param outline_color Color of the plane outline.
+/// @param thickness Line thickness for the outline.
+void DrawSplitPlaneOverlay(
+  const float plane_point[3],
+  const float plane_normal[3],
+  float half_extent,
+  const Diligent::float4x4& view_proj,
+  const ImVec2& viewport_pos,
+  const ImVec2& viewport_size,
+  ImDrawList* draw_list,
+  unsigned int fill_color,
+  unsigned int outline_color,
+  float thickness);

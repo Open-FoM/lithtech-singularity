@@ -17,6 +17,11 @@
 #include "viewport_picking.h"
 #include "viewport_render.h"
 
+#include "brush/csg_dialogs/csg_hollow_dialog.h"
+#include "brush/csg_dialogs/csg_carve_dialog.h"
+#include "brush/csg_dialogs/csg_split_dialog.h"
+#include "brush/csg_dialogs/csg_join_dialog.h"
+#include "brush/csg_dialogs/csg_triangulate_dialog.h"
 #include "transform/mirror.h"
 #include "transform/nudge.h"
 #include "ui_console.h"
@@ -1101,6 +1106,46 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       {
         session.mirror_dialog.open = true;
       }
+
+      // CSG operations
+      if (menu_actions.csg_hollow && HasSelection(session.scene_panel))
+      {
+        session.hollow_dialog.open = true;
+      }
+      if (menu_actions.csg_carve && HasSelection(session.scene_panel))
+      {
+        auto ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+        if (ids.size() >= 2)
+        {
+          session.carve_dialog.open = true;
+        }
+        else
+        {
+          session.csg_error_popup.show = true;
+          session.csg_error_popup.message = "Carve requires at least 2 brushes selected.";
+        }
+      }
+      if (menu_actions.csg_split && HasSelection(session.scene_panel))
+      {
+        session.split_dialog.open = true;
+      }
+      if (menu_actions.csg_join && HasSelection(session.scene_panel))
+      {
+        auto ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+        if (ids.size() >= 2)
+        {
+          session.join_dialog.open = true;
+        }
+        else
+        {
+          session.csg_error_popup.show = true;
+          session.csg_error_popup.message = "Join requires at least 2 brushes selected.";
+        }
+      }
+      if (menu_actions.csg_triangulate && HasSelection(session.scene_panel))
+      {
+        session.triangulate_dialog.open = true;
+      }
     }
 
     // Handle marker dialog
@@ -1610,6 +1655,46 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       }
     }
 
+    // Handle CSG operations from tools panel
+    if (tools_result.csg_hollow && HasSelection(session.scene_panel))
+    {
+      session.hollow_dialog.open = true;
+    }
+    if (tools_result.csg_carve && HasSelection(session.scene_panel))
+    {
+      auto ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      if (ids.size() >= 2)
+      {
+        session.carve_dialog.open = true;
+      }
+      else
+      {
+        session.csg_error_popup.show = true;
+        session.csg_error_popup.message = "Carve requires at least 2 brushes selected.";
+      }
+    }
+    if (tools_result.csg_split && HasSelection(session.scene_panel))
+    {
+      session.split_dialog.open = true;
+    }
+    if (tools_result.csg_join && HasSelection(session.scene_panel))
+    {
+      auto ids = GetSelectedCSGBrushIds(session.scene_panel, session.scene_nodes, session.scene_props);
+      if (ids.size() >= 2)
+      {
+        session.join_dialog.open = true;
+      }
+      else
+      {
+        session.csg_error_popup.show = true;
+        session.csg_error_popup.message = "Join requires at least 2 brushes selected.";
+      }
+    }
+    if (tools_result.csg_triangulate && HasSelection(session.scene_panel))
+    {
+      session.triangulate_dialog.open = true;
+    }
+
     // Handle Shift+A for primitive popup
     if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false) && !primary_down)
     {
@@ -1646,6 +1731,55 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.scene_nodes,
       session.scene_props,
       &session.undo_stack);
+
+    // CSG operation dialogs
+    bool csg_dirty = false;
+    DrawHollowDialog(
+      session.hollow_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      csg_dirty);
+    DrawCarveDialog(
+      session.carve_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      csg_dirty);
+    DrawSplitDialog(
+      session.split_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      csg_dirty);
+    DrawJoinDialog(
+      session.join_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      csg_dirty);
+    DrawTriangulateDialog(
+      session.triangulate_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      csg_dirty);
+    if (csg_dirty)
+    {
+      session.document_state.MarkDirty();
+    }
+    DrawCSGErrorPopup(session.csg_error_popup);
+
     DrawMarkerDialog(session.marker_dialog, session.viewport_panel());
 
     // Draw Go To Node dialog and handle result
@@ -1894,6 +2028,32 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
             vertex_color,
             thickness);
       }
+    }
+
+    // Draw split plane preview if split dialog is open with valid preview
+    if (session.split_dialog.open && session.split_dialog.preview_valid &&
+        viewport_result.active_viewport_size.x > 0 && viewport_result.active_viewport_size.y > 0)
+    {
+      const float aspect =
+          viewport_result.active_viewport_size.x / viewport_result.active_viewport_size.y;
+      const Diligent::float4x4 view_proj = ComputeViewportViewProj(session.viewport_panel(), aspect);
+
+      ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+      const ImU32 fill_color = IM_COL32(100, 180, 255, 60);     // Semi-transparent blue
+      const ImU32 outline_color = IM_COL32(100, 180, 255, 200); // Brighter blue outline
+      constexpr float thickness = 2.0f;
+
+      DrawSplitPlaneOverlay(
+          session.split_dialog.preview_point,
+          session.split_dialog.preview_normal,
+          session.split_dialog.preview_extent,
+          view_proj,
+          viewport_result.active_viewport_pos,
+          viewport_result.active_viewport_size,
+          draw_list,
+          fill_color,
+          outline_color,
+          thickness);
     }
 
     // Draw status bar

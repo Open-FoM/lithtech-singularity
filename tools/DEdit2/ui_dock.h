@@ -73,6 +73,13 @@ struct MainMenuActions
 	bool toggle_fps = false;
 	bool reset_panel_visibility = false;
 	bool reset_splitters = false;
+
+	// CSG Operations
+	bool csg_hollow = false;
+	bool csg_carve = false;
+	bool csg_split = false;
+	bool csg_join = false;
+	bool csg_triangulate = false;
 };
 
 /// FPS display state pointer for View menu.

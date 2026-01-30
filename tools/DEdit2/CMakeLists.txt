@@ -113,6 +113,15 @@ add_library (
 	ltjs_dedit2_core
 	STATIC
 		brush/brush_primitive.cpp
+		brush/csg/csg_types.cpp
+		brush/csg/csg_polygon.cpp
+		brush/csg/csg_triangulate.cpp
+		brush/csg/csg_split.cpp
+		brush/csg/csg_hollow.cpp
+		brush/csg/csg_carve.cpp
+		brush/csg/csg_convex_hull.cpp
+		brush/csg/csg_join.cpp
+		brush/csg_dialogs/csg_dialog_helpers.cpp
 		grid/grid_settings.cpp
 		path_utils.cpp
 		app/string_utils.cpp
@@ -193,6 +202,12 @@ target_sources (
 		transform/nudge.cpp
 		transform/rotate_dialog.cpp
 		transform/mirror_dialog.cpp
+		brush/csg_dialogs/csg_dialog_helpers.cpp
+		brush/csg_dialogs/csg_hollow_dialog.cpp
+		brush/csg_dialogs/csg_carve_dialog.cpp
+		brush/csg_dialogs/csg_split_dialog.cpp
+		brush/csg_dialogs/csg_join_dialog.cpp
+		brush/csg_dialogs/csg_triangulate_dialog.cpp
 		app/document_state.h
 		app/editor_paths.cpp
 		app/editor_session.h

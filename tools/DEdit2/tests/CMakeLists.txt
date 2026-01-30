@@ -13,6 +13,15 @@ add_executable (
 	${CMAKE_CURRENT_LIST_DIR}/grouping_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/transform_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/scene_ui_tests.cpp
+	# CSG operation tests (EPIC-08)
+	${CMAKE_CURRENT_LIST_DIR}/csg_types_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_polygon_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_triangulate_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_split_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_hollow_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_carve_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_join_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/csg_dialog_helpers_tests.cpp
 )
 
 set_target_properties (

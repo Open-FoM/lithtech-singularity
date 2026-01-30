@@ -44,6 +44,13 @@ struct ToolsPanelResult
   bool tool_changed = false;           ///< True if user selected a different tool
   EditorTool new_tool = EditorTool::None; ///< The newly selected tool
   PrimitiveType create_primitive = PrimitiveType::None; ///< Primitive to create (if any)
+
+  // CSG operation requests (trigger dialogs)
+  bool csg_hollow = false;
+  bool csg_carve = false;
+  bool csg_split = false;
+  bool csg_join = false;
+  bool csg_triangulate = false;
 };
 
 /// Draw the dockable Tools panel.

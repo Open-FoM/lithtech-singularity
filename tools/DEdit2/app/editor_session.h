@@ -7,6 +7,12 @@
 #include "selection/depth_cycle.h"
 #include "selection/selection_filter.h"
 #include "selection/selection_query.h"
+#include "brush/csg_dialogs/csg_dialog_helpers.h"
+#include "brush/csg_dialogs/csg_hollow_dialog.h"
+#include "brush/csg_dialogs/csg_carve_dialog.h"
+#include "brush/csg_dialogs/csg_split_dialog.h"
+#include "brush/csg_dialogs/csg_join_dialog.h"
+#include "brush/csg_dialogs/csg_triangulate_dialog.h"
 #include "transform/mirror_dialog.h"
 #include "transform/rotate_dialog.h"
 #include "ui_marker.h"
@@ -154,4 +160,12 @@ struct EditorSession
 
   /// Manual polygon drawing mode state.
   PolygonDrawState polygon_draw;
+
+  /// CSG operation dialog states.
+  HollowDialogState hollow_dialog;
+  CarveDialogState carve_dialog;
+  SplitDialogState split_dialog;
+  JoinDialogState join_dialog;
+  TriangulateDialogState triangulate_dialog;
+  CSGErrorPopupState csg_error_popup;
 };

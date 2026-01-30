@@ -86,6 +86,235 @@ PrimitiveType ToolToPrimitiveType(EditorTool tool)
 namespace
 {
 
+/// CSG operation types for icon drawing.
+enum class CSGOperation
+{
+  Hollow,
+  Carve,
+  Split,
+  Join,
+  Triangulate
+};
+
+/// Returns the display name for a CSG operation.
+const char* CSGOperationName(CSGOperation op)
+{
+  switch (op)
+  {
+  case CSGOperation::Hollow:
+    return "Hollow";
+  case CSGOperation::Carve:
+    return "Carve";
+  case CSGOperation::Split:
+    return "Split";
+  case CSGOperation::Join:
+    return "Join";
+  case CSGOperation::Triangulate:
+    return "Triangulate";
+  default:
+    return "Unknown";
+  }
+}
+
+/// Returns the tooltip description for a CSG operation.
+const char* CSGOperationTooltip(CSGOperation op)
+{
+  switch (op)
+  {
+  case CSGOperation::Hollow:
+    return "Create hollow brush with wall thickness";
+  case CSGOperation::Carve:
+    return "Subtract cutter brush from targets";
+  case CSGOperation::Split:
+    return "Split brush along a plane";
+  case CSGOperation::Join:
+    return "Merge brushes into convex hull";
+  case CSGOperation::Triangulate:
+    return "Convert brush faces to triangles";
+  default:
+    return "";
+  }
+}
+
+/// Draw an icon for a CSG operation.
+void DrawCSGIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, CSGOperation op, bool hovered)
+{
+  const ImU32 bg_color = hovered ? IM_COL32(60, 60, 70, 255) : IM_COL32(50, 50, 55, 255);
+  const ImU32 fg_color = IM_COL32(180, 180, 190, 255);
+  const ImU32 accent_color = IM_COL32(100, 180, 255, 255);
+  const ImU32 outline_color = IM_COL32(70, 70, 80, 255);
+
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float w = max.x - min.x;
+  const float h = max.y - min.y;
+  const float s = std::min(w, h) * 0.35f;
+
+  // Background
+  draw_list->AddRectFilled(min, max, bg_color, 4.0f);
+  draw_list->AddRect(min, max, outline_color, 4.0f);
+
+  switch (op)
+  {
+  case CSGOperation::Hollow:
+    // Nested rectangles (solid outer, empty inner)
+    {
+      const float outer = s * 0.8f;
+      const float inner = s * 0.4f;
+      // Outer box (filled)
+      draw_list->AddRectFilled(
+        ImVec2(cx - outer, cy - outer),
+        ImVec2(cx + outer, cy + outer),
+        fg_color, 2.0f);
+      // Inner box (cut out - use background color)
+      draw_list->AddRectFilled(
+        ImVec2(cx - inner, cy - inner),
+        ImVec2(cx + inner, cy + inner),
+        bg_color, 1.0f);
+      draw_list->AddRect(
+        ImVec2(cx - inner, cy - inner),
+        ImVec2(cx + inner, cy + inner),
+        accent_color, 1.0f, 0, 1.5f);
+    }
+    break;
+
+  case CSGOperation::Carve:
+    // Overlapping shapes with subtraction
+    {
+      const float box_s = s * 0.6f;
+      // Target box
+      draw_list->AddRectFilled(
+        ImVec2(cx - box_s - s * 0.2f, cy - box_s),
+        ImVec2(cx + box_s - s * 0.2f, cy + box_s),
+        fg_color, 2.0f);
+      // Cutter (overlapping, different color)
+      draw_list->AddCircleFilled(
+        ImVec2(cx + s * 0.3f, cy),
+        s * 0.5f,
+        accent_color, 16);
+      // Minus sign
+      draw_list->AddLine(
+        ImVec2(cx + s * 0.1f, cy),
+        ImVec2(cx + s * 0.5f, cy),
+        IM_COL32(255, 255, 255, 255), 2.0f);
+    }
+    break;
+
+  case CSGOperation::Split:
+    // Box with dividing line
+    {
+      const float box_s = s * 0.7f;
+      // Left half
+      draw_list->AddRectFilled(
+        ImVec2(cx - box_s, cy - box_s),
+        ImVec2(cx - s * 0.05f, cy + box_s),
+        fg_color, 2.0f);
+      // Right half (slightly offset/different shade)
+      draw_list->AddRectFilled(
+        ImVec2(cx + s * 0.05f, cy - box_s),
+        ImVec2(cx + box_s, cy + box_s),
+        IM_COL32(140, 140, 150, 255), 2.0f);
+      // Dividing line
+      draw_list->AddLine(
+        ImVec2(cx, cy - box_s - s * 0.2f),
+        ImVec2(cx, cy + box_s + s * 0.2f),
+        accent_color, 2.0f);
+    }
+    break;
+
+  case CSGOperation::Join:
+    // Multiple shapes merging into one
+    {
+      const float box_s = s * 0.4f;
+      // Two boxes merging
+      draw_list->AddRectFilled(
+        ImVec2(cx - box_s - s * 0.3f, cy - box_s),
+        ImVec2(cx + box_s - s * 0.3f, cy + box_s),
+        fg_color, 2.0f);
+      draw_list->AddRectFilled(
+        ImVec2(cx - box_s + s * 0.3f, cy - box_s),
+        ImVec2(cx + box_s + s * 0.3f, cy + box_s),
+        fg_color, 2.0f);
+      // Plus sign in center
+      draw_list->AddLine(
+        ImVec2(cx - s * 0.2f, cy),
+        ImVec2(cx + s * 0.2f, cy),
+        accent_color, 2.0f);
+      draw_list->AddLine(
+        ImVec2(cx, cy - s * 0.2f),
+        ImVec2(cx, cy + s * 0.2f),
+        accent_color, 2.0f);
+    }
+    break;
+
+  case CSGOperation::Triangulate:
+    // Shape with triangle subdivisions
+    {
+      const float box_s = s * 0.7f;
+      // Outer shape
+      draw_list->AddRect(
+        ImVec2(cx - box_s, cy - box_s),
+        ImVec2(cx + box_s, cy + box_s),
+        fg_color, 0.0f, 0, 1.5f);
+      // Triangle subdivisions
+      draw_list->AddLine(
+        ImVec2(cx - box_s, cy - box_s),
+        ImVec2(cx + box_s, cy + box_s),
+        accent_color, 1.5f);
+      draw_list->AddLine(
+        ImVec2(cx + box_s, cy - box_s),
+        ImVec2(cx - box_s, cy + box_s),
+        accent_color, 1.5f);
+      draw_list->AddLine(
+        ImVec2(cx, cy - box_s),
+        ImVec2(cx, cy + box_s),
+        fg_color, 1.0f);
+      draw_list->AddLine(
+        ImVec2(cx - box_s, cy),
+        ImVec2(cx + box_s, cy),
+        fg_color, 1.0f);
+    }
+    break;
+  }
+}
+
+/// Draw a CSG operation button and return true if clicked.
+bool DrawCSGButton(CSGOperation op, float size)
+{
+  const char* name = CSGOperationName(op);
+  const char* tooltip = CSGOperationTooltip(op);
+
+  // Create unique ID
+  char id[64];
+  snprintf(id, sizeof(id), "##csg_%d", static_cast<int>(op));
+
+  // Get current position
+  const ImVec2 pos = ImGui::GetCursorScreenPos();
+  const ImVec2 button_size(size, size);
+
+  // Invisible button for interaction
+  const bool clicked = ImGui::InvisibleButton(id, button_size);
+  const bool hovered = ImGui::IsItemHovered();
+
+  // Draw the icon
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  const ImVec2 min_pos = pos;
+  const ImVec2 max_pos(pos.x + size, pos.y + size);
+
+  DrawCSGIcon(draw_list, min_pos, max_pos, op, hovered);
+
+  // Tooltip on hover
+  if (hovered)
+  {
+    ImGui::BeginTooltip();
+    ImGui::Text("%s", name);
+    ImGui::TextDisabled("%s", tooltip);
+    ImGui::EndTooltip();
+  }
+
+  return clicked;
+}
+
 /// Draw a simple icon representing a tool using ImGui draw primitives.
 void DrawToolIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, EditorTool tool, bool selected)
 {
@@ -463,6 +692,51 @@ ToolsPanelResult DrawToolsPanel(ToolsPanelState& state)
     {
       // Primitive tools trigger the creation dialog immediately
       result.create_primitive = ToolToPrimitiveType(tool);
+    }
+
+    col++;
+    if (col >= buttons_per_row)
+    {
+      col = 0;
+    }
+  }
+
+  ImGui::Spacing();
+  ImGui::Spacing();
+
+  // Operations section (CSG tools)
+  ImGui::TextDisabled("Operations");
+  ImGui::Separator();
+
+  col = 0;
+  for (CSGOperation op : {CSGOperation::Hollow, CSGOperation::Carve, CSGOperation::Split,
+                          CSGOperation::Join, CSGOperation::Triangulate})
+  {
+    if (col > 0)
+    {
+      ImGui::SameLine(0.0f, spacing);
+    }
+
+    if (DrawCSGButton(op, button_size))
+    {
+      switch (op)
+      {
+      case CSGOperation::Hollow:
+        result.csg_hollow = true;
+        break;
+      case CSGOperation::Carve:
+        result.csg_carve = true;
+        break;
+      case CSGOperation::Split:
+        result.csg_split = true;
+        break;
+      case CSGOperation::Join:
+        result.csg_join = true;
+        break;
+      case CSGOperation::Triangulate:
+        result.csg_triangulate = true;
+        break;
+      }
     }
 
     col++;
