@@ -80,6 +80,11 @@ struct MainMenuActions
 	bool csg_split = false;
 	bool csg_join = false;
 	bool csg_triangulate = false;
+
+	// Geometry Operations (EPIC-09)
+	bool geometry_flip = false;
+	bool geometry_weld = false;
+	bool geometry_extrude = false;
 };
 
 /// FPS display state pointer for View menu.

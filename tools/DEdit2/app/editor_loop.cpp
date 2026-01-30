@@ -22,6 +22,9 @@
 #include "brush/csg_dialogs/csg_split_dialog.h"
 #include "brush/csg_dialogs/csg_join_dialog.h"
 #include "brush/csg_dialogs/csg_triangulate_dialog.h"
+#include "brush/geometry_dialogs/geometry_ops_ui.h"
+#include "brush/geometry_dialogs/vertex_weld_dialog.h"
+#include "brush/geometry_dialogs/face_extrude_dialog.h"
 #include "transform/mirror.h"
 #include "transform/nudge.h"
 #include "ui_console.h"
@@ -919,6 +922,21 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.primitive_dialog.type = PrimitiveType::Box;
       }
 
+      // N: Flip normals (EPIC-09)
+      if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !primary_down && !io.KeyShift && !io.KeyAlt)
+      {
+        if (session.active_target == SelectionTarget::Scene && HasSelection(session.scene_panel))
+        {
+          bool geo_dirty = false;
+          ApplyFlipNormals(session.scene_panel, session.scene_nodes, session.scene_props, &session.undo_stack,
+                           session.csg_error_popup, geo_dirty);
+          if (geo_dirty)
+          {
+            session.document_state.MarkDirty();
+          }
+        }
+      }
+
       // P: Enter polygon drawing mode (only when not already in polygon mode)
       if (ImGui::IsKeyPressed(ImGuiKey_P, false) && !primary_down && !io.KeyShift && !io.KeyAlt &&
           !session.polygon_draw.active)
@@ -1145,6 +1163,26 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       if (menu_actions.csg_triangulate && HasSelection(session.scene_panel))
       {
         session.triangulate_dialog.open = true;
+      }
+
+      // Geometry operations (EPIC-09)
+      if (menu_actions.geometry_flip && HasSelection(session.scene_panel))
+      {
+        bool geo_dirty = false;
+        ApplyFlipNormals(session.scene_panel, session.scene_nodes, session.scene_props, &session.undo_stack,
+                         session.csg_error_popup, geo_dirty);
+        if (geo_dirty)
+        {
+          session.document_state.MarkDirty();
+        }
+      }
+      if (menu_actions.geometry_weld && HasSelection(session.scene_panel))
+      {
+        session.weld_dialog.open = true;
+      }
+      if (menu_actions.geometry_extrude && HasSelection(session.scene_panel))
+      {
+        session.extrude_dialog.open = true;
       }
     }
 
@@ -1695,6 +1733,26 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.triangulate_dialog.open = true;
     }
 
+    // Handle geometry operations from tools panel (EPIC-09)
+    if (tools_result.geometry_flip && HasSelection(session.scene_panel))
+    {
+      bool geo_dirty = false;
+      ApplyFlipNormals(session.scene_panel, session.scene_nodes, session.scene_props,
+                       &session.undo_stack, session.csg_error_popup, geo_dirty);
+      if (geo_dirty)
+      {
+        session.document_state.MarkDirty();
+      }
+    }
+    if (tools_result.geometry_weld && HasSelection(session.scene_panel))
+    {
+      session.weld_dialog.open = true;
+    }
+    if (tools_result.geometry_extrude && HasSelection(session.scene_panel))
+    {
+      session.extrude_dialog.open = true;
+    }
+
     // Handle Shift+A for primitive popup
     if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false) && !primary_down)
     {
@@ -1779,6 +1837,29 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       session.document_state.MarkDirty();
     }
     DrawCSGErrorPopup(session.csg_error_popup);
+
+    // Geometry operation dialogs (EPIC-09)
+    bool geo_dirty = false;
+    DrawVertexWeldDialog(
+      session.weld_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      geo_dirty);
+    DrawFaceExtrudeDialog(
+      session.extrude_dialog,
+      session.scene_panel,
+      session.scene_nodes,
+      session.scene_props,
+      &session.undo_stack,
+      session.csg_error_popup,
+      geo_dirty);
+    if (geo_dirty)
+    {
+      session.document_state.MarkDirty();
+    }
 
     DrawMarkerDialog(session.marker_dialog, session.viewport_panel());
 

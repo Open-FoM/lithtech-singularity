@@ -22,6 +22,10 @@ add_executable (
 	${CMAKE_CURRENT_LIST_DIR}/csg_carve_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/csg_join_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/csg_dialog_helpers_tests.cpp
+	# Geometry editing tests (EPIC-09)
+	${CMAKE_CURRENT_LIST_DIR}/geometry_mode_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/subobject_picking_tests.cpp
+	${CMAKE_CURRENT_LIST_DIR}/geometry_ops_tests.cpp
 )
 
 set_target_properties (

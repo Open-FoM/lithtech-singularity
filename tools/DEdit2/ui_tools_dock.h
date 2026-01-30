@@ -51,6 +51,11 @@ struct ToolsPanelResult
   bool csg_split = false;
   bool csg_join = false;
   bool csg_triangulate = false;
+
+  // Geometry operation requests (EPIC-09)
+  bool geometry_flip = false;
+  bool geometry_weld = false;
+  bool geometry_extrude = false;
 };
 
 /// Draw the dockable Tools panel.

@@ -13,6 +13,8 @@
 #include "brush/csg_dialogs/csg_split_dialog.h"
 #include "brush/csg_dialogs/csg_join_dialog.h"
 #include "brush/csg_dialogs/csg_triangulate_dialog.h"
+#include "brush/geometry_dialogs/geometry_dialog_state.h"
+#include "geometry/geometry_mode_state.h"
 #include "transform/mirror_dialog.h"
 #include "transform/rotate_dialog.h"
 #include "ui_marker.h"
@@ -168,4 +170,11 @@ struct EditorSession
   JoinDialogState join_dialog;
   TriangulateDialogState triangulate_dialog;
   CSGErrorPopupState csg_error_popup;
+
+  /// Geometry editing mode state (EPIC-09).
+  GeometryModeState geometry_mode;
+
+  /// Geometry operation dialogs (EPIC-09).
+  VertexWeldDialogState weld_dialog;
+  FaceExtrudeDialogState extrude_dialog;
 };

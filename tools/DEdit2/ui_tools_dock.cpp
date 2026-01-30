@@ -315,6 +315,186 @@ bool DrawCSGButton(CSGOperation op, float size)
   return clicked;
 }
 
+/// Geometry operation types for icon drawing (EPIC-09).
+enum class GeometryOperation
+{
+  Flip,    // Flip normals
+  Weld,    // Weld vertices
+  Extrude  // Extrude faces
+};
+
+/// Returns the display name for a geometry operation.
+const char* GeometryOperationName(GeometryOperation op)
+{
+  switch (op)
+  {
+  case GeometryOperation::Flip:
+    return "Flip";
+  case GeometryOperation::Weld:
+    return "Weld";
+  case GeometryOperation::Extrude:
+    return "Extrude";
+  default:
+    return "Unknown";
+  }
+}
+
+/// Returns the tooltip description for a geometry operation.
+const char* GeometryOperationTooltip(GeometryOperation op)
+{
+  switch (op)
+  {
+  case GeometryOperation::Flip:
+    return "Flip face normals (N)";
+  case GeometryOperation::Weld:
+    return "Weld nearby vertices";
+  case GeometryOperation::Extrude:
+    return "Extrude faces outward";
+  default:
+    return "";
+  }
+}
+
+/// Draw an icon for a geometry operation.
+void DrawGeometryIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, GeometryOperation op, bool hovered)
+{
+  const ImU32 bg_color = hovered ? IM_COL32(60, 60, 70, 255) : IM_COL32(50, 50, 55, 255);
+  const ImU32 fg_color = IM_COL32(180, 180, 190, 255);
+  const ImU32 accent_color = IM_COL32(100, 200, 150, 255); // Green accent for geometry ops
+  const ImU32 outline_color = IM_COL32(70, 70, 80, 255);
+
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float w = max.x - min.x;
+  const float h = max.y - min.y;
+  const float s = std::min(w, h) * 0.35f;
+
+  // Background
+  draw_list->AddRectFilled(min, max, bg_color, 4.0f);
+  draw_list->AddRect(min, max, outline_color, 4.0f);
+
+  switch (op)
+  {
+  case GeometryOperation::Flip:
+    // Two arrows pointing opposite directions
+    {
+      const float arrow_len = s * 0.6f;
+      const float arrow_head = s * 0.25f;
+      const float offset = s * 0.25f;
+
+      // Up arrow (left side)
+      draw_list->AddLine(
+        ImVec2(cx - offset, cy + arrow_len * 0.5f),
+        ImVec2(cx - offset, cy - arrow_len * 0.5f),
+        fg_color, 2.0f);
+      draw_list->AddTriangleFilled(
+        ImVec2(cx - offset, cy - arrow_len * 0.5f - arrow_head),
+        ImVec2(cx - offset - arrow_head * 0.5f, cy - arrow_len * 0.5f),
+        ImVec2(cx - offset + arrow_head * 0.5f, cy - arrow_len * 0.5f),
+        fg_color);
+
+      // Down arrow (right side)
+      draw_list->AddLine(
+        ImVec2(cx + offset, cy - arrow_len * 0.5f),
+        ImVec2(cx + offset, cy + arrow_len * 0.5f),
+        accent_color, 2.0f);
+      draw_list->AddTriangleFilled(
+        ImVec2(cx + offset, cy + arrow_len * 0.5f + arrow_head),
+        ImVec2(cx + offset - arrow_head * 0.5f, cy + arrow_len * 0.5f),
+        ImVec2(cx + offset + arrow_head * 0.5f, cy + arrow_len * 0.5f),
+        accent_color);
+    }
+    break;
+
+  case GeometryOperation::Weld:
+    // Two dots merging to one
+    {
+      const float dot_r = s * 0.15f;
+      const float dist = s * 0.5f;
+
+      // Left dot
+      draw_list->AddCircleFilled(ImVec2(cx - dist, cy), dot_r, fg_color, 12);
+      // Right dot
+      draw_list->AddCircleFilled(ImVec2(cx + dist, cy), dot_r, fg_color, 12);
+      // Lines connecting to center
+      draw_list->AddLine(
+        ImVec2(cx - dist + dot_r, cy),
+        ImVec2(cx - dot_r * 0.5f, cy),
+        accent_color, 1.5f);
+      draw_list->AddLine(
+        ImVec2(cx + dist - dot_r, cy),
+        ImVec2(cx + dot_r * 0.5f, cy),
+        accent_color, 1.5f);
+      // Center dot (result)
+      draw_list->AddCircleFilled(ImVec2(cx, cy), dot_r * 1.2f, accent_color, 12);
+    }
+    break;
+
+  case GeometryOperation::Extrude:
+    // Face with arrow pointing outward
+    {
+      const float box_s = s * 0.5f;
+      const float arrow_len = s * 0.5f;
+      const float arrow_head = s * 0.2f;
+
+      // Base face (square)
+      draw_list->AddRectFilled(
+        ImVec2(cx - box_s, cy - box_s + s * 0.2f),
+        ImVec2(cx + box_s, cy + box_s + s * 0.2f),
+        fg_color, 2.0f);
+
+      // Arrow pointing up (extrusion direction)
+      draw_list->AddLine(
+        ImVec2(cx, cy + s * 0.2f),
+        ImVec2(cx, cy - arrow_len),
+        accent_color, 2.0f);
+      draw_list->AddTriangleFilled(
+        ImVec2(cx, cy - arrow_len - arrow_head),
+        ImVec2(cx - arrow_head * 0.6f, cy - arrow_len),
+        ImVec2(cx + arrow_head * 0.6f, cy - arrow_len),
+        accent_color);
+    }
+    break;
+  }
+}
+
+/// Draw a geometry operation button and return true if clicked.
+bool DrawGeometryButton(GeometryOperation op, float size)
+{
+  const char* name = GeometryOperationName(op);
+  const char* tooltip = GeometryOperationTooltip(op);
+
+  // Create unique ID
+  char id[64];
+  snprintf(id, sizeof(id), "##geo_%d", static_cast<int>(op));
+
+  // Get current position
+  const ImVec2 pos = ImGui::GetCursorScreenPos();
+  const ImVec2 button_size(size, size);
+
+  // Invisible button for interaction
+  const bool clicked = ImGui::InvisibleButton(id, button_size);
+  const bool hovered = ImGui::IsItemHovered();
+
+  // Draw the icon
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  const ImVec2 min_pos = pos;
+  const ImVec2 max_pos(pos.x + size, pos.y + size);
+
+  DrawGeometryIcon(draw_list, min_pos, max_pos, op, hovered);
+
+  // Tooltip on hover
+  if (hovered)
+  {
+    ImGui::BeginTooltip();
+    ImGui::Text("%s", name);
+    ImGui::TextDisabled("%s", tooltip);
+    ImGui::EndTooltip();
+  }
+
+  return clicked;
+}
+
 /// Draw a simple icon representing a tool using ImGui draw primitives.
 void DrawToolIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, EditorTool tool, bool selected)
 {
@@ -735,6 +915,44 @@ ToolsPanelResult DrawToolsPanel(ToolsPanelState& state)
         break;
       case CSGOperation::Triangulate:
         result.csg_triangulate = true;
+        break;
+      }
+    }
+
+    col++;
+    if (col >= buttons_per_row)
+    {
+      col = 0;
+    }
+  }
+
+  ImGui::Spacing();
+  ImGui::Spacing();
+
+  // Geometry section (EPIC-09)
+  ImGui::TextDisabled("Geometry");
+  ImGui::Separator();
+
+  col = 0;
+  for (GeometryOperation op : {GeometryOperation::Flip, GeometryOperation::Weld, GeometryOperation::Extrude})
+  {
+    if (col > 0)
+    {
+      ImGui::SameLine(0.0f, spacing);
+    }
+
+    if (DrawGeometryButton(op, button_size))
+    {
+      switch (op)
+      {
+      case GeometryOperation::Flip:
+        result.geometry_flip = true;
+        break;
+      case GeometryOperation::Weld:
+        result.geometry_weld = true;
+        break;
+      case GeometryOperation::Extrude:
+        result.geometry_extrude = true;
         break;
       }
     }

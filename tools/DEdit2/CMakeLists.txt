@@ -122,6 +122,12 @@ add_library (
 		brush/csg/csg_convex_hull.cpp
 		brush/csg/csg_join.cpp
 		brush/csg_dialogs/csg_dialog_helpers.cpp
+		brush/geometry_ops/flip_normal.cpp
+		brush/geometry_ops/vertex_weld.cpp
+		brush/geometry_ops/face_extrude.cpp
+		geometry/geometry_mode_state.cpp
+		geometry/subobject_picking.cpp
+		geometry/subobject_selection.cpp
 		grid/grid_settings.cpp
 		path_utils.cpp
 		app/string_utils.cpp
@@ -208,6 +214,9 @@ target_sources (
 		brush/csg_dialogs/csg_split_dialog.cpp
 		brush/csg_dialogs/csg_join_dialog.cpp
 		brush/csg_dialogs/csg_triangulate_dialog.cpp
+		brush/geometry_dialogs/geometry_ops_ui.cpp
+		brush/geometry_dialogs/vertex_weld_dialog.cpp
+		brush/geometry_dialogs/face_extrude_dialog.cpp
 		app/document_state.h
 		app/editor_paths.cpp
 		app/editor_session.h

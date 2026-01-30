@@ -272,6 +272,23 @@ void DrawMainMenuBar(
 			}
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Geometry", has_selection))
+		{
+			if (ImGui::MenuItem("Flip Normals", "N", false, has_selection))
+			{
+				actions.geometry_flip = true;
+			}
+			if (ImGui::MenuItem("Weld Vertices...", nullptr, false, has_selection))
+			{
+				actions.geometry_weld = true;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Extrude Faces...", nullptr, false, has_selection))
+			{
+				actions.geometry_extrude = true;
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::EndMenu();
 	}
 
