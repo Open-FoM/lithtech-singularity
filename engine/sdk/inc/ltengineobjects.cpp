@@ -31,8 +31,12 @@ define_holder(ILTServer, ilt_server);
 static ILTCommon *ilt_common_server;
 define_holder_to_instance(ILTCommon, ilt_common_server, Server);
 
-// Define all the game classes and the gameservershell.
+// FoM's reconstructed Object target owns the class registry in servershell.cpp.
+// Keep SDK classes registered through their static definers, but do not emit a
+// second ObjectDLLSetup/class-list when this file is linked into that target.
+#ifndef FOM_GAME_BUILD
 DEFINE_CLASSES()
+#endif
 
 
 
@@ -1103,6 +1107,5 @@ uint32 GenericObject::EngineMessageFn(
 
 	return BaseClass::EngineMessageFn(messageID, pData, fData);
 }
-
 
 

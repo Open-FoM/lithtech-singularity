@@ -21,4 +21,9 @@ void LTNet_SetServerPacketInjector(LTNetPacketInjector injector);
 void LTNet_SetClientMessageWriteAllocator(LTNetMessageWriteAllocator allocator);
 void LTNet_SetServerMessageWriteAllocator(LTNetMessageWriteAllocator allocator);
 
+LTNetPacketInjector LTNetClientPacketInjector();
+LTNetPacketInjector LTNetServerPacketInjector();
+LTNetMessageWriteAllocator LTNetClientMessageWriteAllocator();
+LTNetMessageWriteAllocator LTNetServerMessageWriteAllocator();
+
 #endif // __LTNETWORK_HOOKS_H__

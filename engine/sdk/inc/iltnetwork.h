@@ -14,16 +14,20 @@
 #include "ltcodes.h"
 #include "ltmodule.h"
 
+#ifdef FOM_GAME_BUILD
+class VariableSizedPacket;
+#else
 class VariableSizedPacket {
 public:
   virtual ~VariableSizedPacket() = default;
 
-  // Serialize packet data into the provided message.
-  virtual void Write(ILTMessage_Write &message) const = 0;
-
   // Deserialize packet data from the provided message.
-  virtual bool Read(ILTMessage_Read &message) = 0;
+  virtual bool Read(ILTMessage_Read *message) = 0;
+
+  // Serialize packet data into the provided message.
+  virtual bool Write(ILTMessage_Write *message) = 0;
 };
+#endif
 
 struct NetworkAddress {
   uint32 m_nIp = 0;
@@ -31,10 +35,10 @@ struct NetworkAddress {
 };
 
 // RakNet packet priority enum
-enum class PacketPriority : uint8 { kImmediate = 0, kHigh = 1, kMedium = 2, kLow = 3 };
+enum class NetPacketPriority : uint8 { kImmediate = 0, kHigh = 1, kMedium = 2, kLow = 3 };
 
 // RakNet packet reliability enum
-enum class PacketReliability : uint8 {
+enum class NetPacketReliability : uint8 {
   kUnreliable = 0,
   kUnreliableSequenced = 1,
   kReliable = 2,
@@ -47,9 +51,13 @@ enum class PacketReliability : uint8 {
 
 enum class DispatchTarget : uint8 { kMaster = 1, kWorld = 2 };
 
+enum class PacketRoute : uint8 { kClient = 0, kServer = 1, kBoth = 2 };
+
+enum class NetResult : uint8 { kOk = 0, kNotInitialized, kInvalidArgs, kNotConnected, kSendFailed };
+
 class ILTNetwork : public IBase {
 public:
-  interface_version(ILTNetwork, 0);
+  interface_version(ILTNetwork, 1);
 
   // Returns true if the master connection is alive.
   virtual bool IsMasterConnected() = 0;
@@ -58,48 +66,31 @@ public:
   virtual bool IsWorldConnected() = 0;
 
   // Initializes client networking and binds to a local port.
-  virtual LTRESULT InitNetwork(uint16 localPort) = 0;
+  virtual NetResult Init(uint16 localPort) = 0;
 
   // Shuts down client networking and clears internal state.
-  virtual LTRESULT ShutdownNetwork() = 0;
+  virtual NetResult Shutdown() = 0;
 
-  // Updates notification flags on the network backend.
-  virtual bool SetNotificationFlag(int id, int group) = 0;
+  // Updates FoM packet subscriptions on the network backend.
+  virtual void SubscribePacket(uint8 packetId, PacketRoute route) = 0;
+  virtual void UnsubscribePacket(uint8 packetId, PacketRoute route = PacketRoute::kBoth) = 0;
+  virtual void ClearSubscriptions(PacketRoute route = PacketRoute::kBoth) = 0;
 
   // Connects to a world server address.
-  virtual LTRESULT ConnectWorld(const NetworkAddress &address) = 0;
+  virtual NetResult ConnectWorld(const NetworkAddress &address) = 0;
 
   // Disconnects active world/master connections.
-  virtual LTRESULT Disconnect() = 0;
+  virtual NetResult DisconnectAll() = 0;
 
   // Connects to a master server address.
-  virtual LTRESULT ConnectMaster(const NetworkAddress &address) = 0;
+  virtual NetResult ConnectMaster(const NetworkAddress &address) = 0;
 
   // Dispatches a packet to master or world (dest=1 master, dest=2 world).
-  virtual LTRESULT SendPacket(VariableSizedPacket *packet, PacketPriority priority, PacketReliability reliability,
-                              uint8 orderingChannel, DispatchTarget destination) = 0;
+  virtual NetResult SendPacket(VariableSizedPacket *packet, NetPacketPriority priority, NetPacketReliability reliability,
+                               uint8 orderingChannel, DispatchTarget destination) = 0;
 
-  // Sends a ping/handshake packet to the given address buffer.
-  virtual LTRESULT SendHandshake(const NetworkAddress &address) = 0;
-
-  // Ticks internal connection state.
-  virtual void Tick() = 0;
-
-  // Bitstream helpers.
-  virtual int WriteBitStream(void *src, int maxBits, void *stream) = 0;
-  virtual int ReadBitStream(void *dst, int maxBits, void *stream) = 0;
-
-  // Returns master stats result (driver-specific).
-  virtual int GetMasterStats() = 0;
-
-  // Dumps stats for master/world to the log.
-  virtual void DumpStats(int target) = 0;
-
-  // Flag management.
-  virtual uint8 HasFlags(int mask) = 0;
-  virtual void SetFlags(int mask) = 0;
-  virtual void ClearFlags(int mask) = 0;
-  virtual void TickFlags() = 0;
+  // Updates internal connection state.
+  virtual void Update() = 0;
 
   // Data slot access
   virtual void *GetDataSlot(int index) = 0;

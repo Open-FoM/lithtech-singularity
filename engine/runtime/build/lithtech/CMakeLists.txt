@@ -133,6 +133,7 @@ target_link_libraries (
 		ltjs_lib_lith
 		ltjs_lib_ui
 		ltjs_lib_info
+		slikenet_lib
 		${libs}
 )
 
@@ -428,6 +429,8 @@ target_sources (
 		../../shared/src/bdefs.h
 		../../shared/src/build_options.h
 		../../shared/src/classbind.h
+		../../shared/src/clientnetworking.h
+		../../shared/src/cltnetwork.h
 		../../shared/src/clienthack.h
 		../../shared/src/collision.h
 		../../shared/src/colorops.h
@@ -593,6 +596,8 @@ target_sources (
 		../../server/src/world_server_bsp.cpp
 		../../shared/src/bdefs.cpp
 		../../shared/src/classbind.cpp
+		../../shared/src/clientnetworking.cpp
+		../../shared/src/cltnetwork.cpp
 		../../shared/src/collision.cpp
 		../../shared/src/compress.cpp
 		../../shared/src/concommand.cpp

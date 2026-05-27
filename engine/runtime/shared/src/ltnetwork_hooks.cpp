@@ -35,3 +35,23 @@ void LTNet_SetServerMessageWriteAllocator(LTNetMessageWriteAllocator allocator)
 {
 	g_serverMessageWriteAllocator = allocator;
 }
+
+LTNetPacketInjector LTNetClientPacketInjector()
+{
+	return g_clientPacketInjector;
+}
+
+LTNetPacketInjector LTNetServerPacketInjector()
+{
+	return g_serverPacketInjector;
+}
+
+LTNetMessageWriteAllocator LTNetClientMessageWriteAllocator()
+{
+	return g_clientMessageWriteAllocator;
+}
+
+LTNetMessageWriteAllocator LTNetServerMessageWriteAllocator()
+{
+	return g_serverMessageWriteAllocator;
+}

@@ -248,6 +248,7 @@ target_sources (
 		../../shared/src/lightmap_planes.h
 		../../shared/src/listqueue.h
 		../../shared/src/ltmessage.h
+		../../shared/src/ltnetwork_hooks.h
 		../../shared/src/lttimer.h
 		../../shared/src/motion.h
 		../../shared/src/moveobject.h
@@ -358,6 +359,7 @@ target_sources (
 		../../shared/src/leech.cpp
 		../../shared/src/lightmap_planes.cpp
 		../../shared/src/ltmessage.cpp
+		../../shared/src/ltnetwork_hooks.cpp
 		../../shared/src/lttimer.cpp
 		../../shared/src/modellt_impl.cpp
 		../../shared/src/motion.cpp

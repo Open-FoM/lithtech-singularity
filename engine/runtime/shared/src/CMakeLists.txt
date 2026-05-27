@@ -12,6 +12,8 @@ target_sources (
 	PRIVATE
 		bdefs.cpp
 		classbind.cpp
+		clientnetworking.cpp
+		cltnetwork.cpp
 		collision.cpp
 		compress.cpp
 		concommand.cpp
@@ -34,6 +36,7 @@ target_sources (
 		lightmap_compress.cpp
 		lightmap_planes.cpp
 		ltmessage.cpp
+		ltnetwork_hooks.cpp
 		lttimer.cpp
 		modellt_impl.cpp
 		motion.cpp
