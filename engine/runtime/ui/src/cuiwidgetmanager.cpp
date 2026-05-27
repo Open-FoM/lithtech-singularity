@@ -93,6 +93,7 @@ CUIWidgetManager::CUIWidgetManager()
 {
 	// CUIWidgetManager::Init() must be called next!
 	m_bInitted = false;
+	m_pFocusWidget = NULL;
 }
 
 

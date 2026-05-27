@@ -315,7 +315,7 @@ CUI_RESULTTYPE CUIBase_Impl::Show(bool bShowChildren)
 		// render my children
 		while (pChild) {
 			pWidget = (CUIBase*)pChildren->GetData(pChild);
-			pWidget->Hide(bShowChildren);
+			pWidget->Show(bShowChildren);
 			pChild = pChildren->GetNext(pChild);
 		}		
 	}
@@ -593,4 +593,3 @@ void CUIBase_Impl::Render()
 		}	
 	}
 }
-

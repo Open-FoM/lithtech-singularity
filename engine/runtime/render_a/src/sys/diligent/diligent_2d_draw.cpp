@@ -166,11 +166,6 @@ bool diligent_update_optimized_2d_constants(float output_is_srgb)
 		return false;
 	}
 
-	if (std::fabs(g_optimized_2d_resources.output_is_srgb - output_is_srgb) < 0.001f)
-	{
-		return true;
-	}
-
 	DiligentOptimized2DConstants constants{};
 	constants.output_params[0] = output_is_srgb;
 
