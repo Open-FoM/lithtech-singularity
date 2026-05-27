@@ -85,13 +85,14 @@ Used for: Special FX.
 
 /*!
 \param hTexture     The address of the converted texture.
-\param pFilename    Points to a char array containing the relative path to the resource directory in which the .DTX file is located.
+\param pFilename    Points to a char array containing the relative path to the resource directory in which the texture file is located.
 
 \return \b LT_MISSINGFILE - \em pFilename is invalid (can't find file).
 \return \b LT_ERROR - Internal error.
 \return \b LT_OK - Successful.
 
-Creates a texture from a .DTX file. A .DTX file is created using the DEdit tool (see the Game Content Creation Guide).
+Creates a texture from a .DTX file, or from a raw .PCX/.TGA resource supported by this fork's runtime loader.
+A .DTX file is created using the DEdit tool (see the Game Content Creation Guide).
 If the .DTX file was created with the DTX_32BITSYSCOPY bit set, the texture will not be converted (the system memory copy will remain RGBA_8888).
 To determine the format type of the new texture, use ILTTexInterface::GetTextureType.
 

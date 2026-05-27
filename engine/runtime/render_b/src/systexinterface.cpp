@@ -6,6 +6,9 @@
 #include "dtxmgr.h"
 #include "colorops.h"
 #include "clientmgr.h"
+#include "load_pcx.h"
+
+#include <vector>
 
 //------------------------------------------------------------------
 //------------------------------------------------------------------
@@ -52,6 +55,130 @@ static bool ConvertFormatToType(PFormat& Format, ETextureType &eTextureType)
 	return true;
 }
 
+enum class ERawTextureFormat
+{
+	None,
+	Tga,
+	Pcx,
+};
+
+static char ToLowerAscii(char ch)
+{
+	return (ch >= 'A' && ch <= 'Z') ? static_cast<char>(ch - 'A' + 'a') : ch;
+}
+
+static bool ExtensionEquals(const char* pFilename, const char* pExtension)
+{
+	if (!pFilename || !pExtension)
+		return false;
+
+	const char* pDot = strrchr(pFilename, '.');
+	if (!pDot)
+		return false;
+
+	while (*pDot && *pExtension)
+	{
+		if (ToLowerAscii(*pDot) != ToLowerAscii(*pExtension))
+			return false;
+
+		++pDot;
+		++pExtension;
+	}
+
+	return *pDot == '\0' && *pExtension == '\0';
+}
+
+static ERawTextureFormat GetRawTextureFormat(const char* pFilename)
+{
+	if (ExtensionEquals(pFilename, ".tga"))
+		return ERawTextureFormat::Tga;
+
+	if (ExtensionEquals(pFilename, ".pcx"))
+		return ERawTextureFormat::Pcx;
+
+	return ERawTextureFormat::None;
+}
+
+static bool ConvertLoadedBitmapToArgb8888(LoadedBitmap& bitmap, bool bForceOpaqueAlpha, std::vector<uint32>& pixels)
+{
+	if (bitmap.m_Width == 0 || bitmap.m_Height == 0 || bitmap.m_Data.GetArray() == LTNULL)
+		return false;
+
+	pixels.resize(bitmap.m_Width * bitmap.m_Height);
+
+	for (uint32 y = 0; y < bitmap.m_Height; ++y)
+	{
+		const uint8* pSrcRow = bitmap.m_Data.GetArray() + (y * bitmap.m_Pitch);
+		uint32* pDstRow = pixels.data() + (y * bitmap.m_Width);
+
+		if (bitmap.m_Format.GetType() == BPP_8P)
+		{
+			for (uint32 x = 0; x < bitmap.m_Width; ++x)
+			{
+				const RPaletteColor& color = bitmap.m_Palette[pSrcRow[x]];
+				pDstRow[x] = PValue_Set(0xFF, color.rgb.r, color.rgb.g, color.rgb.b);
+			}
+		}
+		else if (bitmap.m_Format.GetType() == BPP_32)
+		{
+			for (uint32 x = 0; x < bitmap.m_Width; ++x)
+			{
+				uint32 pixel;
+				memcpy(&pixel, pSrcRow + (x * sizeof(uint32)), sizeof(pixel));
+				pDstRow[x] = bForceOpaqueAlpha ? ((pixel & 0x00FFFFFF) | 0xFF000000) : pixel;
+			}
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static LTRESULT LoadRawBitmapTexture(CSysTexInterface* pTexInterface, HTEXTURE& hTexture, FileIdentifier* pIdent, ERawTextureFormat eFormat)
+{
+	if (!pTexInterface || !pIdent)
+		return LT_INVALIDPARAMS;
+
+	hTexture = LTNULL;
+
+	ILTStream* pStream = client_file_mgr->OpenFileIdentifier(pIdent);
+	if (!pStream)
+		return LT_MISSINGFILE;
+
+	LoadedBitmap bitmap;
+	const bool bDecoded = (eFormat == ERawTextureFormat::Tga)
+		? (tga_Create2(pStream, &bitmap) != 0)
+		: (pcx_Create2(pStream, &bitmap) != 0);
+	const LTRESULT streamStatus = pStream->ErrorStatus();
+	pStream->Release();
+
+	if (!bDecoded || streamStatus != LT_OK)
+		return LT_INVALIDDATA;
+
+	std::vector<uint32> pixels;
+	if (!ConvertLoadedBitmapToArgb8888(bitmap, eFormat == ERawTextureFormat::Pcx, pixels))
+		return LT_INVALIDDATA;
+
+	const LTRESULT dResult = pTexInterface->CreateTextureFromData(
+		hTexture,
+		TEXTURETYPE_ARGB8888,
+		TEXTUREFLAG_32BITSYSCOPY,
+		reinterpret_cast<uint8*>(pixels.data()),
+		static_cast<uint32>(bitmap.m_Width),
+		static_cast<uint32>(bitmap.m_Height));
+
+	if (dResult == LT_OK)
+	{
+		hTexture->m_pFile = pIdent;
+		pIdent->m_pData = hTexture;
+	}
+
+	return dResult;
+}
+
 // Find texture in memory if it exists and return its handle.
 // If it does not exist, this function should return an error.
 LTRESULT CSysTexInterface::FindTextureFromName(HTEXTURE &hTexture, const char *pFilename) 
@@ -76,7 +203,7 @@ LTRESULT CSysTexInterface::FindTextureFromName(HTEXTURE &hTexture, const char *p
 	return LT_ERROR;
 }
 
-// Create texture from a dtx file on disk.
+// Create texture from a resource file on disk.
 LTRESULT CSysTexInterface::CreateTextureFromName(HTEXTURE &hTexture, const char *pFilename)
 {
 	FileRef ref; 
@@ -95,9 +222,16 @@ LTRESULT CSysTexInterface::CreateTextureFromName(HTEXTURE &hTexture, const char 
 			//it is already bound
 			hTexture = (HTEXTURE)pIdent->m_pData;
 			hTexture->SetRefCount(hTexture->GetRefCount() + 1);
+			dResult = LT_OK;
 		}
 		else
 		{
+			const ERawTextureFormat eRawFormat = GetRawTextureFormat(pFilename);
+			if (eRawFormat != ERawTextureFormat::None)
+			{
+				return LoadRawBitmapTexture(this, hTexture, pIdent, eRawFormat);
+			}
+
 			//it isn't already loaded, so create one and load it
 		hTexture = g_pClientMgr->m_SharedTextureBank.Allocate();
 		
@@ -117,7 +251,9 @@ LTRESULT CSysTexInterface::CreateTextureFromName(HTEXTURE &hTexture, const char 
 			} 
 			else 
 			{
+				pIdent->m_pData = LTNULL;
 				g_pClientMgr->m_SharedTextureBank.Free(hTexture); 
+				hTexture = LTNULL;
 			} 
 		} 
 	}

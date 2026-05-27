@@ -1521,8 +1521,8 @@ Used for: 2D Rendering.
 \param  pBitmapName     Filename of bitmap.
 \return Handle to the newly-created surface.
 
-Create a surface, sized to the dimensions of the bitmap.  The bitmap
-is an 8-bit PCX file. (You can use any palette you want.)
+Create a surface, sized to the dimensions of the bitmap.  Stock Jupiter
+documents this as an 8-bit PCX path; FoM also uses it for TGA UI bitmaps.
 
 Used for: 2D Rendering.
 */

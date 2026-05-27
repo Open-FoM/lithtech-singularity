@@ -536,7 +536,7 @@ static void cis_InternalBitmapToSurface(CisSurface *pDest, LoadedBitmap *pSrc,
 
 	request.m_pSrcFormat = &pSrc->m_Format;
 	request.m_pSrc = pSrc->m_Data.GetArray();
-	request.m_pSrc += srcRect.top*pSrc->m_Pitch + srcRect.left;
+	request.m_pSrc += srcRect.top*pSrc->m_Pitch + srcRect.left*pSrc->m_Format.GetBytesPerPixel();
 	request.m_pSrcPalette = pSrc->m_Palette;
 	request.m_SrcPitch = pSrc->m_Pitch;
 	
@@ -1229,6 +1229,38 @@ static bool cis_LoadPcx(const char *pBitmapName, LoadedBitmap *pBitmap)
 	return bRet;
 }
 
+static bool cis_LoadSurfaceBitmap(const char *pBitmapName, LoadedBitmap *pBitmap)
+{
+	if(!pBitmapName || !pBitmap)
+		return false;
+
+	ILTStream *pStream;
+	FileRef ref;
+	bool bRet;
+
+	ref.m_FileType = FILE_CLIENTFILE;
+	ref.m_pFilename = pBitmapName;
+
+	pStream = client_file_mgr->OpenFile(&ref);
+	if(!pStream)
+		return false;
+
+	const char *pExt = strrchr(pBitmapName, '.');
+	if(pExt && stricmp(pExt, ".tga") == 0)
+	{
+		bRet = tga_Create2(pStream, pBitmap) != 0;
+	}
+	else
+	{
+		// Jupiter's public docs say PCX, but FoM routes .tga UI bitmaps through
+		// this surface API too. Unknown extensions keep the historical PCX path.
+		bRet = pcx_Create2(pStream, pBitmap) != 0;
+	}
+
+	pStream->Release();
+	return bRet;
+}
+
 
 HSURFACE cis_CreateSurfaceFromPcx(LoadedBitmap *pLoadedBitmap)
 {
@@ -1314,7 +1346,7 @@ static HSURFACE cis_CreateSurfaceFromBitmap(const char *pBitmapName)
 	HSURFACE hRet;
 
 	
-	if(!cis_LoadPcx(pBitmapName, &bitmap))
+	if(!cis_LoadSurfaceBitmap(pBitmapName, &bitmap))
 		return LTNULL;
 
 	hRet = cis_CreateSurfaceFromPcx(&bitmap);
@@ -1453,7 +1485,7 @@ static bool cis_DrawBitmapToSurface(HSURFACE hDest, const char *pSourceBitmapNam
 	if(!pSurface)
 		return false;
 
-	if(!cis_LoadPcx(pSourceBitmapName, &bitmap))
+	if(!cis_LoadSurfaceBitmap(pSourceBitmapName, &bitmap))
 		return false;
 
 	cis_InternalBitmapToSurface(pSurface, &bitmap, pSrcRect, destX, destY);
@@ -2366,5 +2398,3 @@ unsigned long GetInterfaceSurfaceMemory()
 
 	return total;
 }
-
-
