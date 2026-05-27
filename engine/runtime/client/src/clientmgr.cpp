@@ -28,6 +28,7 @@
 
 #include "soundmgr.h"
 #include "clientmgr.h"
+#include "clientnetworking.h"
 #include "consolecommands.h"
 #include "console.h"
 #include "memorywatch.h"
@@ -1076,6 +1077,8 @@ LTRESULT CClientMgr::Update()
         ProcessAllInput(false);
     }
 
+    GetClientNetworking().Update();
+
     // Update client shells.
     if (m_pCurShell)
     {
@@ -1236,6 +1239,7 @@ LTRESULT CClientMgr::ClearInput()
     ProcessAllInput(true);
     dsi_ClearKeyDowns();
     dsi_ClearKeyUps();
+    dsi_ClearTextInputChars();
     dsi_ClearKeyMessages();
     m_InputMgr->ClearInput();
 

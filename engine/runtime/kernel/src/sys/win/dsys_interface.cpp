@@ -905,6 +905,15 @@ uint32 dsi_GetKeyUp(uint32 i) {
     return g_ClientGlob.m_KeyUps[i];
 }
 
+uint16 dsi_NumTextInputChars() {
+    return g_ClientGlob.m_nTextInputChars;
+}
+
+char dsi_GetTextInputChar(uint32 i) {
+    ASSERT(i < MAX_KEYBUFFER);
+    return g_ClientGlob.m_TextInputChars[i];
+}
+
 void dsi_ClearKeyDowns() {
     g_ClientGlob.m_nKeyDowns=0;
 }
@@ -913,10 +922,15 @@ void dsi_ClearKeyUps() {
     g_ClientGlob.m_nKeyUps=0;
 }
 
+void dsi_ClearTextInputChars() {
+    g_ClientGlob.m_nTextInputChars=0;
+}
+
 void dsi_ClearKeyMessages() {
 #ifdef LTJS_SDL_BACKEND
 	SDL_FlushEvent(SDL_EVENT_KEY_DOWN);
 	SDL_FlushEvent(SDL_EVENT_KEY_UP);
+	SDL_FlushEvent(SDL_EVENT_TEXT_INPUT);
 #else
     MSG msg;
     int i;
@@ -1182,4 +1196,3 @@ void dsi_OnMemoryFailure() {
 
 
 #endif
-

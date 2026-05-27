@@ -562,6 +562,7 @@ LTRESULT dsi_ShutdownRender(uint32 flags)
 
 LTRESULT _GetOrCopyClientFile(char *pTempPath, char *pFilename, char *pOutName, int outNameLen)
 {
+#ifdef DE_CLIENT_COMPILE
 	if (!pFilename || !pOutName || outNameLen <= 0 || !client_file_mgr)
 	{
 		return LT_ERROR;
@@ -580,6 +581,13 @@ LTRESULT _GetOrCopyClientFile(char *pTempPath, char *pFilename, char *pOutName, 
 
 	LTStrCpy(pOutName, temp_path.c_str(), outNameLen);
 	return LT_OK;
+#else
+	static_cast<void>(pTempPath);
+	static_cast<void>(pFilename);
+	static_cast<void>(pOutName);
+	static_cast<void>(outNameLen);
+	return LT_ERROR;
+#endif
 }
 
 LTRESULT dsi_InitClientShellDE()
@@ -722,6 +730,26 @@ uint32 dsi_GetKeyUp(uint32 i)
 #endif
 }
 
+uint16 dsi_NumTextInputChars()
+{
+#ifdef DE_CLIENT_COMPILE
+	return g_ClientGlob.m_nTextInputChars;
+#else
+	return 0;
+#endif
+}
+
+char dsi_GetTextInputChar(uint32 i)
+{
+#ifdef DE_CLIENT_COMPILE
+	ASSERT(i < MAX_KEYBUFFER);
+	return g_ClientGlob.m_TextInputChars[i];
+#else
+	static_cast<void>(i);
+	return 0;
+#endif
+}
+
 void dsi_ClearKeyDowns()
 {
 #ifdef DE_CLIENT_COMPILE
@@ -736,12 +764,20 @@ void dsi_ClearKeyUps()
 #endif
 }
 
+void dsi_ClearTextInputChars()
+{
+#ifdef DE_CLIENT_COMPILE
+	g_ClientGlob.m_nTextInputChars = 0;
+#endif
+}
+
 void dsi_ClearKeyMessages()
 {
 #ifdef DE_CLIENT_COMPILE
 #ifdef LTJS_SDL_BACKEND
 	SDL_FlushEvent(SDL_EVENT_KEY_DOWN);
 	SDL_FlushEvent(SDL_EVENT_KEY_UP);
+	SDL_FlushEvent(SDL_EVENT_TEXT_INPUT);
 #endif // LTJS_SDL_BACKEND
 #endif // DE_CLIENT_COMPILE
 }

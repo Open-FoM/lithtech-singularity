@@ -168,8 +168,13 @@ void CClientMgr::ForwardMessagesToScript()
             i_client_shell->OnKeyUp(dsi_GetKeyUp(i));
         }
 
+        for (i=0; i < dsi_NumTextInputChars(); i++) {
+            i_client_shell->OnChar(dsi_GetTextInputChar(i));
+        }
+
         dsi_ClearKeyDowns();
         dsi_ClearKeyUps();
+        dsi_ClearTextInputChars();
     }
 }
 

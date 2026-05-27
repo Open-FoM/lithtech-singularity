@@ -82,14 +82,17 @@ class ClientGlob {
 	unsigned int m_KeyDowns[MAX_KEYBUFFER];
 	unsigned int m_KeyUps[MAX_KEYBUFFER];
 	unsigned int m_KeyDownReps[MAX_KEYBUFFER];
+	char m_TextInputChars[MAX_KEYBUFFER];
 #else
 	uint32          m_KeyDowns[MAX_KEYBUFFER];
 	uint32          m_KeyUps[MAX_KEYBUFFER];
 	LTBOOL          m_KeyDownReps[MAX_KEYBUFFER];
+	char            m_TextInputChars[MAX_KEYBUFFER];
 #endif // LTJS_SDL_BACKEND
 
 	uint16          m_nKeyDowns;
 	uint16          m_nKeyUps;
+	uint16          m_nTextInputChars;
 
 	LTBOOL          m_bIsConsoleUp;
 	LTBOOL          m_bInputEnabled;
@@ -160,8 +163,11 @@ uint16 dsi_NumKeyUps();
 uint32 dsi_GetKeyDown(uint32 i);
 uint32 dsi_GetKeyDownRep(uint32 i);
 uint32 dsi_GetKeyUp(uint32 i);
+uint16 dsi_NumTextInputChars();
+char dsi_GetTextInputChar(uint32 i);
 void dsi_ClearKeyDowns();
 void dsi_ClearKeyUps();
+void dsi_ClearTextInputChars();
 void dsi_ClearKeyMessages();
 
 LTBOOL dsi_IsConsoleUp();

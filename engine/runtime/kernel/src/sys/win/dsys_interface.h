@@ -86,14 +86,17 @@
 		unsigned int m_KeyDowns[MAX_KEYBUFFER];
 		unsigned int m_KeyUps[MAX_KEYBUFFER];
 		unsigned int m_KeyDownReps[MAX_KEYBUFFER];
+		char m_TextInputChars[MAX_KEYBUFFER];
 #else
         DWORD           m_KeyDowns[MAX_KEYBUFFER];
         DWORD           m_KeyUps[MAX_KEYBUFFER];
         BOOL            m_KeyDownReps[MAX_KEYBUFFER];
+        char            m_TextInputChars[MAX_KEYBUFFER];
 #endif // LTJS_SDL_BACKEND
 
         WORD            m_nKeyDowns;
         WORD            m_nKeyUps;
+        WORD            m_nTextInputChars;
 
         BOOL            m_bIsConsoleUp;
 
@@ -164,8 +167,11 @@ uint16 dsi_NumKeyUps();
 uint32 dsi_GetKeyDown(uint32 i);
 uint32 dsi_GetKeyDownRep(uint32 i);
 uint32 dsi_GetKeyUp(uint32 i);
+uint16 dsi_NumTextInputChars();
+char dsi_GetTextInputChar(uint32 i);
 void dsi_ClearKeyDowns();
 void dsi_ClearKeyUps();
+void dsi_ClearTextInputChars();
 void dsi_ClearKeyMessages();
 
 LTBOOL dsi_IsConsoleUp();
@@ -229,4 +235,3 @@ bool dsi_load_file_into_memory(
 
 
 #endif  // __DSYS_INTERFACE_H__
-

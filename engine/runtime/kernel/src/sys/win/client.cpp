@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "SDL3/SDL_events.h"
+#include "SDL3/SDL_keyboard.h"
 #include "SDL3/SDL_video.h"
 #if defined(__APPLE__)
 #include "SDL3/SDL_metal.h"
@@ -161,6 +162,9 @@ private:
 
 	void handle_key_up(
 		const SDL_KeyboardEvent& e);
+
+	void handle_text_input(
+		const SDL_TextInputEvent& e);
 }; // CSystemEventHandler
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -210,6 +214,7 @@ bool CSystemEventHandler::operator()(
 			return true;
 
 		case SDL_EVENT_TEXT_INPUT:
+			handle_text_input(event.text);
 			return true;
 
 		default:
@@ -504,6 +509,30 @@ void CSystemEventHandler::handle_key_up(
 	}
 }
 
+void CSystemEventHandler::handle_text_input(
+	const SDL_TextInputEvent& e)
+{
+	if (e.text == nullptr)
+	{
+		return;
+	}
+
+	for (const auto* text = reinterpret_cast<const unsigned char*>(e.text); *text != '\0'; ++text)
+	{
+		if (*text < 0x20 || *text >= 0x7F)
+		{
+			continue;
+		}
+
+		if (g_ClientGlob.m_nTextInputChars >= MAX_KEYBUFFER)
+		{
+			return;
+		}
+
+		g_ClientGlob.m_TextInputChars[g_ClientGlob.m_nTextInputChars++] = static_cast<char>(*text);
+	}
+}
+
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
@@ -702,6 +731,7 @@ void create_main_window(
 	auto& descriptor = g_ClientGlob.m_hMainWnd;
 	descriptor.sdl_window = g_main_window.get();
 	descriptor.native_handle = window_native_handle;
+	(void)SDL_StartTextInput(g_main_window.get());
 }
 
 void center_cursor_in_main_window()
@@ -973,6 +1003,10 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 
             case WM_CHAR: 
 			{
+                if ((wParam >= 0x20) && (wParam < 0x7F) && (g_ClientGlob.m_nTextInputChars < MAX_KEYBUFFER))
+                {
+                    g_ClientGlob.m_TextInputChars[g_ClientGlob.m_nTextInputChars++] = static_cast<char>(wParam);
+                }
                 return 0;
             }
 			break;
