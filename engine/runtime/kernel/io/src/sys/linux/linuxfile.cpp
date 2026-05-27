@@ -286,6 +286,192 @@ static const char* ltjs_normalize_unix_path(
 	return buffer;
 }
 
+static char ltjs_to_lower_ascii(char ch)
+{
+	return (ch >= 'A' && ch <= 'Z') ? static_cast<char>(ch - 'A' + 'a') : ch;
+}
+
+static bool ltjs_ascii_iequals(const char* lhs, const char* rhs)
+{
+	if (!lhs || !rhs)
+	{
+		return false;
+	}
+
+	while (*lhs != '\0' && *rhs != '\0')
+	{
+		if (ltjs_to_lower_ascii(*lhs) != ltjs_to_lower_ascii(*rhs))
+		{
+			return false;
+		}
+
+		++lhs;
+		++rhs;
+	}
+
+	return *lhs == '\0' && *rhs == '\0';
+}
+
+static bool ltjs_copy_path(char* output, size_t output_size, const char* input)
+{
+	if (!output || output_size == 0 || !input)
+	{
+		return false;
+	}
+
+	const size_t input_len = strlen(input);
+	if (input_len >= output_size)
+	{
+		return false;
+	}
+
+	strcpy(output, input);
+	return true;
+}
+
+static bool ltjs_join_unix_path(char* output, size_t output_size, const char* base, const char* name)
+{
+	if (!output || output_size == 0 || !base || !name)
+	{
+		return false;
+	}
+
+	const size_t base_len = strlen(base);
+	const size_t name_len = strlen(name);
+	if (base_len + 1 + name_len >= output_size)
+	{
+		return false;
+	}
+
+	LTSNPrintF(output, output_size, "%s/%s", base, name);
+	return true;
+}
+
+static bool ltjs_find_case_insensitive_child(
+	const char* directory,
+	const char* component,
+	char* output,
+	size_t output_size)
+{
+	DIR* dir = opendir(directory);
+	if (!dir)
+	{
+		return false;
+	}
+
+	bool found = false;
+	while (dirent* entry = readdir(dir))
+	{
+		if (!ltjs_ascii_iequals(entry->d_name, component))
+		{
+			continue;
+		}
+
+		char candidate[500];
+		if (!ltjs_join_unix_path(candidate, sizeof(candidate), directory, entry->d_name))
+		{
+			continue;
+		}
+
+		struct stat info;
+		if (stat(candidate, &info) != 0)
+		{
+			continue;
+		}
+
+		found = ltjs_copy_path(output, output_size, candidate);
+		break;
+	}
+
+	closedir(dir);
+	return found;
+}
+
+static bool ltjs_resolve_unix_tree_path(
+	const char* tree_base,
+	const char* input,
+	char* output,
+	size_t output_size)
+{
+	if (!ltjs_copy_path(output, output_size, tree_base))
+	{
+		return false;
+	}
+
+	char normalized_name[512];
+	const char* name = ltjs_normalize_unix_path(input, normalized_name, sizeof(normalized_name));
+	if (!name)
+	{
+		name = "";
+	}
+
+	while (*name == '/')
+	{
+		++name;
+	}
+
+	while (*name != '\0')
+	{
+		while (*name == '/')
+		{
+			++name;
+		}
+
+		if (*name == '\0')
+		{
+			break;
+		}
+
+		char component[260];
+		size_t component_len = 0;
+		while (name[component_len] != '\0' && name[component_len] != '/')
+		{
+			if (component_len + 1 >= sizeof(component))
+			{
+				return false;
+			}
+
+			component[component_len] = name[component_len];
+			++component_len;
+		}
+		component[component_len] = '\0';
+		name += component_len;
+
+		if (component_len == 0 || strcmp(component, ".") == 0)
+		{
+			continue;
+		}
+
+		char candidate[500];
+		if (!ltjs_join_unix_path(candidate, sizeof(candidate), output, component))
+		{
+			return false;
+		}
+
+		struct stat info;
+		if (stat(candidate, &info) == 0)
+		{
+			if (!ltjs_copy_path(output, output_size, candidate))
+			{
+				return false;
+			}
+			continue;
+		}
+
+		if (!ltjs_find_case_insensitive_child(output, component, candidate, sizeof(candidate)))
+		{
+			return false;
+		}
+
+		if (!ltjs_copy_path(output, output_size, candidate))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 
 
 // ------------------------------------------------------------------ //
@@ -406,9 +592,10 @@ int df_GetFileInfo(HLTFileTree* hTree, const char *pName, LTFindInfo *pInfo)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		char normalized_name[512];
-		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
-		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
+		if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pName, fullName, sizeof(fullName)))
+		{
+			return false;
+		}
 
 		handle = _findfirst(fullName, &data);
 		curRet = handle;
@@ -470,9 +657,10 @@ int df_GetDirInfo(HLTFileTree hTree, char *pName)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		char normalized_name[512];
-		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
-		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
+		if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pName, fullName, sizeof(fullName)))
+		{
+			return 0;
+		}
 
 		handle = _findfirst(fullName, &data);
 		curRet = handle;
@@ -515,9 +703,10 @@ int df_GetFullFilename(HLTFileTree hTree, char *pName, char *pOutName, int maxLe
 	if(pTree->m_TreeType != UnixTree)
 		return 0;
 
-	char normalized_name[512];
-	const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
-	LTSNPrintF(pOutName, maxLen, "%s/%s", pTree->m_BaseName, name);
+	if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pName, pOutName, maxLen))
+	{
+		return 0;
+	}
 	return 1;
 }
 
@@ -537,9 +726,11 @@ ILTStream* df_Open(HLTFileTree* hTree, const char *pName, int openMode)
 
 	if(pTree->m_TreeType == UnixTree)
 	{
-		char normalized_name[512];
-		const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
-		LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
+		if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pName, fullName, sizeof(fullName)))
+		{
+			return NULL;
+		}
+
 		CountAdder cntAdd(&g_PD_FOpen);
 		if (! (fp = fopen(fullName, "rb")) )
 			return NULL;
@@ -605,9 +796,13 @@ int df_FindNext(HLTFileTree* hTree, const char *pDirName, LTFindInfo *pInfo)
 	{
 		if(!pInfo->m_pInternal)
 		{
-			char normalized_name[512];
-			const char* name = ltjs_normalize_unix_path(pDirName, normalized_name, sizeof(normalized_name));
-			LTSNPrintF(filter, sizeof(filter), "%s/%s/*.*", pTree->m_BaseName, name);
+			char fullName[500];
+			if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pDirName, fullName, sizeof(fullName)))
+			{
+				return 0;
+			}
+
+			LTSNPrintF(filter, sizeof(filter), "%s/*.*", fullName);
 
 			LT_MEM_TRACK_ALLOC(pFindData = (LTFindData*)dalloc(sizeof(LTFindData)),LT_MEM_TYPE_FILE);
 			pFindData->m_pTree = pTree;
@@ -840,9 +1035,10 @@ int df_GetRawInfo(HLTFileTree *hTree, const char *pName, char* sFileName, unsign
 	{
 		if (pTree->m_TreeType == UnixTree)
 		{
-			char normalized_name[512];
-			const char* name = ltjs_normalize_unix_path(pName, normalized_name, sizeof(normalized_name));
-			LTSNPrintF(fullName, sizeof(fullName), "%s/%s", pTree->m_BaseName, name);
+			if (!ltjs_resolve_unix_tree_path(pTree->m_BaseName, pName, fullName, sizeof(fullName)))
+			{
+				return 0;
+			}
 		}
 		else
 		{
