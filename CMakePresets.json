@@ -22,7 +22,7 @@
       "binaryDir": "${sourceDir}/build/engine",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "LTJS_BUILD_RENDERDEMO": "ON"
+        "LTJS_BUILD_RENDERDEMO": "OFF"
       }
     },
     {
@@ -32,7 +32,7 @@
       "binaryDir": "${sourceDir}/build/engine-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "LTJS_BUILD_RENDERDEMO": "ON"
+        "LTJS_BUILD_RENDERDEMO": "OFF"
       }
     },
     {
@@ -42,7 +42,7 @@
       "binaryDir": "${sourceDir}/build/engine-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "LTJS_BUILD_RENDERDEMO": "ON"
+        "LTJS_BUILD_RENDERDEMO": "OFF"
       }
     },
     {
@@ -94,9 +94,7 @@
       "displayName": "Build Engine",
       "configurePreset": "engine",
       "targets": [
-        "ltjs_lith_tech",
-        "renderdemo_cshell",
-        "renderdemo_object"
+        "ltjs_lith_tech"
       ]
     },
     {
@@ -104,9 +102,7 @@
       "displayName": "Build Engine (Debug)",
       "configurePreset": "engine-debug",
       "targets": [
-        "ltjs_lith_tech",
-        "renderdemo_cshell",
-        "renderdemo_object"
+        "ltjs_lith_tech"
       ]
     },
     {
@@ -114,9 +110,7 @@
       "displayName": "Build Engine (Release)",
       "configurePreset": "engine-release",
       "targets": [
-        "ltjs_lith_tech",
-        "renderdemo_cshell",
-        "renderdemo_object"
+        "ltjs_lith_tech"
       ]
     },
     {

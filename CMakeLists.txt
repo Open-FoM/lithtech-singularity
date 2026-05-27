@@ -1,14 +1,21 @@
 cmake_minimum_required (VERSION 3.24.4 FATAL_ERROR)
 project (ltjs VERSION 0.0.1 LANGUAGES C CXX)
 
-# Standardize runtime output to a top-level bin directory.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+# Standardize runtime output to a top-level bin directory unless a caller
+# provides a repo-specific output path.
+if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+	set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin" CACHE PATH "Runtime output directory")
+endif ()
 
 if (NOT WIN32 AND NOT APPLE)
 	message (FATAL_ERROR "WIN32 or APPLE only")
 endif ()
 
 set (CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+
+if (NOT LTJS_ROOT)
+	set (LTJS_ROOT "${CMAKE_SOURCE_DIR}" CACHE PATH "LithTech engine source root")
+endif ()
 
 #
 # Options
@@ -19,7 +26,9 @@ option (LTJS_USE_CCACHE "Use ccache if available." ON)
 option (LTJS_BUILD_DEDIT "Build DEdit map editor." OFF)
 option (LTJS_BUILD_DEDIT2 "Build DEdit2 map editor." OFF)
 option (LTJS_BUILD_RENDERDEMO "Build RenderDemo game." OFF)
+option (LTJS_BUILD_FOM "Build Face of Mankind reconstructed game modules." OFF)
 option (LTJS_BUILD_TESTS "Build unit tests." OFF)
+set (FOM_SOURCE_DIR "" CACHE PATH "Path to FoM Source/game directory.")
 
 if (LTJS_BUILD_TESTS)
 	include (CTest)
@@ -77,6 +86,18 @@ else ()
 	set (_LTJS_BUILD_SHARED_LIBS "__UNDEFINED__")
 endif ()
 set (BUILD_SHARED_LIBS OFF)
+foreach (_ltjs_diligent_dir IN ITEMS DiligentCore DiligentTools DiligentFX)
+	if (NOT EXISTS "${CMAKE_SOURCE_DIR}/libs/diligent/${_ltjs_diligent_dir}/CMakeLists.txt")
+		message (
+			FATAL_ERROR
+			"Missing libs/diligent/${_ltjs_diligent_dir}. "
+			"Initialize the nested submodule with: "
+			"git submodule update --init --recursive libs/diligent"
+		)
+	endif ()
+endforeach ()
+unset (_ltjs_diligent_dir)
+
 add_subdirectory (libs/diligent/DiligentCore)
 if (_LTJS_BUILD_SHARED_LIBS STREQUAL "__UNDEFINED__")
 	unset (BUILD_SHARED_LIBS)
@@ -164,7 +185,25 @@ if (LTJS_BUILD_DEDIT2)
 endif ()
 
 if (LTJS_BUILD_RENDERDEMO)
+	if (NOT EXISTS "${CMAKE_SOURCE_DIR}/game/renderdemo/CMakeLists.txt")
+		message (
+			FATAL_ERROR
+			"LTJS_BUILD_RENDERDEMO is ON, but game/renderdemo is missing. "
+			"Disable LTJS_BUILD_RENDERDEMO or restore the RenderDemo sources."
+		)
+	endif ()
 	add_subdirectory (game/renderdemo)
+endif ()
+
+if (LTJS_BUILD_FOM)
+	if (NOT FOM_SOURCE_DIR)
+		message (FATAL_ERROR "LTJS_BUILD_FOM is ON, but FOM_SOURCE_DIR is empty.")
+	endif ()
+	if (NOT EXISTS "${FOM_SOURCE_DIR}/CMakeLists.txt")
+		message (FATAL_ERROR "FOM_SOURCE_DIR must point to Source/game with a CMakeLists.txt: ${FOM_SOURCE_DIR}")
+	endif ()
+
+	add_subdirectory ("${FOM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/fom_game")
 endif ()
 
 install (
