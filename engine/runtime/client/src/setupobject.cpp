@@ -161,7 +161,13 @@ LTRESULT ModelSetTexture(FileRef *pRef, ModelInstance* pInstance, uint32 index)
 // Called on model create - loads up a render style into the index list...
 LTRESULT ModelSetRenderStyle(FileRef *pRef, ModelInstance* pInstance, uint32 index)
 {
+	if (!pRef || !pInstance || !renderstyles || index >= MAX_MODEL_RENDERSTYLES)
+		return LT_ERROR;
+
 	const char* pName = client_file_mgr->GetFilename(pRef);
+	if (!pName || !pName[0])
+		return LT_ERROR;
+
 	uint32 len = strlen(pName);
 	if (len > 3)
 	{
@@ -419,7 +425,6 @@ LTRESULT so_ExtraTerm(LTObject *pObject)
     else
         return LT_OK;
 }
-
 
 
 

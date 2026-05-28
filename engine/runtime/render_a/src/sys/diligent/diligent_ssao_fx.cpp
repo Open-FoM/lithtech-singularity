@@ -284,6 +284,26 @@ bool diligent_ssao_fx_get_model_transform_raw(ModelInstance* instance, uint32 bo
 	return true;
 }
 
+bool diligent_ssao_fx_get_model_transform_render(ModelInstance* instance, uint32 bone_index, LTMatrix& transform)
+{
+	if (!diligent_ssao_fx_get_model_transform_raw(instance, bone_index, transform))
+	{
+		return false;
+	}
+
+	Model* model = instance->GetModelDB();
+	if (!model)
+	{
+		transform.Identity();
+		return false;
+	}
+
+	// Match the main model pass: rigid/VA pieces are authored relative to the
+	// node bind pose, so render-space transforms remove the bind-pose global.
+	transform = transform * model->GetNode(bone_index)->GetInvGlobalTransform();
+	return true;
+}
+
 template <typename T>
 LTMatrix diligent_ssao_fx_get_prev_transform(
 	const T* key,
@@ -1454,7 +1474,7 @@ bool diligent_ssao_fx_draw_rigid_mesh_prepass(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_ssao_fx_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_ssao_fx_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
 	const LTMatrix prev_model_matrix = diligent_ssao_fx_get_prev_model_transform(instance, model_matrix);
 
 	Diligent::IBuffer* vertex_buffers[4] = {};
@@ -1539,7 +1559,7 @@ bool diligent_ssao_fx_draw_va_mesh_prepass(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_ssao_fx_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_ssao_fx_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
 	const LTMatrix prev_model_matrix = diligent_ssao_fx_get_prev_model_transform(instance, model_matrix);
 
 	Diligent::IBuffer* vertex_buffers[4] = {};

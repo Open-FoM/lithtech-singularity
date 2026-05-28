@@ -1,8 +1,8 @@
 #include "diligent_model_draw.h"
 
 #include "diligent_buffers.h"
-#include "diligent_device.h"
 #include "diligent_debug_draw.h"
+#include "diligent_device.h"
 #include "diligent_internal.h"
 #include "diligent_pipeline_cache.h"
 #include "diligent_postfx.h"
@@ -10,17 +10,17 @@
 #include "diligent_utils.h"
 #include "diligent_world_draw.h"
 
+#include "../renderstylemap.h"
 #include "bdefs.h"
 #include "de_objects.h"
 #include "de_world.h"
 #include "iltcommon.h"
-#include "renderstruct.h"
-#include "ltrenderstyle.h"
 #include "ltanimtracker.h"
 #include "ltb.h"
+#include "ltrenderstyle.h"
 #include "ltvector.h"
+#include "renderstruct.h"
 #include "viewparams.h"
-#include "../renderstylemap.h"
 
 #include "diligent_shaders_generated.h"
 
@@ -173,21 +173,21 @@ DiligentTextureArray diligent_resolve_textures(const RenderPassOp& pass, SharedT
 	{
 		switch (pass.TextureStages[stage_index].TextureParam)
 		{
-			case RENDERSTYLE_USE_TEXTURE1:
-				textures[stage_index] = texture_list[0];
-				break;
-			case RENDERSTYLE_USE_TEXTURE2:
-				textures[stage_index] = texture_list[1];
-				break;
-			case RENDERSTYLE_USE_TEXTURE3:
-				textures[stage_index] = texture_list[2];
-				break;
-			case RENDERSTYLE_USE_TEXTURE4:
-				textures[stage_index] = texture_list[3];
-				break;
-			default:
-				textures[stage_index] = nullptr;
-				break;
+		case RENDERSTYLE_USE_TEXTURE1:
+			textures[stage_index] = texture_list[0];
+			break;
+		case RENDERSTYLE_USE_TEXTURE2:
+			textures[stage_index] = texture_list[1];
+			break;
+		case RENDERSTYLE_USE_TEXTURE3:
+			textures[stage_index] = texture_list[2];
+			break;
+		case RENDERSTYLE_USE_TEXTURE4:
+			textures[stage_index] = texture_list[3];
+			break;
+		default:
+			textures[stage_index] = nullptr;
+			break;
 		}
 	}
 
@@ -196,11 +196,9 @@ DiligentTextureArray diligent_resolve_textures(const RenderPassOp& pass, SharedT
 
 bool diligent_model_debug_enabled()
 {
-	return g_CV_ModelDebug_DrawBoxes.m_Val != 0 ||
-		g_CV_ModelDebug_DrawTouchingLights.m_Val != 0 ||
-		g_CV_ModelDebug_DrawSkeleton.m_Val != 0 ||
-		g_CV_ModelDebug_DrawOBBS.m_Val != 0 ||
-		g_CV_ModelDebug_DrawVertexNormals.m_Val != 0;
+	return g_CV_ModelDebug_DrawBoxes.m_Val != 0 || g_CV_ModelDebug_DrawTouchingLights.m_Val != 0 ||
+		   g_CV_ModelDebug_DrawSkeleton.m_Val != 0 || g_CV_ModelDebug_DrawOBBS.m_Val != 0 ||
+		   g_CV_ModelDebug_DrawVertexNormals.m_Val != 0;
 }
 
 LTVector diligent_transform_point(const LTMatrix& matrix, const LTVector& point)
@@ -221,13 +219,8 @@ LTVector diligent_transform_dir(const LTMatrix& matrix, const LTVector& dir)
 	return out;
 }
 
-bool diligent_read_vertex_vec3(
-	const DiligentMeshLayout& layout,
-	const std::array<std::vector<uint8>, 4>& vertex_data,
-	int32 attrib_index,
-	uint32 vertex_index,
-	bool signed_normal,
-	LTVector& out)
+bool diligent_read_vertex_vec3(const DiligentMeshLayout& layout, const std::array<std::vector<uint8>, 4>& vertex_data,
+							   int32 attrib_index, uint32 vertex_index, bool signed_normal, LTVector& out)
 {
 	if (attrib_index < 0)
 	{
@@ -295,12 +288,9 @@ bool diligent_read_vertex_vec3(
 	return false;
 }
 
-void diligent_debug_add_vertex_normals(
-	const DiligentMeshLayout& layout,
-	const std::array<std::vector<uint8>, 4>& vertex_data,
-	uint32 vertex_count,
-	const LTMatrix& model_matrix,
-	const LTRGBColor& color)
+void diligent_debug_add_vertex_normals(const DiligentMeshLayout& layout,
+									   const std::array<std::vector<uint8>, 4>& vertex_data, uint32 vertex_count,
+									   const LTMatrix& model_matrix, const LTRGBColor& color)
 {
 	if (layout.position_attrib < 0 || layout.normal_attrib < 0 || vertex_count == 0)
 	{
@@ -336,16 +326,16 @@ Diligent::BLEND_FACTOR diligent_map_blend_factor(ERenStyle_BlendMode blend_mode,
 {
 	switch (blend_mode)
 	{
-		case RENDERSTYLE_BLEND_ADD:
-			return source ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_ONE;
-		case RENDERSTYLE_BLEND_MOD_SRCALPHA:
-			return source ? Diligent::BLEND_FACTOR_SRC_ALPHA : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		case RENDERSTYLE_BLEND_MOD_SRCCOLOR:
-			return source ? Diligent::BLEND_FACTOR_SRC_COLOR : Diligent::BLEND_FACTOR_INV_SRC_COLOR;
-		case RENDERSTYLE_BLEND_MOD_DSTCOLOR:
-			return source ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_INV_DEST_COLOR;
-		default:
-			return source ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_ZERO;
+	case RENDERSTYLE_BLEND_ADD:
+		return source ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_ONE;
+	case RENDERSTYLE_BLEND_MOD_SRCALPHA:
+		return source ? Diligent::BLEND_FACTOR_SRC_ALPHA : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+	case RENDERSTYLE_BLEND_MOD_SRCCOLOR:
+		return source ? Diligent::BLEND_FACTOR_SRC_COLOR : Diligent::BLEND_FACTOR_INV_SRC_COLOR;
+	case RENDERSTYLE_BLEND_MOD_DSTCOLOR:
+		return source ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_INV_DEST_COLOR;
+	default:
+		return source ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_ZERO;
 	}
 }
 
@@ -365,20 +355,20 @@ Diligent::COMPARISON_FUNCTION diligent_map_test_mode(ERenStyle_TestMode test_mod
 {
 	switch (test_mode)
 	{
-		case RENDERSTYLE_ALPHATEST_LESS:
-			return Diligent::COMPARISON_FUNC_LESS;
-		case RENDERSTYLE_ALPHATEST_LESSEQUAL:
-			return Diligent::COMPARISON_FUNC_LESS_EQUAL;
-		case RENDERSTYLE_ALPHATEST_GREATER:
-			return Diligent::COMPARISON_FUNC_GREATER;
-		case RENDERSTYLE_ALPHATEST_GREATEREQUAL:
-			return Diligent::COMPARISON_FUNC_GREATER_EQUAL;
-		case RENDERSTYLE_ALPHATEST_EQUAL:
-			return Diligent::COMPARISON_FUNC_EQUAL;
-		case RENDERSTYLE_ALPHATEST_NOTEQUAL:
-			return Diligent::COMPARISON_FUNC_NOT_EQUAL;
-		default:
-			return Diligent::COMPARISON_FUNC_LESS_EQUAL;
+	case RENDERSTYLE_ALPHATEST_LESS:
+		return Diligent::COMPARISON_FUNC_LESS;
+	case RENDERSTYLE_ALPHATEST_LESSEQUAL:
+		return Diligent::COMPARISON_FUNC_LESS_EQUAL;
+	case RENDERSTYLE_ALPHATEST_GREATER:
+		return Diligent::COMPARISON_FUNC_GREATER;
+	case RENDERSTYLE_ALPHATEST_GREATEREQUAL:
+		return Diligent::COMPARISON_FUNC_GREATER_EQUAL;
+	case RENDERSTYLE_ALPHATEST_EQUAL:
+		return Diligent::COMPARISON_FUNC_EQUAL;
+	case RENDERSTYLE_ALPHATEST_NOTEQUAL:
+		return Diligent::COMPARISON_FUNC_NOT_EQUAL;
+	default:
+		return Diligent::COMPARISON_FUNC_LESS_EQUAL;
 	}
 }
 
@@ -386,18 +376,18 @@ void diligent_fill_model_depth_desc(const RenderPassOp& pass, Diligent::DepthSte
 {
 	switch (pass.ZBufferMode)
 	{
-		case RENDERSTYLE_NOZ:
-			desc.DepthEnable = false;
-			desc.DepthWriteEnable = false;
-			break;
-		case RENDERSTYLE_ZRO:
-			desc.DepthEnable = true;
-			desc.DepthWriteEnable = false;
-			break;
-		default:
-			desc.DepthEnable = true;
-			desc.DepthWriteEnable = true;
-			break;
+	case RENDERSTYLE_NOZ:
+		desc.DepthEnable = false;
+		desc.DepthWriteEnable = false;
+		break;
+	case RENDERSTYLE_ZRO:
+		desc.DepthEnable = true;
+		desc.DepthWriteEnable = false;
+		break;
+	default:
+		desc.DepthEnable = true;
+		desc.DepthWriteEnable = true;
+		break;
 	}
 	desc.DepthFunc = diligent_map_test_mode(pass.ZBufferTestMode);
 }
@@ -406,40 +396,38 @@ void diligent_fill_model_raster_desc(const RenderPassOp& pass, Diligent::Rasteri
 {
 	switch (pass.CullMode)
 	{
-		case RENDERSTYLE_CULL_NONE:
-			desc.CullMode = Diligent::CULL_MODE_NONE;
-			break;
-		case RENDERSTYLE_CULL_CCW:
-			desc.CullMode = Diligent::CULL_MODE_BACK;
-			desc.FrontCounterClockwise = true;
-			break;
-		case RENDERSTYLE_CULL_CW:
-			desc.CullMode = Diligent::CULL_MODE_BACK;
-			desc.FrontCounterClockwise = false;
-			break;
-		default:
-			desc.CullMode = Diligent::CULL_MODE_BACK;
-			break;
+	case RENDERSTYLE_CULL_NONE:
+		desc.CullMode = Diligent::CULL_MODE_NONE;
+		break;
+	case RENDERSTYLE_CULL_CCW:
+		desc.CullMode = Diligent::CULL_MODE_BACK;
+		desc.FrontCounterClockwise = true;
+		break;
+	case RENDERSTYLE_CULL_CW:
+		desc.CullMode = Diligent::CULL_MODE_BACK;
+		desc.FrontCounterClockwise = false;
+		break;
+	default:
+		desc.CullMode = Diligent::CULL_MODE_BACK;
+		break;
 	}
 
 	switch (pass.FillMode)
 	{
-		case RENDERSTYLE_WIRE:
-			desc.FillMode = Diligent::FILL_MODE_WIREFRAME;
-			break;
-		default:
-			desc.FillMode = Diligent::FILL_MODE_SOLID;
-			break;
+	case RENDERSTYLE_WIRE:
+		desc.FillMode = Diligent::FILL_MODE_WIREFRAME;
+		break;
+	default:
+		desc.FillMode = Diligent::FILL_MODE_SOLID;
+		break;
 	}
 }
 
-DiligentModelPipeline* diligent_get_model_pipeline_for_target(
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentMeshLayout& layout,
-	bool uses_texture,
-	Diligent::TEXTURE_FORMAT color_format,
-	Diligent::TEXTURE_FORMAT depth_format)
+DiligentModelPipeline* diligent_get_model_pipeline_for_target(const RenderPassOp& pass,
+															  const RSRenderPassShaders& shader_pass,
+															  const DiligentMeshLayout& layout, bool uses_texture,
+															  Diligent::TEXTURE_FORMAT color_format,
+															  Diligent::TEXTURE_FORMAT depth_format)
 {
 	if (!g_diligent_state.render_device || !g_diligent_state.swap_chain)
 	{
@@ -454,14 +442,8 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	DiligentModelPipelineKey pipeline_key;
 	pipeline_key.uses_texture = uses_texture;
 	const uint8 sample_count = static_cast<uint8>(diligent_get_active_sample_count());
-	pipeline_key.pso_key = diligent_make_pso_key(
-		pass,
-		shader_pass,
-		layout.hash,
-		color_format,
-		depth_format,
-		Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-		sample_count);
+	pipeline_key.pso_key = diligent_make_pso_key(pass, shader_pass, layout.hash, color_format, depth_format,
+												 Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, sample_count);
 
 	auto it = g_model_pipelines.find(pipeline_key);
 	if (it != g_model_pipelines.end())
@@ -475,7 +457,8 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 		return nullptr;
 	}
 
-	Diligent::IShader* pixel_shader = uses_texture ? g_model_resources.pixel_shader_textured.RawPtr() : g_model_resources.pixel_shader_solid.RawPtr();
+	Diligent::IShader* pixel_shader =
+		uses_texture ? g_model_resources.pixel_shader_textured.RawPtr() : g_model_resources.pixel_shader_solid.RawPtr();
 	if (!pixel_shader)
 	{
 		return nullptr;
@@ -502,8 +485,7 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 
 	Diligent::ShaderResourceVariableDesc variables[] = {
-		{Diligent::SHADER_TYPE_PIXEL, "g_Texture0", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
-	};
+		{Diligent::SHADER_TYPE_PIXEL, "g_Texture0", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}};
 
 	Diligent::ImmutableSamplerDesc sampler_desc;
 	sampler_desc.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
@@ -529,13 +511,15 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 		return nullptr;
 	}
 
-	auto* vs_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "ModelConstants");
+	auto* vs_constants =
+		pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "ModelConstants");
 	if (vs_constants)
 	{
 		vs_constants->Set(g_model_resources.constant_buffer);
 	}
 
-	auto* ps_constants = pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ModelConstants");
+	auto* ps_constants =
+		pipeline.pipeline_state->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ModelConstants");
 	if (ps_constants)
 	{
 		ps_constants->Set(g_model_resources.constant_buffer);
@@ -546,11 +530,8 @@ DiligentModelPipeline* diligent_get_model_pipeline_for_target(
 	return result.second ? &result.first->second : nullptr;
 }
 
-DiligentModelPipeline* diligent_get_model_pipeline(
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentMeshLayout& layout,
-	bool uses_texture)
+DiligentModelPipeline* diligent_get_model_pipeline(const RenderPassOp& pass, const RSRenderPassShaders& shader_pass,
+												   const DiligentMeshLayout& layout, bool uses_texture)
 {
 	if (!g_diligent_state.swap_chain)
 	{
@@ -558,24 +539,13 @@ DiligentModelPipeline* diligent_get_model_pipeline(
 	}
 
 	const auto& swap_desc = g_diligent_state.swap_chain->GetDesc();
-	return diligent_get_model_pipeline_for_target(
-		pass,
-		shader_pass,
-		layout,
-		uses_texture,
-		swap_desc.ColorBufferFormat,
-		swap_desc.DepthBufferFormat);
+	return diligent_get_model_pipeline_for_target(pass, shader_pass, layout, uses_texture, swap_desc.ColorBufferFormat,
+												  swap_desc.DepthBufferFormat);
 }
 
-DiligentRigidMesh::DiligentRigidMesh()
-{
-	Reset();
-}
+DiligentRigidMesh::DiligentRigidMesh() { Reset(); }
 
-DiligentRigidMesh::~DiligentRigidMesh()
-{
-	FreeAll();
-}
+DiligentRigidMesh::~DiligentRigidMesh() { FreeAll(); }
 
 void DiligentRigidMesh::Reset()
 {
@@ -585,7 +555,7 @@ void DiligentRigidMesh::Reset()
 	m_non_fixed_pipe_data = false;
 	m_layout.elements.clear();
 	m_layout.strides.fill(0);
-	m_layout.uv_attrib = { -1, -1, -1, -1 };
+	m_layout.uv_attrib = {-1, -1, -1, -1};
 	m_layout.position_attrib = -1;
 	m_layout.weights_attrib = -1;
 	m_layout.indices_attrib = -1;
@@ -702,32 +672,20 @@ void DiligentRigidMesh::ReCreateObject()
 			continue;
 		}
 
-		m_vertex_buffers[i] = diligent_create_buffer(
-			static_cast<uint32>(m_vertex_data[i].size()),
-			Diligent::BIND_VERTEX_BUFFER,
-			m_vertex_data[i].data(),
-			stride);
+		m_vertex_buffers[i] = diligent_create_buffer(static_cast<uint32>(m_vertex_data[i].size()),
+													 Diligent::BIND_VERTEX_BUFFER, m_vertex_data[i].data(), stride);
 	}
 
 	if (!m_index_data.empty())
 	{
-		m_index_buffer = diligent_create_buffer(
-			static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
-			Diligent::BIND_INDEX_BUFFER,
-			m_index_data.data(),
-			sizeof(uint16));
+		m_index_buffer = diligent_create_buffer(static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
+												Diligent::BIND_INDEX_BUFFER, m_index_data.data(), sizeof(uint16));
 	}
 }
 
-DiligentSkelMesh::DiligentSkelMesh()
-{
-	Reset();
-}
+DiligentSkelMesh::DiligentSkelMesh() { Reset(); }
 
-DiligentSkelMesh::~DiligentSkelMesh()
-{
-	FreeAll();
-}
+DiligentSkelMesh::~DiligentSkelMesh() { FreeAll(); }
 
 void DiligentSkelMesh::Reset()
 {
@@ -747,7 +705,7 @@ void DiligentSkelMesh::Reset()
 	m_index_data.clear();
 	m_layout.elements.clear();
 	m_layout.strides.fill(0);
-	m_layout.uv_attrib = { -1, -1, -1, -1 };
+	m_layout.uv_attrib = {-1, -1, -1, -1};
 	m_layout.position_attrib = -1;
 	m_layout.weights_attrib = -1;
 	m_layout.indices_attrib = -1;
@@ -804,14 +762,6 @@ void DiligentSkelMesh::UpdateLayoutRefs()
 	{
 		m_dynamic_streams[m_normal_ref.stream_index] = true;
 	}
-	if (m_weights_ref.valid)
-	{
-		m_dynamic_streams[m_weights_ref.stream_index] = true;
-	}
-	if (m_indices_ref.valid)
-	{
-		m_dynamic_streams[m_indices_ref.stream_index] = true;
-	}
 }
 
 bool DiligentSkelMesh::Load(ILTStream& file, LTB_Header& header)
@@ -834,23 +784,47 @@ bool DiligentSkelMesh::Load(ILTStream& file, LTB_Header& header)
 	file.Read(&m_poly_count, sizeof(m_poly_count));
 	file.Read(&m_max_bones_per_tri, sizeof(m_max_bones_per_tri));
 	file.Read(&m_max_bones_per_vert, sizeof(m_max_bones_per_vert));
-	file.Read(&m_vert_stream_flags[0], sizeof(uint32) * 4);
-	file.Read(&m_min_bone, sizeof(m_min_bone));
-	file.Read(&m_max_bone, sizeof(m_max_bone));
-	file.Read(&m_weight_count, sizeof(m_weight_count));
-	file.Read(&m_vert_type, sizeof(m_vert_type));
-	file.Read(&m_render_method, sizeof(m_render_method));
 	file.Read(&m_reindexed_bones, sizeof(m_reindexed_bones));
+	file.Read(&m_vert_stream_flags[0], sizeof(uint32) * 4);
 
-	if (m_max_bones_per_vert == 0)
+	bool use_matrix_palettes = false;
+	file.Read(&use_matrix_palettes, sizeof(use_matrix_palettes));
+	if (use_matrix_palettes)
 	{
+		m_render_method = kRenderMatrixPalettes;
+		return LoadMatrixPalettes(file);
+	}
+
+	m_render_method = kRenderDirect;
+	return LoadDirect(file);
+}
+
+bool DiligentSkelMesh::LoadDirect(ILTStream& file)
+{
+	switch (m_max_bones_per_tri)
+	{
+	case 1:
+		m_vert_type = eNO_WORLD_BLENDS;
+		break;
+	case 2:
+		m_vert_type = eNONINDEXED_B1;
+		break;
+	case 3:
+		m_vert_type = eNONINDEXED_B2;
+		break;
+	case 4:
+		m_vert_type = eNONINDEXED_B3;
+		break;
+	default:
 		return false;
 	}
 
+	m_weight_count = diligent_get_blend_weight_count(m_vert_type);
 	if (!diligent_build_mesh_layout(m_vert_stream_flags, m_vert_type, m_layout, m_non_fixed_pipe_data))
 	{
 		return false;
 	}
+	UpdateLayoutRefs();
 
 	for (uint32 i = 0; i < 4; ++i)
 	{
@@ -864,7 +838,6 @@ bool DiligentSkelMesh::Load(ILTStream& file, LTB_Header& header)
 		{
 			return false;
 		}
-
 		const uint32 size = stride * m_vertex_count;
 		m_vertex_data[i].resize(size);
 		file.Read(m_vertex_data[i].data(), size);
@@ -877,51 +850,39 @@ bool DiligentSkelMesh::Load(ILTStream& file, LTB_Header& header)
 		file.Read(m_index_data.data(), sizeof(uint16) * index_count);
 	}
 
-	if (m_render_method == kRenderMatrixPalettes)
+	uint32 bone_set_count = 0;
+	file.Read(&bone_set_count, sizeof(bone_set_count));
+	if (bone_set_count > 0)
 	{
-		if (!LoadMatrixPalettes(file))
-		{
-			return false;
-		}
-	}
-	else
-	{
-		if (!LoadDirect(file))
-		{
-			return false;
-		}
+		m_bone_sets.resize(bone_set_count);
+		file.Read(m_bone_sets.data(), sizeof(DiligentBoneSet) * bone_set_count);
 	}
 
-	UpdateLayoutRefs();
 	ReCreateObject();
-	return true;
-}
-
-bool DiligentSkelMesh::LoadDirect(ILTStream& file)
-{
-	uint32 size = 0;
-	file.Read(&size, sizeof(size));
-	if (size == 0)
-	{
-		return true;
-	}
-
-	m_bone_transforms.resize(size);
-	file.Read(m_bone_transforms.data(), size * sizeof(LTMatrix));
 	return true;
 }
 
 bool DiligentSkelMesh::LoadMatrixPalettes(ILTStream& file)
 {
-	uint32 count = 0;
-	file.Read(&count, sizeof(count));
-	if (count == 0)
+	file.Read(&m_min_bone, sizeof(m_min_bone));
+	file.Read(&m_max_bone, sizeof(m_max_bone));
+
+	switch (m_max_bones_per_vert)
 	{
-		return true;
+	case 2:
+		m_vert_type = eINDEXED_B1;
+		break;
+	case 3:
+		m_vert_type = eINDEXED_B2;
+		break;
+	case 4:
+		m_vert_type = eINDEXED_B3;
+		break;
+	default:
+		return false;
 	}
 
-	m_bone_sets.resize(count);
-	file.Read(m_bone_sets.data(), sizeof(DiligentBoneSet) * count);
+	m_weight_count = diligent_get_blend_weight_count(m_vert_type);
 	if (m_reindexed_bones)
 	{
 		uint32 bone_count = 0;
@@ -933,6 +894,37 @@ bool DiligentSkelMesh::LoadMatrixPalettes(ILTStream& file)
 		}
 	}
 
+	if (!diligent_build_mesh_layout(m_vert_stream_flags, m_vert_type, m_layout, m_non_fixed_pipe_data))
+	{
+		return false;
+	}
+	UpdateLayoutRefs();
+
+	for (uint32 i = 0; i < 4; ++i)
+	{
+		if (!m_vert_stream_flags[i])
+		{
+			continue;
+		}
+
+		const uint32 stride = m_layout.strides[i];
+		if (stride == 0 || m_vertex_count == 0)
+		{
+			return false;
+		}
+		const uint32 size = stride * m_vertex_count;
+		m_vertex_data[i].resize(size);
+		file.Read(m_vertex_data[i].data(), size);
+	}
+
+	const uint32 index_count = m_poly_count * 3;
+	m_index_data.resize(index_count);
+	if (index_count > 0)
+	{
+		file.Read(m_index_data.data(), sizeof(uint16) * index_count);
+	}
+
+	ReCreateObject();
 	return true;
 }
 
@@ -957,17 +949,13 @@ void DiligentSkelMesh::ReCreateObject()
 			continue;
 		}
 
-		const Diligent::BIND_FLAGS bind_flags = m_dynamic_streams[i]
-			? Diligent::BIND_VERTEX_BUFFER
-			: Diligent::BIND_VERTEX_BUFFER;
+		const Diligent::BIND_FLAGS bind_flags =
+			m_dynamic_streams[i] ? Diligent::BIND_VERTEX_BUFFER : Diligent::BIND_VERTEX_BUFFER;
 
-		const Diligent::USAGE usage = m_dynamic_streams[i]
-			? Diligent::USAGE_DYNAMIC
-			: Diligent::USAGE_DEFAULT;
+		const Diligent::USAGE usage = m_dynamic_streams[i] ? Diligent::USAGE_DYNAMIC : Diligent::USAGE_DEFAULT;
 
-		const Diligent::CPU_ACCESS_FLAGS access_flags = m_dynamic_streams[i]
-			? Diligent::CPU_ACCESS_WRITE
-			: Diligent::CPU_ACCESS_NONE;
+		const Diligent::CPU_ACCESS_FLAGS access_flags =
+			m_dynamic_streams[i] ? Diligent::CPU_ACCESS_WRITE : Diligent::CPU_ACCESS_NONE;
 
 		Diligent::BufferDesc desc;
 		desc.Name = "ltjs_skel_vertices";
@@ -992,11 +980,8 @@ void DiligentSkelMesh::ReCreateObject()
 
 	if (!m_index_data.empty())
 	{
-		m_index_buffer = diligent_create_buffer(
-			static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
-			Diligent::BIND_INDEX_BUFFER,
-			m_index_data.data(),
-			sizeof(uint16));
+		m_index_buffer = diligent_create_buffer(static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
+												Diligent::BIND_INDEX_BUFFER, m_index_data.data(), sizeof(uint16));
 	}
 }
 
@@ -1056,16 +1041,6 @@ bool DiligentSkelMesh::UpdateSkinnedVertices(ModelInstance* instance)
 		return false;
 	}
 
-	if (m_render_method == kRenderDirect)
-	{
-		if (!m_bone_transforms.empty())
-		{
-			return UpdateSkinnedVerticesDirect(m_bone_transforms);
-		}
-
-		return false;
-	}
-
 	const uint32 bone_count = model->NumNodes();
 	if (bone_count == 0)
 	{
@@ -1085,6 +1060,11 @@ bool DiligentSkelMesh::UpdateSkinnedVertices(ModelInstance* instance)
 			return false;
 		}
 		m_bone_transforms[bone_index] = transform;
+	}
+
+	if (m_render_method == kRenderDirect)
+	{
+		return UpdateSkinnedVerticesDirect(m_bone_transforms);
 	}
 
 	return UpdateSkinnedVerticesIndexed(m_bone_transforms);
@@ -1110,57 +1090,76 @@ bool DiligentSkelMesh::UpdateSkinnedVerticesDirect(const std::vector<LTMatrix>& 
 
 	const uint32 vertex_count = m_vertex_count;
 	const uint32 weight_count = diligent_get_blend_weight_count(m_vert_type);
-	if (weight_count == 0)
+	if (weight_count > 0 && !m_weights_ref.valid)
 	{
 		return false;
 	}
-
-	const uint32 weights_stream = m_weights_ref.stream_index;
-	const uint32 indices_stream = m_indices_ref.stream_index;
-	if (!m_vertex_buffers[weights_stream] || !m_vertex_buffers[indices_stream])
+	if (m_bone_sets.empty())
 	{
 		return false;
 	}
 
 	void* mapped_position = nullptr;
-	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_position);
+	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE,
+												  Diligent::MAP_FLAG_DISCARD, mapped_position);
 	if (!mapped_position)
 	{
 		return false;
 	}
 
-	const uint8* weights = m_vertex_data[weights_stream].data();
-	const uint8* indices = m_vertex_data[indices_stream].data();
+	std::memcpy(mapped_position, m_vertex_data[position_stream].data(), m_vertex_data[position_stream].size());
 
 	const uint32 position_stride = m_position_ref.stride;
+	const uint8* source_positions = m_vertex_data[position_stream].data();
+
+	const uint32 weights_stream = m_weights_ref.stream_index;
 	const uint32 weights_stride = m_weights_ref.stride;
-	const uint32 indices_stride = m_indices_ref.stride;
+	const uint8* weights = weight_count > 0 ? m_vertex_data[weights_stream].data() : nullptr;
 
-	for (uint32 vert = 0; vert < vertex_count; ++vert)
+	for (const DiligentBoneSet& bone_set : m_bone_sets)
 	{
-		const uint8* weights_ptr = weights + weights_stride * vert + m_weights_ref.offset;
-		const uint8* indices_ptr = indices + indices_stride * vert + m_indices_ref.offset;
-		float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + position_stride * vert + m_position_ref.offset);
-
-		LTVector final_pos(0.0f, 0.0f, 0.0f);
-		for (uint32 weight_index = 0; weight_index < weight_count; ++weight_index)
+		const uint32 vert_end = bone_set.first_vert_index + bone_set.vert_count;
+		for (uint32 vert = bone_set.first_vert_index; vert < vert_end && vert < vertex_count; ++vert)
 		{
-			const uint8 bone_index = indices_ptr[weight_index];
-			if (bone_index >= bone_transforms.size())
+			const float* source_position =
+				reinterpret_cast<const float*>(source_positions + position_stride * vert + m_position_ref.offset);
+			float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) +
+														   position_stride * vert + m_position_ref.offset);
+
+			const LTVector position(source_position[0], source_position[1], source_position[2]);
+			LTVector final_pos(0.0f, 0.0f, 0.0f);
+			float accumulated_weight = 0.0f;
+
+			for (uint32 weight_index = 0; weight_index < weight_count; ++weight_index)
 			{
-				continue;
+				const uint8 bone_index = bone_set.bone_set[weight_index];
+				if (bone_index >= bone_transforms.size())
+				{
+					continue;
+				}
+
+				const float* weights_ptr =
+					reinterpret_cast<const float*>(weights + weights_stride * vert + m_weights_ref.offset);
+				const float weight = weights_ptr[weight_index];
+				accumulated_weight += weight;
+				final_pos += diligent_transform_point(bone_transforms[bone_index], position) * weight;
 			}
 
-			const float weight = weights_ptr[weight_index] / 255.0f;
-			const LTMatrix& transform = bone_transforms[bone_index];
-			const LTVector position(out_position[0], out_position[1], out_position[2]);
-			LTVector transformed = diligent_transform_point(transform, position);
-			final_pos += transformed * weight;
-		}
+			const uint32 final_bone_slot = weight_count > 0 ? weight_count : 0;
+			if (final_bone_slot < 4)
+			{
+				const uint8 bone_index = bone_set.bone_set[final_bone_slot];
+				if (bone_index < bone_transforms.size())
+				{
+					const float final_weight = weight_count > 0 ? 1.0f - accumulated_weight : 1.0f;
+					final_pos += diligent_transform_point(bone_transforms[bone_index], position) * final_weight;
+				}
+			}
 
-		out_position[0] = final_pos.x;
-		out_position[1] = final_pos.y;
-		out_position[2] = final_pos.z;
+			out_position[0] = final_pos.x;
+			out_position[1] = final_pos.y;
+			out_position[2] = final_pos.z;
+		}
 	}
 
 	g_diligent_state.immediate_context->UnmapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE);
@@ -1187,25 +1186,25 @@ bool DiligentSkelMesh::UpdateSkinnedVerticesIndexed(const std::vector<LTMatrix>&
 
 	const uint32 vertex_count = m_vertex_count;
 	const uint32 weight_count = diligent_get_blend_weight_count(m_vert_type);
-	if (weight_count == 0)
+	if (weight_count == 0 || !m_weights_ref.valid || !m_indices_ref.valid)
 	{
 		return false;
 	}
 
 	const uint32 weights_stream = m_weights_ref.stream_index;
 	const uint32 indices_stream = m_indices_ref.stream_index;
-	if (!m_vertex_buffers[weights_stream] || !m_vertex_buffers[indices_stream])
-	{
-		return false;
-	}
 
 	void* mapped_position = nullptr;
-	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_position);
+	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE,
+												  Diligent::MAP_FLAG_DISCARD, mapped_position);
 	if (!mapped_position)
 	{
 		return false;
 	}
 
+	std::memcpy(mapped_position, m_vertex_data[position_stream].data(), m_vertex_data[position_stream].size());
+
+	const uint8* source_positions = m_vertex_data[position_stream].data();
 	const uint8* weights = m_vertex_data[weights_stream].data();
 	const uint8* indices = m_vertex_data[indices_stream].data();
 
@@ -1213,58 +1212,73 @@ bool DiligentSkelMesh::UpdateSkinnedVerticesIndexed(const std::vector<LTMatrix>&
 	const uint32 weights_stride = m_weights_ref.stride;
 	const uint32 indices_stride = m_indices_ref.stride;
 
-	for (uint32 set_index = 0; set_index < m_bone_sets.size(); ++set_index)
+	for (uint32 vert = 0; vert < vertex_count; ++vert)
 	{
-		const DiligentBoneSet& bone_set = m_bone_sets[set_index];
-		const uint32 vert_end = bone_set.first_vert_index + bone_set.vert_count;
+		const float* weights_ptr =
+			reinterpret_cast<const float*>(weights + weights_stride * vert + m_weights_ref.offset);
+		const uint8* indices_ptr = indices + indices_stride * vert + m_indices_ref.offset;
+		const float* source_position =
+			reinterpret_cast<const float*>(source_positions + position_stride * vert + m_position_ref.offset);
+		float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + position_stride * vert +
+													   m_position_ref.offset);
 
-		for (uint32 vert = bone_set.first_vert_index; vert < vert_end && vert < vertex_count; ++vert)
+		const LTVector position(source_position[0], source_position[1], source_position[2]);
+		LTVector final_pos(0.0f, 0.0f, 0.0f);
+		float accumulated_weight = 0.0f;
+
+		for (uint32 weight_index = 0; weight_index < weight_count; ++weight_index)
 		{
-			const uint8* weights_ptr = weights + weights_stride * vert + m_weights_ref.offset;
-			const uint8* indices_ptr = indices + indices_stride * vert + m_indices_ref.offset;
-			float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + position_stride * vert + m_position_ref.offset);
-
-			LTVector final_pos(0.0f, 0.0f, 0.0f);
-			for (uint32 weight_index = 0; weight_index < weight_count; ++weight_index)
+			const uint8 index = indices_ptr[weight_index];
+			uint32 bone_index = index;
+			if (m_reindexed_bones)
 			{
-				const uint8 index = indices_ptr[weight_index];
-				if (index >= 4)
+				if (index >= m_reindexed_bone_list.size())
 				{
 					continue;
 				}
-
-				const uint8 bone_index = bone_set.bone_set[index];
-				if (bone_index >= bone_transforms.size())
-				{
-					continue;
-				}
-
-				const float weight = weights_ptr[weight_index] / 255.0f;
-				const LTMatrix& transform = bone_transforms[bone_index];
-				const LTVector position(out_position[0], out_position[1], out_position[2]);
-				LTVector transformed = diligent_transform_point(transform, position);
-				final_pos += transformed * weight;
+				bone_index = m_reindexed_bone_list[index];
+			}
+			if (bone_index >= bone_transforms.size())
+			{
+				continue;
 			}
 
-			out_position[0] = final_pos.x;
-			out_position[1] = final_pos.y;
-			out_position[2] = final_pos.z;
+			const float weight = weights_ptr[weight_index];
+			accumulated_weight += weight;
+			final_pos += diligent_transform_point(bone_transforms[bone_index], position) * weight;
 		}
+
+		const uint8 final_index = indices_ptr[weight_count];
+		uint32 final_bone_index = final_index;
+		if (m_reindexed_bones)
+		{
+			if (final_index >= m_reindexed_bone_list.size())
+			{
+				out_position[0] = final_pos.x;
+				out_position[1] = final_pos.y;
+				out_position[2] = final_pos.z;
+				continue;
+			}
+			final_bone_index = m_reindexed_bone_list[final_index];
+		}
+		if (final_bone_index < bone_transforms.size())
+		{
+			final_pos +=
+				diligent_transform_point(bone_transforms[final_bone_index], position) * (1.0f - accumulated_weight);
+		}
+
+		out_position[0] = final_pos.x;
+		out_position[1] = final_pos.y;
+		out_position[2] = final_pos.z;
 	}
 
 	g_diligent_state.immediate_context->UnmapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE);
 	return true;
 }
 
-DiligentVAMesh::DiligentVAMesh()
-{
-	Reset();
-}
+DiligentVAMesh::DiligentVAMesh() { Reset(); }
 
-DiligentVAMesh::~DiligentVAMesh()
-{
-	FreeAll();
-}
+DiligentVAMesh::~DiligentVAMesh() { FreeAll(); }
 
 void DiligentVAMesh::Reset()
 {
@@ -1280,7 +1294,7 @@ void DiligentVAMesh::Reset()
 	m_dup_map_list.clear();
 	m_layout.elements.clear();
 	m_layout.strides.fill(0);
-	m_layout.uv_attrib = { -1, -1, -1, -1 };
+	m_layout.uv_attrib = {-1, -1, -1, -1};
 	m_layout.position_attrib = -1;
 	m_layout.weights_attrib = -1;
 	m_layout.indices_attrib = -1;
@@ -1418,17 +1432,13 @@ void DiligentVAMesh::ReCreateObject()
 			continue;
 		}
 
-		const Diligent::BIND_FLAGS bind_flags = m_dynamic_streams[i]
-			? Diligent::BIND_VERTEX_BUFFER
-			: Diligent::BIND_VERTEX_BUFFER;
+		const Diligent::BIND_FLAGS bind_flags =
+			m_dynamic_streams[i] ? Diligent::BIND_VERTEX_BUFFER : Diligent::BIND_VERTEX_BUFFER;
 
-		const Diligent::USAGE usage = m_dynamic_streams[i]
-			? Diligent::USAGE_DYNAMIC
-			: Diligent::USAGE_DEFAULT;
+		const Diligent::USAGE usage = m_dynamic_streams[i] ? Diligent::USAGE_DYNAMIC : Diligent::USAGE_DEFAULT;
 
-		const Diligent::CPU_ACCESS_FLAGS access_flags = m_dynamic_streams[i]
-			? Diligent::CPU_ACCESS_WRITE
-			: Diligent::CPU_ACCESS_NONE;
+		const Diligent::CPU_ACCESS_FLAGS access_flags =
+			m_dynamic_streams[i] ? Diligent::CPU_ACCESS_WRITE : Diligent::CPU_ACCESS_NONE;
 
 		Diligent::BufferDesc desc;
 		desc.Name = "ltjs_va_vertices";
@@ -1453,11 +1463,8 @@ void DiligentVAMesh::ReCreateObject()
 
 	if (!m_index_data.empty())
 	{
-		m_index_buffer = diligent_create_buffer(
-			static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
-			Diligent::BIND_INDEX_BUFFER,
-			m_index_data.data(),
-			sizeof(uint16));
+		m_index_buffer = diligent_create_buffer(static_cast<uint32>(m_index_data.size() * sizeof(uint16)),
+												Diligent::BIND_INDEX_BUFFER, m_index_data.data(), sizeof(uint16));
 	}
 }
 
@@ -1479,28 +1486,20 @@ bool DiligentVAMesh::UpdateVA(Model* model, AnimTimeRef* anim_time)
 		return false;
 	}
 
-	ModelAnim* anims[2] = {
-		model->GetAnim(anim_time->m_Prev.m_iAnim),
-		model->GetAnim(anim_time->m_Cur.m_iAnim)
-	};
+	ModelAnim* anims[2] = {model->GetAnim(anim_time->m_Prev.m_iAnim), model->GetAnim(anim_time->m_Cur.m_iAnim)};
 	if (!anims[0] || !anims[1])
 	{
 		return false;
 	}
 
-	AnimNode* anim_nodes[2] = {
-		anims[0]->GetAnimNode(m_anim_node_idx),
-		anims[1]->GetAnimNode(m_anim_node_idx)
-	};
+	AnimNode* anim_nodes[2] = {anims[0]->GetAnimNode(m_anim_node_idx), anims[1]->GetAnimNode(m_anim_node_idx)};
 	if (!anim_nodes[0] || !anim_nodes[1])
 	{
 		return false;
 	}
 
-	CDefVertexLst* def_verts[2] = {
-		anim_nodes[0]->GetVertexData(anim_time->m_Prev.m_iFrame),
-		anim_nodes[1]->GetVertexData(anim_time->m_Cur.m_iFrame)
-	};
+	CDefVertexLst* def_verts[2] = {anim_nodes[0]->GetVertexData(anim_time->m_Prev.m_iFrame),
+								   anim_nodes[1]->GetVertexData(anim_time->m_Cur.m_iFrame)};
 	if (!def_verts[0])
 	{
 		return false;
@@ -1511,7 +1510,8 @@ bool DiligentVAMesh::UpdateVA(Model* model, AnimTimeRef* anim_time)
 	}
 
 	void* mapped_position = nullptr;
-	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_position);
+	g_diligent_state.immediate_context->MapBuffer(m_vertex_buffers[position_stream], Diligent::MAP_WRITE,
+												  Diligent::MAP_FLAG_DISCARD, mapped_position);
 	if (!mapped_position)
 	{
 		return false;
@@ -1530,7 +1530,8 @@ bool DiligentVAMesh::UpdateVA(Model* model, AnimTimeRef* anim_time)
 		value[1] = prev_val[1] + ((cur_val[1] - prev_val[1]) * percent);
 		value[2] = prev_val[2] + ((cur_val[2] - prev_val[2]) * percent);
 
-		float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + vertex * m_position_ref.stride + m_position_ref.offset);
+		float* out_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) +
+													   vertex * m_position_ref.stride + m_position_ref.offset);
 		out_position[0] = value[0];
 		out_position[1] = value[1];
 		out_position[2] = value[2];
@@ -1543,8 +1544,10 @@ bool DiligentVAMesh::UpdateVA(Model* model, AnimTimeRef* anim_time)
 			continue;
 		}
 
-		float* src_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + dup.src_vert * m_position_ref.stride + m_position_ref.offset);
-		float* dst_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) + dup.dst_vert * m_position_ref.stride + m_position_ref.offset);
+		float* src_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) +
+													   dup.src_vert * m_position_ref.stride + m_position_ref.offset);
+		float* dst_position = reinterpret_cast<float*>(static_cast<uint8*>(mapped_position) +
+													   dup.dst_vert * m_position_ref.stride + m_position_ref.offset);
 		dst_position[0] = src_position[0];
 		dst_position[1] = src_position[1];
 		dst_position[2] = src_position[2];
@@ -1554,10 +1557,8 @@ bool DiligentVAMesh::UpdateVA(Model* model, AnimTimeRef* anim_time)
 	return true;
 }
 
-bool diligent_get_model_piece_textures(
-	ModelInstance* instance,
-	ModelPiece* piece,
-	std::array<SharedTexture*, MAX_PIECE_TEXTURES>& textures)
+bool diligent_get_model_piece_textures(ModelInstance* instance, ModelPiece* piece,
+									   std::array<SharedTexture*, MAX_PIECE_TEXTURES>& textures)
 {
 	textures.fill(nullptr);
 	if (!instance || !piece)
@@ -1589,10 +1590,8 @@ bool diligent_get_model_hook_data(ModelInstance* instance, ModelHookData& hook_d
 	hook_data.m_HookFlags = MHF_USETEXTURE;
 	hook_data.m_hObject = reinterpret_cast<HLOCALOBJ>(instance);
 	hook_data.m_LightAdd = g_diligent_state.scene_desc->m_GlobalModelLightAdd;
-	hook_data.m_ObjectColor = {
-		static_cast<float>(instance->m_ColorR),
-		static_cast<float>(instance->m_ColorG),
-		static_cast<float>(instance->m_ColorB)};
+	hook_data.m_ObjectColor = {static_cast<float>(instance->m_ColorR), static_cast<float>(instance->m_ColorG),
+							   static_cast<float>(instance->m_ColorB)};
 
 	if (g_diligent_state.scene_desc->m_ModelHookFn)
 	{
@@ -1655,7 +1654,7 @@ void diligent_debug_add_model_boxes(ModelInstance* instance)
 
 void diligent_debug_add_model_obbs(ModelInstance* instance)
 {
-#if(MODEL_OBB)
+#if (MODEL_OBB)
 	if (!instance)
 	{
 		return;
@@ -1699,37 +1698,25 @@ void diligent_debug_add_model_vertex_normals(ModelInstance* instance, CDIModelDr
 	{
 		auto* mesh = static_cast<DiligentRigidMesh*>(drawable);
 		LTMatrix model_matrix;
-		diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
-		diligent_debug_add_vertex_normals(
-			mesh->GetLayout(),
-			mesh->GetVertexData(),
-			mesh->GetVertexCount(),
-			model_matrix,
-			color);
+		diligent_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_debug_add_vertex_normals(mesh->GetLayout(), mesh->GetVertexData(), mesh->GetVertexCount(),
+										  model_matrix, color);
 	}
 	else if (drawable->GetType() == CRenderObject::eSkelMesh)
 	{
 		auto* mesh = static_cast<DiligentSkelMesh*>(drawable);
 		LTMatrix model_matrix;
 		model_matrix.Identity();
-		diligent_debug_add_vertex_normals(
-			mesh->GetLayout(),
-			mesh->GetVertexData(),
-			mesh->GetVertexCount(),
-			model_matrix,
-			color);
+		diligent_debug_add_vertex_normals(mesh->GetLayout(), mesh->GetVertexData(), mesh->GetVertexCount(),
+										  model_matrix, color);
 	}
 	else if (drawable->GetType() == CRenderObject::eVAMesh)
 	{
 		auto* mesh = static_cast<DiligentVAMesh*>(drawable);
 		LTMatrix model_matrix;
-		diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
-		diligent_debug_add_vertex_normals(
-			mesh->GetLayout(),
-			mesh->GetVertexData(),
-			mesh->GetVertexCount(),
-			model_matrix,
-			color);
+		diligent_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
+		diligent_debug_add_vertex_normals(mesh->GetLayout(), mesh->GetVertexData(), mesh->GetVertexCount(),
+										  model_matrix, color);
 	}
 }
 
@@ -1827,10 +1814,8 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	DiligentModelConstants constants;
 	diligent_store_matrix_from_lt(mvp, constants.mvp);
 	diligent_store_matrix_from_lt(model_matrix, constants.model);
-	LTVector object_color(
-		static_cast<float>(instance->m_ColorR),
-		static_cast<float>(instance->m_ColorG),
-		static_cast<float>(instance->m_ColorB));
+	LTVector object_color(static_cast<float>(instance->m_ColorR), static_cast<float>(instance->m_ColorG),
+						  static_cast<float>(instance->m_ColorB));
 	LTVector light_add(0.0f, 0.0f, 0.0f);
 	ModelHookData hook_data{};
 	if (diligent_get_model_hook_data(instance, hook_data))
@@ -1867,14 +1852,14 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	constants.fog_color[3] = fog_near;
 	constants.fog_params[0] = fog_far;
 	constants.fog_params[1] = diligent_get_tonemap_enabled();
-	const float output_is_srgb = (!g_diligent_state.glow_mode && !g_diligent_shadow_mode)
-		? diligent_get_swapchain_output_is_srgb()
-		: 0.0f;
+	const float output_is_srgb =
+		(!g_diligent_state.glow_mode && !g_diligent_shadow_mode) ? diligent_get_swapchain_output_is_srgb() : 0.0f;
 	constants.fog_params[2] = output_is_srgb;
 	constants.fog_params[3] = 0.0f;
 
 	void* mapped_constants = nullptr;
-	g_diligent_state.immediate_context->MapBuffer(g_model_resources.constant_buffer, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mapped_constants);
+	g_diligent_state.immediate_context->MapBuffer(g_model_resources.constant_buffer, Diligent::MAP_WRITE,
+												  Diligent::MAP_FLAG_DISCARD, mapped_constants);
 	if (!mapped_constants)
 	{
 		return false;
@@ -1884,19 +1869,13 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	return true;
 }
 
-bool diligent_draw_mesh_with_pipeline_for_target(
-	ModelInstance* instance,
-	const DiligentMeshLayout& layout,
-	Diligent::IBuffer* const* vertex_buffers,
-	Diligent::IBuffer* index_buffer,
-	uint32 index_count,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentTextureArray& textures,
-	const LTMatrix& mvp,
-	const LTMatrix& model_matrix,
-	Diligent::TEXTURE_FORMAT color_format,
-	Diligent::TEXTURE_FORMAT depth_format)
+bool diligent_draw_mesh_with_pipeline_for_target(ModelInstance* instance, const DiligentMeshLayout& layout,
+												 Diligent::IBuffer* const* vertex_buffers,
+												 Diligent::IBuffer* index_buffer, uint32 index_count,
+												 const RenderPassOp& pass, const RSRenderPassShaders& shader_pass,
+												 const DiligentTextureArray& textures, const LTMatrix& mvp,
+												 const LTMatrix& model_matrix, Diligent::TEXTURE_FORMAT color_format,
+												 Diligent::TEXTURE_FORMAT depth_format)
 {
 	if (!instance || !g_diligent_state.immediate_context || !vertex_buffers || !index_buffer)
 	{
@@ -1914,13 +1893,8 @@ bool diligent_draw_mesh_with_pipeline_for_target(
 	}
 
 	const bool uses_texture = (g_CV_ShadersEnabled.m_Val != 0) && (textures[0] != nullptr);
-	DiligentModelPipeline* pipeline = diligent_get_model_pipeline_for_target(
-		pass,
-		shader_pass,
-		layout,
-		uses_texture,
-		color_format,
-		depth_format);
+	DiligentModelPipeline* pipeline =
+		diligent_get_model_pipeline_for_target(pass, shader_pass, layout, uses_texture, color_format, depth_format);
 	if (!pipeline)
 	{
 		return false;
@@ -1938,15 +1912,12 @@ bool diligent_draw_mesh_with_pipeline_for_target(
 		bound_buffers[stream_index] = vertex_buffers[stream_index];
 	}
 
-	g_diligent_state.immediate_context->SetVertexBuffers(
-		0,
-		4,
-		bound_buffers,
-		offsets,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	g_diligent_state.immediate_context->SetVertexBuffers(0, 4, bound_buffers, offsets,
+														 Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+														 Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 
-	g_diligent_state.immediate_context->SetIndexBuffer(index_buffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->SetIndexBuffer(index_buffer, 0,
+													   Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	if (uses_texture)
 	{
@@ -1958,7 +1929,8 @@ bool diligent_draw_mesh_with_pipeline_for_target(
 	}
 
 	g_diligent_state.immediate_context->SetPipelineState(pipeline->pipeline_state);
-	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_diligent_state.immediate_context->CommitShaderResources(pipeline->srb,
+															  Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	Diligent::DrawIndexedAttribs draw_attribs;
 	draw_attribs.NumIndices = index_count;
@@ -1971,17 +1943,11 @@ bool diligent_draw_mesh_with_pipeline_for_target(
 	return true;
 }
 
-bool diligent_draw_mesh_with_pipeline(
-	ModelInstance* instance,
-	const DiligentMeshLayout& layout,
-	Diligent::IBuffer* const* vertex_buffers,
-	Diligent::IBuffer* index_buffer,
-	uint32 index_count,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentTextureArray& textures,
-	const LTMatrix& mvp,
-	const LTMatrix& model_matrix)
+bool diligent_draw_mesh_with_pipeline(ModelInstance* instance, const DiligentMeshLayout& layout,
+									  Diligent::IBuffer* const* vertex_buffers, Diligent::IBuffer* index_buffer,
+									  uint32 index_count, const RenderPassOp& pass,
+									  const RSRenderPassShaders& shader_pass, const DiligentTextureArray& textures,
+									  const LTMatrix& mvp, const LTMatrix& model_matrix)
 {
 	if (!g_diligent_state.swap_chain)
 	{
@@ -1989,27 +1955,13 @@ bool diligent_draw_mesh_with_pipeline(
 	}
 
 	const auto& swap_desc = g_diligent_state.swap_chain->GetDesc();
-	return diligent_draw_mesh_with_pipeline_for_target(
-		instance,
-		layout,
-		vertex_buffers,
-		index_buffer,
-		index_count,
-		pass,
-		shader_pass,
-		textures,
-		mvp,
-		model_matrix,
-		swap_desc.ColorBufferFormat,
-		swap_desc.DepthBufferFormat);
+	return diligent_draw_mesh_with_pipeline_for_target(instance, layout, vertex_buffers, index_buffer, index_count,
+													   pass, shader_pass, textures, mvp, model_matrix,
+													   swap_desc.ColorBufferFormat, swap_desc.DepthBufferFormat);
 }
 
-bool diligent_draw_rigid_mesh(
-	ModelInstance* instance,
-	DiligentRigidMesh* mesh,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentTextureArray& textures)
+bool diligent_draw_rigid_mesh(ModelInstance* instance, DiligentRigidMesh* mesh, const RenderPassOp& pass,
+							  const RSRenderPassShaders& shader_pass, const DiligentTextureArray& textures)
 {
 	if (!instance || !mesh)
 	{
@@ -2023,7 +1975,7 @@ bool diligent_draw_rigid_mesh(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
 	LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 	Diligent::IBuffer* vertex_buffers[4] = {};
@@ -2032,25 +1984,12 @@ bool diligent_draw_rigid_mesh(
 		vertex_buffers[stream_index] = mesh->GetVertexBuffer(stream_index);
 	}
 
-	return diligent_draw_mesh_with_pipeline(
-		instance,
-		layout,
-		vertex_buffers,
-		mesh->GetIndexBuffer(),
-		mesh->GetIndexCount(),
-		pass,
-		shader_pass,
-		textures,
-		mvp,
-		model_matrix);
+	return diligent_draw_mesh_with_pipeline(instance, layout, vertex_buffers, mesh->GetIndexBuffer(),
+											mesh->GetIndexCount(), pass, shader_pass, textures, mvp, model_matrix);
 }
 
-bool diligent_draw_skel_mesh(
-	ModelInstance* instance,
-	DiligentSkelMesh* mesh,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentTextureArray& textures)
+bool diligent_draw_skel_mesh(ModelInstance* instance, DiligentSkelMesh* mesh, const RenderPassOp& pass,
+							 const RSRenderPassShaders& shader_pass, const DiligentTextureArray& textures)
 {
 	if (!instance || !mesh)
 	{
@@ -2073,25 +2012,12 @@ bool diligent_draw_skel_mesh(
 		vertex_buffers[stream_index] = mesh->GetVertexBuffer(stream_index);
 	}
 
-	return diligent_draw_mesh_with_pipeline(
-		instance,
-		layout,
-		vertex_buffers,
-		mesh->GetIndexBuffer(),
-		mesh->GetIndexCount(),
-		pass,
-		shader_pass,
-		textures,
-		mvp,
-		model_matrix);
+	return diligent_draw_mesh_with_pipeline(instance, layout, vertex_buffers, mesh->GetIndexBuffer(),
+											mesh->GetIndexCount(), pass, shader_pass, textures, mvp, model_matrix);
 }
 
-bool diligent_draw_va_mesh(
-	ModelInstance* instance,
-	DiligentVAMesh* mesh,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	const DiligentTextureArray& textures)
+bool diligent_draw_va_mesh(ModelInstance* instance, DiligentVAMesh* mesh, const RenderPassOp& pass,
+						   const RSRenderPassShaders& shader_pass, const DiligentTextureArray& textures)
 {
 	if (!instance || !mesh)
 	{
@@ -2105,7 +2031,7 @@ bool diligent_draw_va_mesh(
 
 	const auto& layout = mesh->GetLayout();
 	LTMatrix model_matrix;
-	diligent_get_model_transform_raw(instance, mesh->GetBoneEffector(), model_matrix);
+	diligent_get_model_transform_render(instance, mesh->GetBoneEffector(), model_matrix);
 	LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 	Diligent::IBuffer* vertex_buffers[4] = {};
@@ -2114,20 +2040,12 @@ bool diligent_draw_va_mesh(
 		vertex_buffers[stream_index] = mesh->GetVertexBuffer(stream_index);
 	}
 
-	return diligent_draw_mesh_with_pipeline(
-		instance,
-		layout,
-		vertex_buffers,
-		mesh->GetIndexBuffer(),
-		mesh->GetIndexCount(),
-		pass,
-		shader_pass,
-		textures,
-		mvp,
-		model_matrix);
+	return diligent_draw_mesh_with_pipeline(instance, layout, vertex_buffers, mesh->GetIndexBuffer(),
+											mesh->GetIndexCount(), pass, shader_pass, textures, mvp, model_matrix);
 }
 
-bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map)
+bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
+														const CRenderStyleMap* render_style_map)
 {
 	if (!instance)
 	{
@@ -2176,17 +2094,17 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 
 		switch (lod->GetType())
 		{
-			case CRenderObject::eRigidMesh:
-				rigid_mesh = static_cast<DiligentRigidMesh*>(lod);
-				break;
-			case CRenderObject::eSkelMesh:
-				skel_mesh = static_cast<DiligentSkelMesh*>(lod);
-				break;
-			case CRenderObject::eVAMesh:
-				va_mesh = static_cast<DiligentVAMesh*>(lod);
-				break;
-			default:
-				break;
+		case CRenderObject::eRigidMesh:
+			rigid_mesh = static_cast<DiligentRigidMesh*>(lod);
+			break;
+		case CRenderObject::eSkelMesh:
+			skel_mesh = static_cast<DiligentSkelMesh*>(lod);
+			break;
+		case CRenderObject::eVAMesh:
+			va_mesh = static_cast<DiligentVAMesh*>(lod);
+			break;
+		default:
+			break;
 		}
 
 		if (!rigid_mesh && !skel_mesh && !va_mesh)
@@ -2345,15 +2263,10 @@ bool diligent_draw_model_instance(ModelInstance* instance)
 	return diligent_draw_model_instance_with_render_style_map(instance, nullptr);
 }
 
-bool diligent_draw_model_instance_shadow(
-	ModelInstance* instance,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	Diligent::TEXTURE_FORMAT color_format,
-	Diligent::TEXTURE_FORMAT depth_format,
-	uint8 shadow_r,
-	uint8 shadow_g,
-	uint8 shadow_b)
+bool diligent_draw_model_instance_shadow(ModelInstance* instance, const RenderPassOp& pass,
+										 const RSRenderPassShaders& shader_pass, Diligent::TEXTURE_FORMAT color_format,
+										 Diligent::TEXTURE_FORMAT depth_format, uint8 shadow_r, uint8 shadow_g,
+										 uint8 shadow_b)
 {
 	if (!instance)
 	{
@@ -2407,17 +2320,17 @@ bool diligent_draw_model_instance_shadow(
 
 		switch (lod->GetType())
 		{
-			case CRenderObject::eRigidMesh:
-				rigid_mesh = static_cast<DiligentRigidMesh*>(lod);
-				break;
-			case CRenderObject::eSkelMesh:
-				skel_mesh = static_cast<DiligentSkelMesh*>(lod);
-				break;
-			case CRenderObject::eVAMesh:
-				va_mesh = static_cast<DiligentVAMesh*>(lod);
-				break;
-			default:
-				break;
+		case CRenderObject::eRigidMesh:
+			rigid_mesh = static_cast<DiligentRigidMesh*>(lod);
+			break;
+		case CRenderObject::eSkelMesh:
+			skel_mesh = static_cast<DiligentSkelMesh*>(lod);
+			break;
+		case CRenderObject::eVAMesh:
+			va_mesh = static_cast<DiligentVAMesh*>(lod);
+			break;
+		default:
+			break;
 		}
 
 		if (!rigid_mesh && !skel_mesh && !va_mesh)
@@ -2446,8 +2359,9 @@ bool diligent_draw_model_instance_shadow(
 		if (rigid_mesh)
 		{
 			LTMatrix model_matrix;
-			diligent_get_model_transform_raw(instance, rigid_mesh->GetBoneEffector(), model_matrix);
-			LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
+			diligent_get_model_transform_render(instance, rigid_mesh->GetBoneEffector(), model_matrix);
+			LTMatrix mvp =
+				g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 			Diligent::IBuffer* vertex_buffers[4] = {};
 			for (uint32 stream_index = 0; stream_index < 4; ++stream_index)
@@ -2455,19 +2369,10 @@ bool diligent_draw_model_instance_shadow(
 				vertex_buffers[stream_index] = rigid_mesh->GetVertexBuffer(stream_index);
 			}
 
-			ok = diligent_draw_mesh_with_pipeline_for_target(
-				instance,
-				rigid_mesh->GetLayout(),
-				vertex_buffers,
-				rigid_mesh->GetIndexBuffer(),
-				rigid_mesh->GetIndexCount(),
-				pass,
-				shader_pass,
-				textures,
-				mvp,
-				model_matrix,
-				color_format,
-				depth_format);
+			ok = diligent_draw_mesh_with_pipeline_for_target(instance, rigid_mesh->GetLayout(), vertex_buffers,
+															 rigid_mesh->GetIndexBuffer(), rigid_mesh->GetIndexCount(),
+															 pass, shader_pass, textures, mvp, model_matrix,
+															 color_format, depth_format);
 		}
 		else if (skel_mesh)
 		{
@@ -2482,24 +2387,15 @@ bool diligent_draw_model_instance_shadow(
 			}
 
 			ok = diligent_draw_mesh_with_pipeline_for_target(
-				instance,
-				skel_mesh->GetLayout(),
-				vertex_buffers,
-				skel_mesh->GetIndexBuffer(),
-				skel_mesh->GetIndexCount(),
-				pass,
-				shader_pass,
-				textures,
-				mvp,
-				model_matrix,
-				color_format,
-				depth_format);
+				instance, skel_mesh->GetLayout(), vertex_buffers, skel_mesh->GetIndexBuffer(),
+				skel_mesh->GetIndexCount(), pass, shader_pass, textures, mvp, model_matrix, color_format, depth_format);
 		}
 		else if (va_mesh)
 		{
 			LTMatrix model_matrix;
-			diligent_get_model_transform_raw(instance, va_mesh->GetBoneEffector(), model_matrix);
-			LTMatrix mvp = g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
+			diligent_get_model_transform_render(instance, va_mesh->GetBoneEffector(), model_matrix);
+			LTMatrix mvp =
+				g_diligent_state.view_params.m_mProjection * g_diligent_state.view_params.m_mView * model_matrix;
 
 			Diligent::IBuffer* vertex_buffers[4] = {};
 			for (uint32 stream_index = 0; stream_index < 4; ++stream_index)
@@ -2508,18 +2404,8 @@ bool diligent_draw_model_instance_shadow(
 			}
 
 			ok = diligent_draw_mesh_with_pipeline_for_target(
-				instance,
-				va_mesh->GetLayout(),
-				vertex_buffers,
-				va_mesh->GetIndexBuffer(),
-				va_mesh->GetIndexCount(),
-				pass,
-				shader_pass,
-				textures,
-				mvp,
-				model_matrix,
-				color_format,
-				depth_format);
+				instance, va_mesh->GetLayout(), vertex_buffers, va_mesh->GetIndexBuffer(), va_mesh->GetIndexCount(),
+				pass, shader_pass, textures, mvp, model_matrix, color_format, depth_format);
 		}
 
 		if (!ok)
@@ -2534,17 +2420,14 @@ bool diligent_draw_model_instance_shadow(
 	return ok;
 }
 
-bool diligent_draw_model_shadow_with_attachments(
-	ModelInstance* instance,
-	const RenderPassOp& pass,
-	const RSRenderPassShaders& shader_pass,
-	Diligent::TEXTURE_FORMAT color_format,
-	Diligent::TEXTURE_FORMAT depth_format,
-	uint8 shadow_r,
-	uint8 shadow_g,
-	uint8 shadow_b)
+bool diligent_draw_model_shadow_with_attachments(ModelInstance* instance, const RenderPassOp& pass,
+												 const RSRenderPassShaders& shader_pass,
+												 Diligent::TEXTURE_FORMAT color_format,
+												 Diligent::TEXTURE_FORMAT depth_format, uint8 shadow_r, uint8 shadow_g,
+												 uint8 shadow_b)
 {
-	if (!diligent_draw_model_instance_shadow(instance, pass, shader_pass, color_format, depth_format, shadow_r, shadow_g, shadow_b))
+	if (!diligent_draw_model_instance_shadow(instance, pass, shader_pass, color_format, depth_format, shadow_r,
+											 shadow_g, shadow_b))
 	{
 		return false;
 	}
@@ -2572,7 +2455,8 @@ bool diligent_draw_model_shadow_with_attachments(
 			continue;
 		}
 
-		if (!diligent_draw_model_instance_shadow(child_instance, pass, shader_pass, color_format, depth_format, shadow_r, shadow_g, shadow_b))
+		if (!diligent_draw_model_instance_shadow(child_instance, pass, shader_pass, color_format, depth_format,
+												 shadow_r, shadow_g, shadow_b))
 		{
 			return false;
 		}

@@ -478,7 +478,14 @@ void ModelPiece::Term()
 		for (uint32 i = 0; i < m_nLODs; ++i)
 		{
 #ifdef DE_CLIENT_COMPILE
-			if (m_pRenderObjects[i] && r_GetRenderStruct()->m_bLoaded) r_GetRenderStruct()->DestroyRenderObject(m_pRenderObjects[i]);
+			if (m_pRenderObjects[i])
+			{
+				if (!r_GetRenderStruct()->m_bLoaded || !r_GetRenderStruct()->DestroyRenderObject(m_pRenderObjects[i]))
+				{
+					delete m_pRenderObjects[i];
+				}
+				m_pRenderObjects[i] = NULL;
+			}
 #endif
 #ifdef DE_RENDER_COMPILE
 			if (m_pRenderObjects[i]) g_Device.DestroyRenderObject(m_pRenderObjects[i]);
@@ -502,7 +509,7 @@ void ModelPiece::Term()
 	}
 
 	//now release the render object array
-	if (m_pLODDists != NULL )
+	if (m_pRenderObjects != NULL )
 	{
 		LDelete_Array(m_pModel->GetAlloc(), m_pRenderObjects, m_nLODs);
 		m_pRenderObjects = NULL;
@@ -1556,7 +1563,6 @@ bool ModelOBBOverlap(const ModelOBB &me , const ModelOBB &other )
 }
 
 #endif
-
 
 
 

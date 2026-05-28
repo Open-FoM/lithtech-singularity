@@ -165,8 +165,8 @@ Used for: Models and Animation.
 
 
 
-Discover whether a piece on the model is hidden.  Only supports the
-first \em 32 pieces in the model.  SetPieceHideStatus() returns
+Discover whether a piece on the model is hidden.  Supports pieces up to
+the engine model-piece limit.  SetPieceHideStatus() returns
 \b LT_NOCHANGE if the piece is already hidden (not an error).
 
 \see SetPieceHideStatus()
@@ -186,7 +186,7 @@ Used for: Models and Animation.
 		\b LT_NOCHANGE piece already hidden.
 
 Hide or unhide a piece on the model (they are all unhidden by
-default). Only supports the first \em 32 pieces in the model.
+default). Supports pieces up to the engine model-piece limit.
 SetPieceHideStatus() returns \b LT_NOCHANGE if the piece is already
 hidden (not an error).
 
@@ -940,7 +940,6 @@ Used for: Models Rendering.
 		
 
 #endif //! __ILTMODEL_H__
-
 
 
 

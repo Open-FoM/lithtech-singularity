@@ -43,7 +43,7 @@ class LAlloc;
 
 #define MAX_PIECE_TEXTURES		4
 
-#define MAX_PIECES_PER_MODEL 64
+#define MAX_PIECES_PER_MODEL 128
 
 #define MODEL_FILE_VERSION		25
 
@@ -1239,7 +1239,6 @@ inline LAlloc* WeightSet::GetAlloc()
 extern CModelMgr g_ModelMgr ;
 
 #endif  // __MODEL_H__
-
 
 
 
