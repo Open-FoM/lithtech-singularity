@@ -1,8 +1,17 @@
+#define RENDERSTYLE_NOALPHATEST 0
+#define RENDERSTYLE_ALPHATEST_LESS 1
+#define RENDERSTYLE_ALPHATEST_LESSEQUAL 2
+#define RENDERSTYLE_ALPHATEST_GREATER 3
+#define RENDERSTYLE_ALPHATEST_GREATEREQUAL 4
+#define RENDERSTYLE_ALPHATEST_EQUAL 5
+#define RENDERSTYLE_ALPHATEST_NOTEQUAL 6
+
 cbuffer ModelConstants
 {
     float4x4 g_MVP;
     float4x4 g_Model;
     float4 g_Color;
+    float4 g_ModelParams;
     float4 g_CameraPos;
     float4 g_FogColor;
     float4 g_FogParams;
@@ -93,8 +102,48 @@ float4 ApplyFogLinear(float4 color_linear, float3 world_pos)
     return float4(mixed, color_linear.a);
 }
 
+bool AlphaTestFail(float alpha)
+{
+    int alpha_test_mode = int(g_ModelParams.w + 0.5f);
+    float ref_alpha = g_FogParams.w;
+    if (alpha_test_mode == RENDERSTYLE_NOALPHATEST)
+    {
+        return false;
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_LESS)
+    {
+        return !(alpha < ref_alpha);
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_LESSEQUAL)
+    {
+        return !(alpha <= ref_alpha);
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_GREATER)
+    {
+        return !(alpha > ref_alpha);
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_GREATEREQUAL)
+    {
+        return !(alpha >= ref_alpha);
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_EQUAL)
+    {
+        return !(abs(alpha - ref_alpha) <= 0.0001f);
+    }
+    if (alpha_test_mode == RENDERSTYLE_ALPHATEST_NOTEQUAL)
+    {
+        return !(abs(alpha - ref_alpha) > 0.0001f);
+    }
+    return false;
+}
+
 float4 PSMain(PSInput input) : SV_TARGET
 {
+    if (AlphaTestFail(input.color.a))
+    {
+        discard;
+    }
+
     float3 color_linear = ToLinear(input.color.rgb);
     float4 fogged = ApplyFogLinear(float4(color_linear, input.color.a), input.world_pos);
 

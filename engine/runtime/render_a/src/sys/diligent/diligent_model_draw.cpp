@@ -1778,7 +1778,8 @@ void diligent_debug_add_model_info(ModelInstance* instance)
 	}
 }
 
-bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mvp, const LTMatrix& model_matrix)
+bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mvp, const LTMatrix& model_matrix,
+														 const RenderPassOp& pass)
 {
 	if (!instance || !g_diligent_state.immediate_context || !g_model_resources.constant_buffer)
 	{
@@ -1841,7 +1842,7 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	constants.model_params[0] = g_CV_LightModels.m_Val != 0 ? 1.0f : 0.0f;
 	constants.model_params[1] = g_CV_ModelApplyAmbient.m_Val != 0 ? 1.0f : 0.0f;
 	constants.model_params[2] = g_CV_ModelApplySun.m_Val != 0 ? 1.0f : 0.0f;
-	constants.model_params[3] = 0.0f;
+	constants.model_params[3] = static_cast<float>(pass.AlphaTestMode);
 	constants.camera_pos[0] = g_diligent_state.view_params.m_Pos.x;
 	constants.camera_pos[1] = g_diligent_state.view_params.m_Pos.y;
 	constants.camera_pos[2] = g_diligent_state.view_params.m_Pos.z;
@@ -1855,7 +1856,7 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	const float output_is_srgb =
 		(!g_diligent_state.glow_mode && !g_diligent_shadow_mode) ? diligent_get_swapchain_output_is_srgb() : 0.0f;
 	constants.fog_params[2] = output_is_srgb;
-	constants.fog_params[3] = 0.0f;
+	constants.fog_params[3] = static_cast<float>(pass.AlphaRef) / 255.0f;
 
 	void* mapped_constants = nullptr;
 	g_diligent_state.immediate_context->MapBuffer(g_model_resources.constant_buffer, Diligent::MAP_WRITE,
@@ -1900,7 +1901,7 @@ bool diligent_draw_mesh_with_pipeline_for_target(ModelInstance* instance, const 
 		return false;
 	}
 
-	if (!diligent_update_model_constants(instance, mvp, model_matrix))
+	if (!diligent_update_model_constants(instance, mvp, model_matrix, pass))
 	{
 		return false;
 	}
@@ -2214,7 +2215,7 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 				pass.AlphaRef = 0;
 				pass.DynamicLight = false;
 				pass.ZBufferTestMode = RENDERSTYLE_ALPHATEST_LESSEQUAL;
-				pass.AlphaTestMode = RENDERSTYLE_NOALPHATEST;
+				pass.AlphaTestMode = RENDERSTYLE_ALPHATEST_GREATER;
 				pass.FillMode = RENDERSTYLE_FILL;
 				pass.bUseBumpEnvMap = false;
 				pass.BumpEnvMapStage = 0;
