@@ -129,6 +129,7 @@ target_sources (
 		../../../sdk/inc/iltserver.h
 		../../../sdk/inc/iltsoundmgr.h
 		../../../sdk/inc/iltspritecontrol.h
+		../../../sdk/inc/iltsharedgamestate.h
 		../../../sdk/inc/iltstream.h
 		../../../sdk/inc/ilttexinterface.h
 		../../../sdk/inc/ilttransform.h
@@ -384,6 +385,7 @@ target_sources (
 		../../shared/src/objectmgr.cpp
 		../../shared/src/parse_world_info.cpp
 		../../shared/src/ratetracker.cpp
+		../../shared/src/sharedgamestate.cpp
 		../../shared/src/shared_iltcommon.cpp
 		../../shared/src/shared_iltphysics.cpp
 		../../shared/src/spritecontrolimpl.cpp

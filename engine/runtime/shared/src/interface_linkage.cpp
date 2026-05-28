@@ -49,6 +49,9 @@
 		// Client file manager implementation (used by tools like DEdit2).
 		link_to_implementation(CClientFileMgr, Default);
 
+		// Shared game-state service used by client and server game modules.
+		link_to_implementation(CLTSharedGameState, Default);
+
         //Remote Communication Contex LIB implements interfaces??
 
 #ifdef LIBLTINFO_OUTPUT_REDIRECTION

@@ -47,6 +47,7 @@ target_sources (
 		parse_world_info.cpp
 		pixelformat.cpp
 		ratetracker.cpp
+		sharedgamestate.cpp
 		shared_iltcommon.cpp
 		shared_iltphysics.cpp
 		spritecontrolimpl.cpp
