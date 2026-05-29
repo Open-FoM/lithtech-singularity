@@ -503,13 +503,18 @@ static DrawPrimPipeline* GetPipeline(
 	pipeline_info.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 
 	std::vector<Diligent::ShaderResourceVariableDesc> variables;
+	// NOTE: sampler_desc must live at function scope - its address is stored in
+	// pipeline_info.PSODesc.ResourceLayout.ImmutableSamplers below and read by
+	// CreateGraphicsPipelineState() *after* this block. Declaring it inside the
+	// `if` left a dangling pointer -> empty SamplerOrTextureName -> textured
+	// drawprim PSO creation failed (broke all textured 2D, incl. font/text).
+	Diligent::ImmutableSamplerDesc sampler_desc;
 	if (key.textured)
 	{
 		variables.push_back({Diligent::SHADER_TYPE_PIXEL, "g_Texture", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC});
 		pipeline_info.PSODesc.ResourceLayout.Variables = variables.data();
 		pipeline_info.PSODesc.ResourceLayout.NumVariables = static_cast<uint32>(variables.size());
 
-		Diligent::ImmutableSamplerDesc sampler_desc;
 		sampler_desc.ShaderStages = Diligent::SHADER_TYPE_PIXEL;
 		sampler_desc.Desc.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 		sampler_desc.Desc.MagFilter = Diligent::FILTER_TYPE_LINEAR;

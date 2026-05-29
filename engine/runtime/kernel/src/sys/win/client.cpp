@@ -31,6 +31,7 @@ void* objc_getClass(const char* name);
 #include "ltjs_system_event_queue.h"
 #include "ltjs_sdl_subsystem.h"
 #include "ltjs_sdl_utils.h"
+#include "ltjs_imgui_input.h"
 #endif // LTJS_SDL_BACKEND
 
 
@@ -191,6 +192,11 @@ SDL_MetalView g_metal_view = nullptr;
 bool CSystemEventHandler::operator()(
 	const ltjs::SystemEvent& event)
 {
+	// Let the Dear ImGui host observe every input event (mouse/keyboard/text).
+	// This only updates ImGui IO; the engine still routes the event normally so
+	// global keys (e.g. ESC) continue to reach the game shell.
+	ltjs_imgui_handle_sdl_event(&event);
+
 	const auto is_handle_window_messages = (g_ClientGlob.m_bProcessWindowMessages && g_pClientMgr);
 
 	if (!is_handle_window_messages)

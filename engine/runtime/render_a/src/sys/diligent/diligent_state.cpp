@@ -5,6 +5,8 @@
 
 DiligentRenderState g_diligent_state;
 
+void (*g_diligent_imgui_term_hook)() = nullptr;
+
 define_holder_to_instance(ILTCommon, g_diligent_state.common_client, Client);
 define_holder(IWorldClientBSP, g_diligent_state.world_bsp_client);
 define_holder(IWorldSharedBSP, g_diligent_state.world_bsp_shared);
