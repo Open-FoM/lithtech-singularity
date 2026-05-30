@@ -41,6 +41,11 @@
 // black under the normal lit path. Set around the sky model loop.
 bool g_diligent_force_fullbright_models = false;
 
+// When true, model instances are drawn with depth test+write disabled (NOZ) —
+// used for sky objects so the stacked sky layers paint back-to-front without
+// Z-fighting as the sky frustum's depth range shifts each frame.
+bool g_diligent_force_depthless_models = false;
+
 struct DiligentModelConstants
 {
 	std::array<float, 16> mvp{};
@@ -2242,6 +2247,14 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 				{
 					stage.TextureParam = RENDERSTYLE_NOTEXTURE;
 				}
+			}
+
+			// Sky objects render depth-disabled so the stacked sky layers paint
+			// back-to-front without Z-fighting / flickering as the sky frustum's
+			// depth range shifts each frame (reference draws all sky objects NOZ).
+			if (g_diligent_force_depthless_models)
+			{
+				pass.ZBufferMode = RENDERSTYLE_NOZ;
 			}
 
 			DiligentTextureArray textures = diligent_resolve_textures(pass, piece_textures.data());

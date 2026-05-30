@@ -265,13 +265,22 @@ bool diligent_draw_sky_objects(SceneDesc* desc, const ViewParams& sky_params, bo
 		return true;
 	}
 
-	// Sky model objects (skybox/clouds) draw fullbright — the sky box has no world
-	// lighting, so the normal lit model path renders them black.
-	struct SkyFullbrightScope
+	// Sky model objects (skybox/clouds) draw fullbright (the sky box has no world
+	// lighting, so the lit path renders them black) and depth-disabled (so the
+	// stacked sky layers paint back-to-front without Z-fighting / flickering).
+	struct SkyModelDrawScope
 	{
-		SkyFullbrightScope() { g_diligent_force_fullbright_models = true; }
-		~SkyFullbrightScope() { g_diligent_force_fullbright_models = false; }
-	} sky_fullbright_scope;
+		SkyModelDrawScope()
+		{
+			g_diligent_force_fullbright_models = true;
+			g_diligent_force_depthless_models = true;
+		}
+		~SkyModelDrawScope()
+		{
+			g_diligent_force_fullbright_models = false;
+			g_diligent_force_depthless_models = false;
+		}
+	} sky_model_draw_scope;
 
 	std::vector<WorldModelInstance*> solid_world_models;
 	std::vector<WorldModelInstance*> translucent_world_models;
