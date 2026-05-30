@@ -198,6 +198,10 @@ private:
 /// if (!diligent_draw_model_instance(instance)) { /* handle error */ }
 /// \endcode
 bool diligent_draw_model_instance(ModelInstance* instance);
+/// \brief When true, model instances are drawn fullbright (unlit). Set around
+/// sky-object drawing (FLAG2_SKYOBJECT), which has no world lighting context and
+/// would otherwise render black. Also honored per-object via FLAG_NOLIGHT.
+extern bool g_diligent_force_fullbright_models;
 /// \brief Draws a model instance using an explicit render-style map.
 /// \details Used by glow passes or editor overrides to remap render styles.
 bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map);
