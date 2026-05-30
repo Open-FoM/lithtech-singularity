@@ -220,6 +220,50 @@ void diligent_process_light_object(LTObject* object)
 	g_diligent_world_dynamic_lights[g_diligent_num_world_dynamic_lights++] = light;
 }
 
+// Half-extents used to frustum-cull an object. Models must be culled against their
+// VISUAL radius (m_VisRadius * scale), not the collision box m_Dims, or their mesh
+// pops in/out while still on-screen. Mirrors Jupiter g_ObjectHandlers[].m_GetDims
+// (d3d/drawobjects.cpp d3d_GetDims_Model); other types use m_Dims (d3d_GetDims_Generic).
+LTVector diligent_object_cull_dims(LTObject* object)
+{
+	if (object->m_ObjectType == OT_MODEL)
+	{
+		ModelInstance* model = object->ToModel();
+		if (model)
+		{
+			const float vis_radius = model->GetRadius(); // m_VisRadius * max scale (de_objects.h:421)
+			if (vis_radius > 0.0f)
+			{
+				return LTVector(vis_radius, vis_radius, vis_radius);
+			}
+		}
+	}
+	return object->m_Dims;
+}
+
+// Per-object frustum visibility test mirroring Jupiter d3d_ReallyProcessObject:
+// view-attached objects (FLAG_REALLYCLOSE) are never culled, and an object whose
+// box contains the camera is always visible (avoids popping large/close objects).
+bool diligent_object_frustum_visible(const ViewParams& params, LTObject* object)
+{
+	if ((object->m_Flags & FLAG_REALLYCLOSE) != 0)
+	{
+		return true;
+	}
+
+	const LTVector dims = diligent_object_cull_dims(object);
+	const LTVector min = object->m_Pos - dims;
+	const LTVector max = object->m_Pos + dims;
+
+	if (params.m_Pos.x >= min.x && params.m_Pos.x <= max.x && params.m_Pos.y >= min.y && params.m_Pos.y <= max.y &&
+		params.m_Pos.z >= min.z && params.m_Pos.z <= max.z)
+	{
+		return true;
+	}
+
+	return params.ViewAABBIntersect(min, max);
+}
+
 void diligent_collect_world_dynamic_lights(const ViewParams& params, WorldTreeNode* node)
 {
 	if (!node)
@@ -236,9 +280,7 @@ void diligent_collect_world_dynamic_lights(const ViewParams& params, WorldTreeNo
 			continue;
 		}
 
-		const LTVector min = object->m_Pos - object->m_Dims;
-		const LTVector max = object->m_Pos + object->m_Dims;
-		if (!params.ViewAABBIntersect(min, max))
+		if (!diligent_object_frustum_visible(params, object))
 		{
 			continue;
 		}
@@ -284,9 +326,7 @@ void diligent_filter_world_node_for_models(const ViewParams& params, WorldTreeNo
 			continue;
 		}
 
-		const LTVector min = object->m_Pos - object->m_Dims;
-		const LTVector max = object->m_Pos + object->m_Dims;
-		if (!params.ViewAABBIntersect(min, max))
+		if (!diligent_object_frustum_visible(params, object))
 		{
 			continue;
 		}
@@ -332,9 +372,7 @@ void diligent_filter_world_node_for_world_models(const ViewParams& params, World
 			continue;
 		}
 
-		const LTVector min = object->m_Pos - object->m_Dims;
-		const LTVector max = object->m_Pos + object->m_Dims;
-		if (!params.ViewAABBIntersect(min, max))
+		if (!diligent_object_frustum_visible(params, object))
 		{
 			continue;
 		}
