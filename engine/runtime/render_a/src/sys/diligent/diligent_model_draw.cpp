@@ -46,6 +46,11 @@ bool g_diligent_force_fullbright_models = false;
 // Z-fighting as the sky frustum's depth range shifts each frame.
 bool g_diligent_force_depthless_models = false;
 
+// When true, model instances are drawn alpha-blended (src-alpha over) — used for
+// the sky cloud layers to approximate RS\SkyTranslucent so the cloud texture
+// composites softly instead of as opaque/cutout dark chunks.
+bool g_diligent_force_alphablend_models = false;
+
 struct DiligentModelConstants
 {
 	std::array<float, 16> mvp{};
@@ -2255,6 +2260,10 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 			if (g_diligent_force_depthless_models)
 			{
 				pass.ZBufferMode = RENDERSTYLE_NOZ;
+			}
+			if (g_diligent_force_alphablend_models && pass.BlendMode == RENDERSTYLE_NOBLEND)
+			{
+				pass.BlendMode = RENDERSTYLE_BLEND_MOD_SRCALPHA;
 			}
 
 			DiligentTextureArray textures = diligent_resolve_textures(pass, piece_textures.data());

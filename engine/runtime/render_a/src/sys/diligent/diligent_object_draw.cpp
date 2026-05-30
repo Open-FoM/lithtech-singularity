@@ -325,7 +325,13 @@ bool diligent_draw_sky_objects(SceneDesc* desc, const ViewParams& sky_params, bo
 			if (model_instance)
 			{
 				out_drew = true;
-				if (!diligent_draw_model_instance(model_instance))
+				// Cloud layers (RS\SkyTranslucent, no FLAG2_FORCETRANSLUCENT) composite
+				// with alpha blending so the cloud texture is soft/translucent; the
+				// opaque cube skybox (FLAG2_FORCETRANSLUCENT) keeps the NOBLEND default.
+				g_diligent_force_alphablend_models = (sky_object->m_Flags2 & FLAG2_FORCETRANSLUCENT) == 0;
+				const bool ok = diligent_draw_model_instance(model_instance);
+				g_diligent_force_alphablend_models = false;
+				if (!ok)
 				{
 					return false;
 				}

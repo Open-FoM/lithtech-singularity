@@ -207,6 +207,11 @@ extern bool g_diligent_force_fullbright_models;
 /// (skybox cube + cloud layers) don't Z-fight / flicker as the per-frame sky
 /// frustum shifts the projected depth range with camera movement.
 extern bool g_diligent_force_depthless_models;
+/// \brief When true, model instances render alpha-blended (src-alpha over) instead
+/// of the opaque NOBLEND default. Set per sky cloud-layer object to approximate the
+/// RS\\SkyTranslucent render style so cloud textures composite softly rather than as
+/// opaque/cutout chunks.
+extern bool g_diligent_force_alphablend_models;
 /// \brief Draws a model instance using an explicit render-style map.
 /// \details Used by glow passes or editor overrides to remap render styles.
 bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map);
