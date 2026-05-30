@@ -45,6 +45,7 @@ struct DiligentRBSection
 	uint8 shader_code;
 	bool fullbright = false;
 	bool light_anim = false;
+	bool is_sky = false; // sky/occluder placeholder surface (tex\occluder.dtx) - skipped in world draw
 	uint32 poly_index = 0xFFFFFFFFu;
 	uint32 start_index;
 	uint32 tri_count;

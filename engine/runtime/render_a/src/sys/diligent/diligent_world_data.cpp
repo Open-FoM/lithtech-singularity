@@ -1,6 +1,31 @@
 #include "diligent_world_data.h"
 #include "diligent_state.h"
 
+#include <cstring> // sky/occluder placeholder texture detection
+
+namespace
+{
+// True for the sky/occluder placeholder texture (e.g. "tex\occluder.dtx") that
+// FoM uses on sky brushes. Such surfaces are not real world geometry; the
+// renderer must skip them (otherwise the green OCCLUDER texture fills the sky).
+bool IsSkyPlaceholderTexture(const char* name)
+{
+	if (name == nullptr || name[0] == '\0')
+	{
+		return false;
+	}
+	char lower[MAX_PATH + 1];
+	size_t i = 0;
+	for (; name[i] != '\0' && i < sizeof(lower) - 1; ++i)
+	{
+		const char c = name[i];
+		lower[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+	}
+	lower[i] = '\0';
+	return std::strstr(lower, "occluder") != nullptr;
+}
+} // namespace
+
 #include "diligent_buffers.h"
 #include "world_client_bsp.h"
 
@@ -571,6 +596,7 @@ bool DiligentRenderBlock::Load(ILTStream* stream)
 		section.start_index = index_offset;
 		section.tri_count = tri_count;
 		section.shader_code = shader_code;
+		section.is_sky = IsSkyPlaceholderTexture(texture_names[0]);
 		index_offset += tri_count * 3;
 
 		for (uint32 tex_index = 0; tex_index < DiligentRBSection::kNumTextures; ++tex_index)
