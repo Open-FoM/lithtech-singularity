@@ -19,7 +19,8 @@ enum class UndoActionType
 	MoveNode,
 	ChangeVisibility,
 	ChangeFrozen,
-	TransformNode
+	TransformNode,
+	FaceTexture
 };
 
 /// Stores the previous visibility/frozen state for a single node.
@@ -49,6 +50,15 @@ struct TransformChange
 	std::vector<uint32_t> after_indices;     ///< Brush indices after transform (for mirror winding)
 };
 
+/// Stores a single face's texture data before/after an edit (for undo).
+struct FaceTextureChange
+{
+	int node_id = -1;
+	uint32_t triangle_index = 0;
+	BrushFaceTextureData before;
+	BrushFaceTextureData after;
+};
+
 struct UndoAction
 {
 	UndoActionType type = UndoActionType::CreateNode;
@@ -65,6 +75,9 @@ struct UndoAction
 
 	/// For TransformNode: batch of transform changes (supports multi-selection).
 	std::vector<TransformChange> transform_changes;
+
+	/// For FaceTexture: batch of per-face texture changes.
+	std::vector<FaceTextureChange> face_texture_changes;
 };
 
 class UndoStack
@@ -96,6 +109,9 @@ public:
 	/// @param target Which tree the nodes belong to.
 	/// @param changes Vector of transform changes with before/after states.
 	void PushTransform(UndoTarget target, std::vector<TransformChange> changes);
+
+	/// Push a batch of per-face texture changes (UV mapping, surface flags, alpha, texture name).
+	void PushFaceTexture(UndoTarget target, std::vector<FaceTextureChange> changes);
 
 	void Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
 	          std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props);

@@ -55,11 +55,27 @@ void DrawStatusBar(const StatusBarInfo& info)
     // Selection count
     if (info.selection_count > 0)
     {
-      ImGui::Text("%zu selected", info.selection_count);
+      if (info.selection_type != nullptr)
+      {
+        // Show type-specific selection (e.g., "2 faces selected")
+        ImGui::Text("%zu %s%s selected", info.selection_count, info.selection_type,
+          info.selection_count == 1 ? "" : "s");
+      }
+      else
+      {
+        ImGui::Text("%zu selected", info.selection_count);
+      }
     }
     else
     {
-      ImGui::TextDisabled("No selection");
+      if (info.selection_type != nullptr)
+      {
+        ImGui::TextDisabled("No %ss selected", info.selection_type);
+      }
+      else
+      {
+        ImGui::TextDisabled("No selection");
+      }
     }
 
     ImGui::SameLine(0.0f, 16.0f);
@@ -69,6 +85,20 @@ void DrawStatusBar(const StatusBarInfo& info)
     // Current tool
     const char* tool_name = ToolName(info.current_tool);
     ImGui::Text("%s Tool", tool_name);
+
+    // Edit mode (Object/Vertex/Edge/Face)
+    ImGui::SameLine(0.0f, 16.0f);
+    ImGui::TextDisabled("|");
+    ImGui::SameLine(0.0f, 16.0f);
+    if (info.edit_mode != nullptr && info.edit_mode[0] != 'O')
+    {
+      // Highlight geometry modes in a different color
+      ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Mode: %s", info.edit_mode);
+    }
+    else
+    {
+      ImGui::Text("Mode: %s", info.edit_mode != nullptr ? info.edit_mode : "Object");
+    }
 
     // Selection filter status
     if (info.filter_active)

@@ -35,6 +35,8 @@ add_executable (
 	${CMAKE_CURRENT_LIST_DIR}/uv_fit_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/texture_replace_tests.cpp
 	${CMAKE_CURRENT_LIST_DIR}/surface_flags_tests.cpp
+	# Face properties tests (EPIC-10)
+	${CMAKE_CURRENT_LIST_DIR}/face_properties_tests.cpp
 )
 
 set_target_properties (

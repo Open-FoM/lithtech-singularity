@@ -11,6 +11,7 @@ struct StatusBarInfo {
   bool cursor_valid = false;
   std::array<float, 3> cursor_pos = {0.0f, 0.0f, 0.0f};
   size_t selection_count = 0;
+  const char* selection_type = nullptr; ///< Type of selection (e.g., "face", "vertex", "edge") or null for objects
   EditorTool current_tool = EditorTool::Select;
   const char* hint = nullptr;
   float fps = 0.0f;
@@ -18,6 +19,7 @@ struct StatusBarInfo {
   bool filter_active = false;          ///< Whether selection filter is enabled
   const char* filter_status = nullptr; ///< Brief filter status text (e.g., "5/7")
   const char* depth_cycle_status = nullptr; ///< Depth cycle status (e.g., "2 of 5")
+  const char* edit_mode = "Object";    ///< Current edit mode (Object, Vertex, Edge, Face)
 };
 
 /// Draw the status bar at the bottom of the main window.

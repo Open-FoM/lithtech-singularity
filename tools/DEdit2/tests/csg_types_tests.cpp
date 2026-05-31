@@ -354,7 +354,7 @@ TEST(CSGBrush, FromTriangleMesh_Box) {
 
   CSGBrush brush = CSGBrush::FromTriangleMesh(vertices, indices);
   EXPECT_TRUE(brush.IsValid());
-  EXPECT_EQ(brush.PolygonCount(), 4u); // 4 triangles
+  EXPECT_EQ(brush.PolygonCount(), 2u); // 2 merged planar faces
 }
 
 TEST(CSGBrush, ComputeBounds) {

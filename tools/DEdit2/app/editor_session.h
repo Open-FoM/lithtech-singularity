@@ -22,6 +22,7 @@
 #include "geometry/geometry_mode_state.h"
 #include "transform/mirror_dialog.h"
 #include "transform/rotate_dialog.h"
+#include "ui_face_properties.h"
 #include "ui_marker.h"
 #include "ui_texture_browser.h"
 #include "undo_stack.h"
@@ -101,7 +102,7 @@ struct PanelVisibility {
   bool show_properties = true;
   bool show_console = true;
   bool show_tools = true;
-  bool show_texture_browser = false;  ///< EPIC-10: Texture browser panel
+  bool show_texture_browser = false;   ///< EPIC-10: Texture browser panel
 };
 
 struct EditorSession
@@ -194,6 +195,17 @@ struct EditorSession
   UVFitDialogState uv_fit_dialog;
   TextureReplaceDialogState texture_replace_dialog;
   SurfaceFlagsDialogState surface_flags_dialog;
+
+  /// Face Properties panel state (EPIC-10).
+  FacePropertiesPanel face_properties_panel;
+
+  /// Undoable face-texture edit gesture tracking (EPIC-10).
+  bool face_edit_in_progress = false;                 ///< An undoable face-texture edit gesture is active
+  std::vector<FaceTextureChange> face_edit_snapshot;  ///< BEFORE-states captured at gesture start
+
+  /// Texture eyedropper state (EPIC-10).
+  /// Stores the last picked texture for Alt+Click eyedropper workflow.
+  PickedTextureState picked_texture;
 
   /// Flag to trigger brush geometry update for rendering.
   /// Set to true when brushes are created, modified, or deleted.

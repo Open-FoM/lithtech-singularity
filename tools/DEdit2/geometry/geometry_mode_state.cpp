@@ -37,6 +37,16 @@ void GeometryModeState::ToggleGeometryMode() {
   }
 }
 
+void GeometryModeState::CycleMode() {
+  // Cycle: Object -> Vertex -> Edge -> Face -> Object
+  switch (current_mode) {
+    case EditMode::Object: SetMode(EditMode::Vertex); break;
+    case EditMode::Vertex: SetMode(EditMode::Edge); break;
+    case EditMode::Edge: SetMode(EditMode::Face); break;
+    case EditMode::Face: SetMode(EditMode::Object); break;
+  }
+}
+
 bool GeometryModeState::IsInGeometryMode() const { return IsGeometryMode(current_mode); }
 
 void GeometryModeState::Reset() {

@@ -803,9 +803,219 @@ bool DrawToolButton(EditorTool tool, EditorTool selected, float size)
   return clicked;
 }
 
+/// Draw an icon representing an edit mode using ImGui draw primitives.
+void DrawEditModeIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, EditMode mode, bool selected)
+{
+  // Blue for Object, Green for geometry modes
+  ImU32 bg_color, fg_color, outline_color;
+  if (mode == EditMode::Object)
+  {
+    bg_color = selected ? IM_COL32(70, 110, 180, 255) : IM_COL32(50, 50, 55, 255);
+    fg_color = selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 255);
+    outline_color = selected ? IM_COL32(100, 150, 220, 255) : IM_COL32(70, 70, 80, 255);
+  }
+  else
+  {
+    bg_color = selected ? IM_COL32(70, 130, 80, 255) : IM_COL32(50, 50, 55, 255);
+    fg_color = selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 255);
+    outline_color = selected ? IM_COL32(100, 180, 120, 255) : IM_COL32(70, 70, 80, 255);
+  }
+
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float w = max.x - min.x;
+  const float h = max.y - min.y;
+  const float s = std::min(w, h) * 0.35f;
+
+  // Background
+  draw_list->AddRectFilled(min, max, bg_color, 4.0f);
+  draw_list->AddRect(min, max, outline_color, 4.0f);
+
+  switch (mode)
+  {
+  case EditMode::Object:
+    // Cube icon (3D box)
+    {
+      const float box_s = s * 0.6f;
+      const float offset = s * 0.2f;
+      // Front face
+      draw_list->AddRect(
+        ImVec2(cx - box_s + offset, cy - box_s + offset),
+        ImVec2(cx + box_s + offset, cy + box_s + offset),
+        fg_color, 0.0f, 0, 1.5f);
+      // Back face
+      draw_list->AddRect(
+        ImVec2(cx - box_s - offset, cy - box_s - offset),
+        ImVec2(cx + box_s - offset, cy + box_s - offset),
+        fg_color, 0.0f, 0, 1.5f);
+      // Connect corners
+      draw_list->AddLine(ImVec2(cx - box_s - offset, cy - box_s - offset),
+                         ImVec2(cx - box_s + offset, cy - box_s + offset), fg_color, 1.5f);
+      draw_list->AddLine(ImVec2(cx + box_s - offset, cy - box_s - offset),
+                         ImVec2(cx + box_s + offset, cy - box_s + offset), fg_color, 1.5f);
+      draw_list->AddLine(ImVec2(cx + box_s - offset, cy + box_s - offset),
+                         ImVec2(cx + box_s + offset, cy + box_s + offset), fg_color, 1.5f);
+      draw_list->AddLine(ImVec2(cx - box_s - offset, cy + box_s - offset),
+                         ImVec2(cx - box_s + offset, cy + box_s + offset), fg_color, 1.5f);
+    }
+    break;
+
+  case EditMode::Vertex:
+    // Dots at corners of a shape
+    {
+      const float r = s * 0.15f;
+      const float spread = s * 0.55f;
+      // Four corner dots
+      draw_list->AddCircleFilled(ImVec2(cx - spread, cy - spread), r, fg_color);
+      draw_list->AddCircleFilled(ImVec2(cx + spread, cy - spread), r, fg_color);
+      draw_list->AddCircleFilled(ImVec2(cx + spread, cy + spread), r, fg_color);
+      draw_list->AddCircleFilled(ImVec2(cx - spread, cy + spread), r, fg_color);
+      // Connect with lines (dimmer)
+      const ImU32 line_color = IM_COL32(
+        (fg_color & 0xFF) * 0.5f,
+        ((fg_color >> 8) & 0xFF) * 0.5f,
+        ((fg_color >> 16) & 0xFF) * 0.5f,
+        (fg_color >> 24) & 0xFF);
+      draw_list->AddLine(ImVec2(cx - spread, cy - spread), ImVec2(cx + spread, cy - spread), line_color, 1.0f);
+      draw_list->AddLine(ImVec2(cx + spread, cy - spread), ImVec2(cx + spread, cy + spread), line_color, 1.0f);
+      draw_list->AddLine(ImVec2(cx + spread, cy + spread), ImVec2(cx - spread, cy + spread), line_color, 1.0f);
+      draw_list->AddLine(ImVec2(cx - spread, cy + spread), ImVec2(cx - spread, cy - spread), line_color, 1.0f);
+    }
+    break;
+
+  case EditMode::Edge:
+    // Highlighted edge on a shape
+    {
+      const float spread = s * 0.55f;
+      // Shape outline (dimmer)
+      const ImU32 dim_color = IM_COL32(
+        (fg_color & 0xFF) * 0.4f,
+        ((fg_color >> 8) & 0xFF) * 0.4f,
+        ((fg_color >> 16) & 0xFF) * 0.4f,
+        (fg_color >> 24) & 0xFF);
+      draw_list->AddLine(ImVec2(cx - spread, cy - spread), ImVec2(cx + spread, cy - spread), dim_color, 1.0f);
+      draw_list->AddLine(ImVec2(cx + spread, cy + spread), ImVec2(cx - spread, cy + spread), dim_color, 1.0f);
+      draw_list->AddLine(ImVec2(cx - spread, cy + spread), ImVec2(cx - spread, cy - spread), dim_color, 1.0f);
+      // Highlighted edge (bright, thick)
+      draw_list->AddLine(ImVec2(cx + spread, cy - spread), ImVec2(cx + spread, cy + spread), fg_color, 3.0f);
+    }
+    break;
+
+  case EditMode::Face:
+    // Filled face/polygon
+    {
+      const float spread = s * 0.55f;
+      // Filled quad
+      draw_list->AddRectFilled(
+        ImVec2(cx - spread, cy - spread),
+        ImVec2(cx + spread, cy + spread),
+        IM_COL32(
+          (fg_color & 0xFF),
+          ((fg_color >> 8) & 0xFF),
+          ((fg_color >> 16) & 0xFF),
+          128));
+      // Outline
+      draw_list->AddRect(
+        ImVec2(cx - spread, cy - spread),
+        ImVec2(cx + spread, cy + spread),
+        fg_color, 0.0f, 0, 1.5f);
+    }
+    break;
+  }
+}
+
+/// Get name for edit mode.
+const char* EditModeName(EditMode mode)
+{
+  switch (mode)
+  {
+  case EditMode::Object: return "Object";
+  case EditMode::Vertex: return "Vertex";
+  case EditMode::Edge: return "Edge";
+  case EditMode::Face: return "Face";
+  default: return "Unknown";
+  }
+}
+
+/// Get tooltip for edit mode.
+const char* EditModeTooltip(EditMode mode)
+{
+  switch (mode)
+  {
+  case EditMode::Object: return "Select whole brushes";
+  case EditMode::Vertex: return "Select and move vertices";
+  case EditMode::Edge: return "Select and move edges";
+  case EditMode::Face: return "Select and edit faces";
+  default: return "";
+  }
+}
+
+/// Get shortcut for edit mode.
+const char* EditModeShortcut(EditMode mode)
+{
+  switch (mode)
+  {
+  case EditMode::Object: return "Tab";
+  case EditMode::Vertex: return "1";
+  case EditMode::Edge: return "2";
+  case EditMode::Face: return "3";
+  default: return "";
+  }
+}
+
+/// Draw an edit mode button and return true if clicked.
+bool DrawEditModeButton(EditMode mode, EditMode current_mode, float size)
+{
+  const bool is_selected = (mode == current_mode);
+  const char* name = EditModeName(mode);
+  const char* shortcut = EditModeShortcut(mode);
+  const char* tooltip = EditModeTooltip(mode);
+
+  // Create unique ID
+  char id[64];
+  snprintf(id, sizeof(id), "##editmode_%d", static_cast<int>(mode));
+
+  // Get current position
+  const ImVec2 pos = ImGui::GetCursorScreenPos();
+  const ImVec2 button_size(size, size);
+
+  // Invisible button for interaction
+  const bool clicked = ImGui::InvisibleButton(id, button_size);
+  const bool hovered = ImGui::IsItemHovered();
+
+  // Draw the icon
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  const ImVec2 min_pos = pos;
+  const ImVec2 max_pos(pos.x + size, pos.y + size);
+
+  // Hover highlight
+  if (hovered && !is_selected)
+  {
+    draw_list->AddRectFilled(min_pos, max_pos, IM_COL32(60, 60, 70, 255), 4.0f);
+  }
+
+  DrawEditModeIcon(draw_list, min_pos, max_pos, mode, is_selected);
+
+  // Tooltip on hover
+  if (hovered)
+  {
+    ImGui::BeginTooltip();
+    ImGui::Text("%s", name);
+    if (shortcut[0] != '\0')
+    {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(%s)", shortcut);
+    }
+    ImGui::TextDisabled("%s", tooltip);
+    ImGui::EndTooltip();
+  }
+
+  return clicked;
+}
+
 } // namespace
 
-ToolsPanelResult DrawToolsPanel(ToolsPanelState& state)
+ToolsPanelResult DrawToolsPanel(ToolsPanelState& state, EditMode current_edit_mode)
 {
   ToolsPanelResult result{};
 
@@ -825,6 +1035,38 @@ ToolsPanelResult DrawToolsPanel(ToolsPanelState& state)
   const float spacing = 4.0f;
   const float avail_width = ImGui::GetContentRegionAvail().x;
   const int buttons_per_row = std::max(1, static_cast<int>((avail_width + spacing) / (button_size + spacing)));
+
+  // Edit Mode section - all 4 modes with icon buttons
+  ImGui::TextDisabled("Edit Mode");
+  ImGui::Separator();
+  {
+    int col = 0;
+    for (EditMode mode : {EditMode::Object, EditMode::Vertex, EditMode::Edge, EditMode::Face})
+    {
+      if (col > 0)
+      {
+        ImGui::SameLine(0.0f, spacing);
+      }
+
+      if (DrawEditModeButton(mode, current_edit_mode, button_size))
+      {
+        if (current_edit_mode != mode)
+        {
+          result.edit_mode_changed = true;
+          result.new_edit_mode = mode;
+        }
+      }
+
+      col++;
+      if (col >= buttons_per_row)
+      {
+        col = 0;
+      }
+    }
+  }
+
+  ImGui::Spacing();
+  ImGui::Spacing();
 
   // Transform tools section
   ImGui::TextDisabled("Transform");

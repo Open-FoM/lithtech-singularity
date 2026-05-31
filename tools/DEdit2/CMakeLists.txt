@@ -147,6 +147,7 @@ add_library (
 		ui_scene.cpp
 		ui_shared.cpp
 		ui_texture_browser.cpp
+		ui_face_properties.cpp
 		undo_stack.cpp
 		${LTJS_ROOT}/libs/imgui/imgui.cpp
 		${LTJS_ROOT}/libs/imgui/imgui_draw.cpp

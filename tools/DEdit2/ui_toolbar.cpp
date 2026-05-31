@@ -254,9 +254,57 @@ void DrawSnapIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, bool enabled, b
   draw_list->AddCircleFilled(ImVec2(cx + grid_size, cy + grid_size), dot_r, fg_color);
 }
 
+/// Draw a geometry mode toggle icon (cube with highlighted face).
+void DrawGeometryModeIcon(ImDrawList* draw_list, ImVec2 min, ImVec2 max, bool enabled, bool hovered)
+{
+  const ImU32 bg_color = enabled ? IM_COL32(70, 130, 80, 255)
+    : (hovered ? IM_COL32(60, 60, 70, 255) : IM_COL32(45, 45, 50, 255));
+  const ImU32 fg_color = enabled ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 255);
+  const ImU32 face_color = enabled ? IM_COL32(255, 200, 100, 200) : IM_COL32(120, 120, 130, 150);
+
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float w = max.x - min.x;
+  const float h = max.y - min.y;
+  const float s = std::min(w, h) * 0.30f;
+
+  draw_list->AddRectFilled(min, max, bg_color, 3.0f);
+
+  // Draw an isometric cube with a highlighted front face
+  const float cube_s = s * 0.6f;
+  const float depth = cube_s * 0.4f;
+
+  // Front face (highlighted)
+  const ImVec2 front_tl(cx - cube_s * 0.5f, cy - cube_s * 0.3f);
+  const ImVec2 front_br(cx + cube_s * 0.3f, cy + cube_s * 0.5f);
+  draw_list->AddRectFilled(front_tl, front_br, face_color);
+  draw_list->AddRect(front_tl, front_br, fg_color, 0.0f, 0, 1.2f);
+
+  // Top face
+  const ImVec2 top_pts[4] = {
+    ImVec2(front_tl.x, front_tl.y),
+    ImVec2(front_tl.x + depth, front_tl.y - depth * 0.6f),
+    ImVec2(front_br.x + depth, front_tl.y - depth * 0.6f),
+    ImVec2(front_br.x, front_tl.y)
+  };
+  draw_list->AddConvexPolyFilled(top_pts, 4, IM_COL32(100, 100, 110, 150));
+  draw_list->AddPolyline(top_pts, 4, fg_color, ImDrawFlags_Closed, 1.2f);
+
+  // Right face
+  const ImVec2 right_pts[4] = {
+    ImVec2(front_br.x, front_tl.y),
+    ImVec2(front_br.x + depth, front_tl.y - depth * 0.6f),
+    ImVec2(front_br.x + depth, front_br.y - depth * 0.6f),
+    ImVec2(front_br.x, front_br.y)
+  };
+  draw_list->AddConvexPolyFilled(right_pts, 4, IM_COL32(80, 80, 90, 150));
+  draw_list->AddPolyline(right_pts, 4, fg_color, ImDrawFlags_Closed, 1.2f);
+}
+
 } // namespace
 
-ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, bool snap_enabled)
+ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, bool snap_enabled,
+                          bool in_geometry_mode)
 {
   ToolbarResult result{};
 
@@ -423,6 +471,35 @@ ToolbarResult DrawToolbar(ToolsPanelState& state, bool can_undo, bool can_redo, 
         ImGui::BeginTooltip();
         ImGui::Text("Toggle Snap (%s)", snap_enabled ? "ON" : "OFF");
         ImGui::Text("Hold Ctrl while dragging to temporarily %s snap", snap_enabled ? "disable" : "enable");
+        ImGui::EndTooltip();
+      }
+
+      ImGui::SameLine();
+    }
+
+    // Separator
+    ImGui::SameLine(0.0f, 8.0f);
+    ImGui::TextDisabled("|");
+    ImGui::SameLine(0.0f, 8.0f);
+
+    // Geometry mode toggle button
+    {
+      const ImVec2 pos = ImGui::GetCursorScreenPos();
+      const bool clicked = ImGui::InvisibleButton("##tb_geom", ImVec2(button_size, button_size));
+      const bool hovered = ImGui::IsItemHovered();
+
+      DrawGeometryModeIcon(draw_list, pos, ImVec2(pos.x + button_size, pos.y + button_size), in_geometry_mode, hovered);
+
+      if (clicked)
+      {
+        result.geometry_mode_toggled = true;
+      }
+
+      if (hovered)
+      {
+        ImGui::BeginTooltip();
+        ImGui::Text("Geometry Mode: %s (Tab)", in_geometry_mode ? "ON" : "OFF");
+        ImGui::TextDisabled("Select and edit faces, edges, vertices");
         ImGui::EndTooltip();
       }
     }

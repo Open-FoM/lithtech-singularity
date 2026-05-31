@@ -1,5 +1,6 @@
 #pragma once
 
+#include "geometry/edit_mode.h"
 #include "ui_dock.h"
 
 /// Available tools in the tools panel.
@@ -56,12 +57,17 @@ struct ToolsPanelResult
   bool geometry_flip = false;
   bool geometry_weld = false;
   bool geometry_extrude = false;
+
+  // Edit mode change
+  bool edit_mode_changed = false;      ///< True if user changed edit mode
+  EditMode new_edit_mode = EditMode::Object;  ///< The new edit mode
 };
 
 /// Draw the dockable Tools panel.
 /// @param state The tools panel state.
+/// @param current_edit_mode The current edit mode (Object, Vertex, Edge, Face).
 /// @return Result containing any tool changes or primitive creation requests.
-ToolsPanelResult DrawToolsPanel(ToolsPanelState& state);
+ToolsPanelResult DrawToolsPanel(ToolsPanelState& state, EditMode current_edit_mode = EditMode::Object);
 
 /// Draw a quick primitive popup (invoked by Shift+A).
 /// @param result Output for primitive creation request.

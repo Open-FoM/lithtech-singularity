@@ -225,6 +225,157 @@ struct EdgeKeyHash {
   }
 };
 
+uint64_t OrderedEdgeKey(uint32_t v0, uint32_t v1) {
+  uint32_t lo = std::min(v0, v1);
+  uint32_t hi = std::max(v0, v1);
+  return (static_cast<uint64_t>(lo) << 32) | static_cast<uint64_t>(hi);
+}
+
+uint64_t DirectedEdgeKey(uint32_t from, uint32_t to) {
+  return (static_cast<uint64_t>(from) << 32) | static_cast<uint64_t>(to);
+}
+
+struct PlanePolygonGroup {
+  CSGPlane plane;
+  std::vector<CSGPolygon> polygons;
+};
+
+std::vector<CSGPolygon> MergeCoplanarTriangles(const std::vector<CSGPolygon>& triangles) {
+  if (triangles.empty()) {
+    return {};
+  }
+  if (triangles.size() == 1) {
+    return triangles;
+  }
+
+  std::unordered_map<VertexKey, uint32_t, VertexKeyHash> vertex_ids;
+  std::vector<CSGVertex> ordered_vertices;
+  ordered_vertices.reserve(triangles.size() * 3);
+
+  auto getVertexId = [&](const CSGVertex& v) -> uint32_t {
+    VertexKey key = MakeVertexKey(v, Tolerance::kVertexWeld);
+    auto it = vertex_ids.find(key);
+    if (it != vertex_ids.end()) {
+      return it->second;
+    }
+
+    uint32_t id = static_cast<uint32_t>(ordered_vertices.size());
+    vertex_ids[key] = id;
+    ordered_vertices.push_back(v);
+    return id;
+  };
+
+  std::unordered_map<uint64_t, int> edge_counts;
+  std::vector<std::pair<uint32_t, uint32_t>> edges;
+  edges.reserve(triangles.size() * 3);
+
+  for (const auto& tri : triangles) {
+    for (size_t i = 0; i < 3; ++i) {
+      uint32_t a = getVertexId(tri.vertices[i]);
+      uint32_t b = getVertexId(tri.vertices[(i + 1) % 3]);
+      edges.emplace_back(a, b);
+      ++edge_counts[OrderedEdgeKey(a, b)];
+    }
+  }
+
+  std::vector<std::pair<uint32_t, uint32_t>> boundary_edges;
+  boundary_edges.reserve(edges.size());
+
+  for (const auto& edge : edges) {
+    if (edge_counts[OrderedEdgeKey(edge.first, edge.second)] == 1) {
+      boundary_edges.push_back(edge);
+    }
+  }
+  if (boundary_edges.empty()) {
+    return {};
+  }
+
+  std::unordered_map<uint32_t, std::vector<uint32_t>> outgoing;
+  for (const auto& edge : boundary_edges) {
+    outgoing[edge.first].push_back(edge.second);
+  }
+
+  for (const auto& pair : outgoing) {
+    // In expected closed-loop input, each boundary vertex appears once as a start of a directed edge.
+    if (pair.second.size() != 1) {
+      return {};
+    }
+  }
+
+  std::unordered_set<uint64_t> visited;
+  std::vector<std::vector<uint32_t>> loops;
+
+  for (const auto& edge : boundary_edges) {
+    uint64_t start_key = DirectedEdgeKey(edge.first, edge.second);
+    if (visited.find(start_key) != visited.end()) {
+      continue;
+    }
+
+    std::vector<uint32_t> loop;
+    loop.reserve(boundary_edges.size());
+
+    uint32_t prev = edge.first;
+    uint32_t current = edge.second;
+    loop.push_back(prev);
+    loop.push_back(current);
+    visited.insert(start_key);
+
+    for (size_t step = 0; step < boundary_edges.size() + 2; ++step) {
+      auto it = outgoing.find(current);
+      if (it == outgoing.end() || it->second.empty()) {
+        return {};
+      }
+
+      uint32_t next = it->second.front();
+      if (next == prev && it->second.size() > 1) {
+        next = it->second.back();
+      }
+      if (next == prev) {
+        return {};
+      }
+
+      uint64_t next_key = DirectedEdgeKey(current, next);
+      if (next == loop.front()) {
+        visited.insert(next_key);
+        break;
+      }
+      if (visited.find(next_key) != visited.end()) {
+        return {};
+      }
+
+      visited.insert(next_key);
+      loop.push_back(next);
+      prev = current;
+      current = next;
+    }
+
+    if (loop.size() < 3) {
+      return {};
+    }
+    loops.push_back(std::move(loop));
+  }
+
+  std::vector<CSGPolygon> merged_polygons;
+  merged_polygons.reserve(loops.size());
+
+  for (auto& loop : loops) {
+    CSGPolygon merged_poly;
+    merged_poly.vertices.reserve(loop.size());
+    for (uint32_t id : loop) {
+      merged_poly.vertices.push_back(ordered_vertices[id]);
+    }
+    if (!merged_poly.ComputePlane() || !merged_poly.IsValid()) {
+      return {};
+    }
+    if (merged_poly.plane.normal.Dot(triangles[0].plane.normal) < 0.0f) {
+      merged_poly.Flip();
+    }
+    merged_polygons.push_back(std::move(merged_poly));
+  }
+
+  return merged_polygons;
+}
+
 } // namespace
 
 CSGBrush CSGBrush::FromTriangleMesh(const std::vector<float>& vertices, const std::vector<uint32_t>& indices) {
@@ -239,9 +390,8 @@ CSGBrush CSGBrush::FromTriangleMesh(const std::vector<float>& vertices, const st
     return CSGVertex(vertices[idx * 3], vertices[idx * 3 + 1], vertices[idx * 3 + 2]);
   };
 
-  // Group triangles by their plane normal
-  // For now, treat each triangle as a separate polygon
-  // TODO: Merge coplanar adjacent triangles into larger polygons
+  std::vector<CSGPolygon> triangles;
+  triangles.reserve(indices.size() / 3);
 
   for (size_t i = 0; i < indices.size(); i += 3) {
     CSGVertex v0 = getVertex(indices[i]);
@@ -252,7 +402,41 @@ CSGBrush CSGBrush::FromTriangleMesh(const std::vector<float>& vertices, const st
     poly.vertices = {v0, v1, v2};
 
     if (poly.ComputePlane() && poly.IsValid()) {
-      brush.polygons.push_back(std::move(poly));
+      triangles.push_back(std::move(poly));
+    }
+  }
+
+  // Group triangles by coplanar planes then merge each connected set into larger faces.
+  std::vector<PlanePolygonGroup> plane_groups;
+  for (auto& tri : triangles) {
+    bool merged = false;
+    for (auto& group : plane_groups) {
+      if (tri.plane.IsCoincidentWith(group.plane)) {
+        if (tri.plane.normal.Dot(group.plane.normal) < 0.0f) {
+          tri.Flip();
+        }
+        group.polygons.push_back(std::move(tri));
+        merged = true;
+        break;
+      }
+    }
+
+    if (!merged) {
+      plane_groups.push_back({tri.plane, {std::move(tri)}});
+    }
+  }
+
+  for (auto& group : plane_groups) {
+    std::vector<CSGPolygon> merged_polygons = MergeCoplanarTriangles(group.polygons);
+    if (!merged_polygons.empty()) {
+      for (auto& polygon : merged_polygons) {
+        brush.polygons.push_back(std::move(polygon));
+      }
+      continue;
+    }
+
+    for (auto& polygon : group.polygons) {
+      brush.polygons.push_back(std::move(polygon));
     }
   }
 

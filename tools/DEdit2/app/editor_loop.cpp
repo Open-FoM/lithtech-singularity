@@ -17,6 +17,7 @@
 #include "viewport_picking.h"
 #include "viewport_render.h"
 
+#include "geometry/subobject_picking.h"
 #include "brush/csg_dialogs/csg_hollow_dialog.h"
 #include "brush/csg_dialogs/csg_carve_dialog.h"
 #include "brush/csg_dialogs/csg_split_dialog.h"
@@ -598,7 +599,28 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_PassthruCentralNode;
     EnsureDockLayout(dockspace_id, viewport, request_reset_layout);
     request_reset_layout = false;
-    ImGui::DockSpaceOverViewport(dockspace_id, viewport, dockspace_flags);
+
+    // Create dockspace below menu bar and toolbar
+    const float menu_bar_height = ImGui::GetFrameHeight();
+    const float toolbar_height = GetToolbarHeight();
+    const float top_offset = menu_bar_height + toolbar_height;
+
+    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x, viewport->Pos.y + top_offset));
+    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, viewport->Size.y - top_offset));
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("DockSpaceHost", nullptr, host_flags);
+    ImGui::PopStyleVar(3);
+
+    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+    ImGui::End();
 
     MainMenuActions menu_actions{};
     const bool has_selection = (session.active_target == SelectionTarget::Scene) && HasSelection(session.scene_panel);
@@ -635,11 +657,17 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     // Draw toolbar
     const bool snap_enabled = session.viewport_panel().snap_translate ||
       session.viewport_panel().snap_rotate || session.viewport_panel().snap_scale;
+    const bool in_geometry_mode = session.geometry_mode.IsInGeometryMode();
     ToolbarResult toolbar_result = DrawToolbar(
       session.tools_panel,
       session.undo_stack.CanUndo(),
       session.undo_stack.CanRedo(),
-      snap_enabled);
+      snap_enabled,
+      in_geometry_mode);
+    if (toolbar_result.geometry_mode_toggled)
+    {
+      session.geometry_mode.ToggleGeometryMode();
+    }
     if (toolbar_result.snap_toggled)
     {
       // Toggle all snap modes together
@@ -881,8 +909,28 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           SetViewMode(session.viewport_panel(), ViewportPanelState::ViewMode::Right);
         }
       }
-      // Tab cycles active viewport (multi-viewport layout)
-      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !primary_down && !io.KeyShift)
+      // Tab cycles through all edit modes (Object -> Vertex -> Edge -> Face -> Object)
+      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !primary_down && !io.KeyShift && !io.KeyCtrl)
+      {
+        session.geometry_mode.CycleMode();
+      }
+      // 1: Vertex mode
+      if (ImGui::IsKeyPressed(ImGuiKey_1, false) && !primary_down && !io.KeyShift && !io.KeyAlt && !io.KeyCtrl)
+      {
+        session.geometry_mode.SetMode(EditMode::Vertex);
+      }
+      // 2: Edge mode
+      if (ImGui::IsKeyPressed(ImGuiKey_2, false) && !primary_down && !io.KeyShift && !io.KeyAlt && !io.KeyCtrl)
+      {
+        session.geometry_mode.SetMode(EditMode::Edge);
+      }
+      // 3: Face mode
+      if (ImGui::IsKeyPressed(ImGuiKey_3, false) && !primary_down && !io.KeyShift && !io.KeyAlt && !io.KeyCtrl)
+      {
+        session.geometry_mode.SetMode(EditMode::Face);
+      }
+      // Shift+Tab cycles active viewport (multi-viewport layout)
+      if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && io.KeyShift)
       {
         CycleActiveViewport(session.multi_viewport);
       }
@@ -1707,6 +1755,7 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
     }
     if (session.panel_visibility.show_properties)
     {
+      PropertiesPanelResult props_result;
       DrawPropertiesPanel(
         session.active_target,
         session.project_nodes,
@@ -1716,7 +1765,67 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.scene_props,
         session.scene_panel.primary_selection,
         session.project_root,
-        &session.panel_visibility.show_texture_browser);
+        session.geometry_mode.current_mode,
+        session.geometry_mode.selection,
+        session.face_properties_panel,
+        session.picked_texture,
+        props_result);
+
+      if (props_result.browse_texture)
+      {
+        session.panel_visibility.show_texture_browser = true;
+      }
+
+      const FacePropertiesAction& face_action = props_result.face_action;
+      if (face_action.browse_texture)
+      {
+        session.panel_visibility.show_texture_browser = true;
+      }
+
+      const bool face_change_this_frame =
+        face_action.offset_changed || face_action.scale_changed || face_action.rotation_changed ||
+        face_action.reset_requested || face_action.flip_u_requested || face_action.flip_v_requested ||
+        face_action.flags_changed || face_action.alpha_changed || face_action.fit_requested;
+
+      // Begin an undo gesture once: snapshot the BEFORE state of all selected faces.
+      if ((face_change_this_frame || face_action.apply_picked) && !session.face_edit_in_progress)
+      {
+        session.face_edit_snapshot =
+          CaptureFaceTextureStates(session.geometry_mode.selection, session.scene_props);
+        session.face_edit_in_progress = !session.face_edit_snapshot.empty();
+      }
+
+      bool faces_modified =
+        ApplyFacePropertiesAction(face_action, session.geometry_mode.selection, session.scene_props);
+
+      if (face_action.apply_picked && session.picked_texture.has_pick)
+      {
+        const size_t pasted = ApplyPickedTextureToFaces(
+          session.picked_texture, session.geometry_mode.selection, session.scene_props, true, true);
+        if (pasted > 0)
+        {
+          faces_modified = true;
+        }
+      }
+
+      if (faces_modified)
+      {
+        session.document_state.MarkDirty();
+        session.scene_dirty_for_render = true;
+      }
+
+      // Commit the gesture (drags commit on release via action.committed; discrete actions set committed too).
+      if (session.face_edit_in_progress && face_action.committed)
+      {
+        FinalizeFaceTextureStates(session.face_edit_snapshot, session.scene_props);
+        if (!session.face_edit_snapshot.empty())
+        {
+          session.undo_stack.PushFaceTexture(UndoTarget::Scene, session.face_edit_snapshot);
+          session.document_state.UpdateFromUndoPosition(session.undo_stack.GetPosition());
+        }
+        session.face_edit_snapshot.clear();
+        session.face_edit_in_progress = false;
+      }
     }
 
     if (session.panel_visibility.show_console)
@@ -1749,13 +1858,22 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
           session.scene_dirty_for_render = true;
         }
       }
+      // If texture selected in browser, update picked texture state
+      if (tex_action.texture_selected && !tex_action.selected_texture.empty())
+      {
+        session.picked_texture.texture_name = tex_action.selected_texture;
+      }
     }
 
     // Draw tools panel and handle tool selection
     // Sync panel visibility with tools panel state
     session.tools_panel.visible = session.panel_visibility.show_tools;
-    ToolsPanelResult tools_result = DrawToolsPanel(session.tools_panel);
+    ToolsPanelResult tools_result = DrawToolsPanel(session.tools_panel, session.geometry_mode.current_mode);
     session.panel_visibility.show_tools = session.tools_panel.visible;
+    if (tools_result.edit_mode_changed)
+    {
+      session.geometry_mode.SetMode(tools_result.new_edit_mode);
+    }
     if (tools_result.create_primitive != PrimitiveType::None)
     {
       SetPrimitiveCentersToMarker(session.primitive_dialog, session.viewport_panel());
@@ -2178,8 +2296,78 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
       &session.undo_stack);
 
     overlay_state = viewport_result.overlays;
-    if (viewport_result.clicked_scene_id >= 0)
+
+    // Face mode selection: clicking picks faces instead of objects
+    if (session.geometry_mode.current_mode == EditMode::Face &&
+        viewport_result.active_viewport_hovered &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt)
     {
+      // Build a pick ray from the mouse position
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      const ImVec2 local(mouse.x - viewport_result.active_viewport_pos.x,
+                         mouse.y - viewport_result.active_viewport_pos.y);
+      const PickRay pick_ray = BuildPickRay(session.viewport_panel(), viewport_result.active_viewport_size, local);
+
+      // Convert PickRay to SubObjectPickRay for face picking
+      SubObjectPickRay face_ray;
+      face_ray.origin = {pick_ray.origin.x, pick_ray.origin.y, pick_ray.origin.z};
+      face_ray.dir = {pick_ray.dir.x, pick_ray.dir.y, pick_ray.dir.z};
+
+      // Find the closest face hit across all brushes
+      FacePickResult best_hit;
+      best_hit.hit = false;
+      best_hit.distance = 1e10f;
+
+      for (size_t i = 0; i < session.scene_nodes.size(); ++i)
+      {
+        if (session.scene_nodes[i].deleted)
+          continue;
+        const auto& props = session.scene_props[i];
+        if (props.type != "Brush" || props.brush_face_textures.empty())
+          continue;
+        if (!props.visible)
+          continue;
+
+        FacePickResult result = PickFace(face_ray, props, static_cast<int>(i));
+        if (result.hit && result.distance < best_hit.distance)
+        {
+          best_hit = result;
+        }
+      }
+
+      // If we hit a face, select it
+      if (best_hit.hit)
+      {
+        if (io.KeyShift && primary_down)
+        {
+          // Shift+Ctrl/Cmd: Remove from selection
+          session.geometry_mode.selection.RemoveFace(best_hit.face);
+        }
+        else if (io.KeyShift)
+        {
+          // Shift: Add to selection
+          session.geometry_mode.selection.AddFace(best_hit.face);
+        }
+        else if (primary_down)
+        {
+          // Ctrl/Cmd: Toggle selection
+          session.geometry_mode.selection.ToggleFace(best_hit.face);
+        }
+        else
+        {
+          // No modifier: Replace selection
+          session.geometry_mode.selection.SelectFace(best_hit.face);
+        }
+      }
+      else if (!io.KeyShift && !primary_down)
+      {
+        // Clicked empty space without modifiers: clear selection
+        session.geometry_mode.selection.ClearFaces();
+      }
+    }
+    else if (viewport_result.clicked_scene_id >= 0)
+    {
+      // Object mode selection
       // Determine selection mode based on modifier keys
       SelectionMode sel_mode = SelectionMode::Replace;
       if (io.KeyShift && primary_down)
@@ -2280,6 +2468,62 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         session.polygon_draw.vertices.push_back(x);
         session.polygon_draw.vertices.push_back(y);
         session.polygon_draw.vertices.push_back(z);
+      }
+    }
+
+    // Texture Eyedropper: Alt+Click to pick texture from a face (EPIC-10)
+    // Only active when not in polygon draw mode
+    if (!session.polygon_draw.active && viewport_result.active_viewport_hovered &&
+        io.KeyAlt && !primary_down && !io.KeyShift &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+      // Build a pick ray from the mouse position
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      const ImVec2 local(mouse.x - viewport_result.active_viewport_pos.x,
+                         mouse.y - viewport_result.active_viewport_pos.y);
+      const PickRay pick_ray = BuildPickRay(session.viewport_panel(), viewport_result.active_viewport_size, local);
+
+      // Convert PickRay to SubObjectPickRay for face picking
+      SubObjectPickRay face_ray;
+      face_ray.origin = {pick_ray.origin.x, pick_ray.origin.y, pick_ray.origin.z};
+      face_ray.dir = {pick_ray.dir.x, pick_ray.dir.y, pick_ray.dir.z};
+
+      // Find the closest face hit across all brushes
+      FacePickResult best_hit;
+      best_hit.hit = false;
+      best_hit.distance = 1e10f;
+
+      for (size_t i = 0; i < session.scene_nodes.size(); ++i)
+      {
+        if (session.scene_nodes[i].deleted)
+          continue;
+        const auto& props = session.scene_props[i];
+        if (props.type != "Brush" || props.brush_face_textures.empty())
+          continue;
+        if (!props.visible)
+          continue;
+
+        FacePickResult result = PickFace(face_ray, props, static_cast<int>(i));
+        if (result.hit && result.distance < best_hit.distance)
+        {
+          best_hit = result;
+        }
+      }
+
+      // If we hit a face, pick its texture
+      if (best_hit.hit)
+      {
+        if (PickTextureFromFace(best_hit.face, session.scene_props, session.picked_texture))
+        {
+          // Update texture browser selection to match picked texture
+          session.texture_browser.current_texture = session.picked_texture.texture_name;
+          // Update face properties panel edit values to match picked texture
+          session.face_properties_panel.edit_offset_u = session.picked_texture.mapping.offset_u;
+          session.face_properties_panel.edit_offset_v = session.picked_texture.mapping.offset_v;
+          session.face_properties_panel.edit_scale_u = session.picked_texture.mapping.scale_u;
+          session.face_properties_panel.edit_scale_v = session.picked_texture.mapping.scale_v;
+          session.face_properties_panel.edit_rotation = session.picked_texture.mapping.rotation;
+        }
       }
     }
 
@@ -2451,8 +2695,36 @@ void RunEditorLoop(SDL_Window* window, DiligentContext& diligent, EditorSession&
         status_info.cursor_pos[1] = viewport_result.hovered_hit_pos.y;
         status_info.cursor_pos[2] = viewport_result.hovered_hit_pos.z;
       }
-      status_info.selection_count = SelectionCount(session.scene_panel);
+      // Show face/vertex/edge count in geometry mode, object count in object mode
+      if (session.geometry_mode.current_mode == EditMode::Face)
+      {
+        status_info.selection_count = session.geometry_mode.selection.FaceCount();
+        status_info.selection_type = "face";
+      }
+      else if (session.geometry_mode.current_mode == EditMode::Vertex)
+      {
+        status_info.selection_count = session.geometry_mode.selection.VertexCount();
+        status_info.selection_type = "vertex";
+      }
+      else if (session.geometry_mode.current_mode == EditMode::Edge)
+      {
+        status_info.selection_count = session.geometry_mode.selection.EdgeCount();
+        status_info.selection_type = "edge";
+      }
+      else
+      {
+        status_info.selection_count = SelectionCount(session.scene_panel);
+        status_info.selection_type = nullptr; // objects
+      }
       status_info.current_tool = session.tools_panel.selected_tool;
+      // Set edit mode string based on geometry mode state
+      switch (session.geometry_mode.current_mode)
+      {
+        case EditMode::Object: status_info.edit_mode = "Object"; break;
+        case EditMode::Vertex: status_info.edit_mode = "Vertex"; break;
+        case EditMode::Edge:   status_info.edit_mode = "Edge"; break;
+        case EditMode::Face:   status_info.edit_mode = "Face"; break;
+      }
       status_info.show_fps = session.viewport_panel().show_fps;
       status_info.fps = 1.0f / io.DeltaTime;
       status_info.filter_active = session.selection_filter.filter_active;

@@ -98,6 +98,19 @@ void UndoStack::PushTransform(UndoTarget target, std::vector<TransformChange> ch
 	Push(std::move(action));
 }
 
+void UndoStack::PushFaceTexture(UndoTarget target, std::vector<FaceTextureChange> changes)
+{
+	if (changes.empty())
+	{
+		return;
+	}
+	UndoAction action;
+	action.type = UndoActionType::FaceTexture;
+	action.target = target;
+	action.face_texture_changes = std::move(changes);
+	Push(std::move(action));
+}
+
 void UndoStack::Undo(std::vector<TreeNode>& project_nodes, std::vector<TreeNode>& scene_nodes,
                      std::vector<NodeProperties>& project_props, std::vector<NodeProperties>& scene_props)
 {
@@ -241,6 +254,30 @@ void UndoStack::Apply(
 		return;
 	}
 
+	// Handle face texture changes (need props)
+	if (action.type == UndoActionType::FaceTexture)
+	{
+		std::vector<NodeProperties>* props = (action.target == UndoTarget::Project) ? project_props : scene_props;
+		if (props == nullptr)
+		{
+			return;
+		}
+		for (const auto& change : action.face_texture_changes)
+		{
+			if (change.node_id < 0 || change.node_id >= static_cast<int>(props->size()))
+			{
+				continue;
+			}
+			NodeProperties& p = (*props)[change.node_id];
+			if (change.triangle_index >= p.brush_face_textures.size())
+			{
+				continue;
+			}
+			p.brush_face_textures[change.triangle_index] = undo ? change.before : change.after;
+		}
+		return;
+	}
+
 	// Handle node-based actions
 	if (action.node_id < 0 || action.node_id >= static_cast<int>(nodes->size()))
 	{
@@ -266,6 +303,7 @@ void UndoStack::Apply(
 		case UndoActionType::ChangeVisibility:
 		case UndoActionType::ChangeFrozen:
 		case UndoActionType::TransformNode:
+		case UndoActionType::FaceTexture:
 			// Already handled above
 			break;
 	}

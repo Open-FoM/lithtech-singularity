@@ -32,6 +32,9 @@ struct GeometryModeState {
   /// If in a geometry mode, switches to Object mode.
   void ToggleGeometryMode();
 
+  /// Cycle through all edit modes: Object -> Vertex -> Edge -> Face -> Object.
+  void CycleMode();
+
   /// Check if currently in a geometry editing mode.
   [[nodiscard]] bool IsInGeometryMode() const;
 
