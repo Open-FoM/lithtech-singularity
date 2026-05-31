@@ -4,6 +4,16 @@
 
 #include "ltbasetypes.h"
 
+#ifndef __LTASSERT_H__
+#include "ltassert.h" // ASSERT
+#endif
+
+#ifndef __LTBASEDEFS_H__
+#include "ltbasedefs.h" // LTCLAMP
+#endif
+
+#include <string.h> // memcpy
+
 // forward declarations
 class CPacket_Read;
 class CPacket_Write;
