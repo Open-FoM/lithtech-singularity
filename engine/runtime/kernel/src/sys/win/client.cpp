@@ -4,6 +4,7 @@
 
 #include "SDL3/SDL_events.h"
 #include "SDL3/SDL_keyboard.h"
+#include "SDL3/SDL_timer.h"
 #include "SDL3/SDL_video.h"
 #if defined(__APPLE__)
 #include "SDL3/SDL_metal.h"
@@ -66,6 +67,9 @@ void* objc_getClass(const char* name);
 
 //holder for command line argument mgr interface.
 #include "icommandlineargs.h"
+
+#include "agent_control.h"
+#include "agent_engine_tools.h"
 static ICommandLineArgs *command_line_args;
 define_holder(ICommandLineArgs, command_line_args);
 
@@ -1242,6 +1246,9 @@ int RunClientApp(LTJS_InstanceHandle hInstance) {
     int status, nExitValue;
     LTRESULT dResult;
     LTBOOL bOutOfMemory, bPrevHighPriority;
+    // Declared here (not at the StartClient call) so the existing goto END_MAINLOOP
+    // statements do not jump across an in-scope initializer.
+    bool bStartClientSucceeded = false;
 
 #if defined(_WIN32)
     _CrtSetAllocHook(LTAllocHook);
@@ -1295,6 +1302,17 @@ int RunClientApp(LTJS_InstanceHandle hInstance) {
     cm_Init();
     pGlob->m_bClientActive = LTTRUE;
 
+    // Agent control surface: start the localhost server (and register tools)
+    // BEFORE StartClient, so an agent can attach even if the game fails to boot.
+    // No-op unless --mcp-port / LTJS_AGENT_PORT was supplied; idempotent.
+    {
+        ltjs::agent::AgentControlConfig agent_config;
+        if (ltjs::agent::agent_GetMcpServerConfig(agent_config)) {
+            ltjs::agent::agent_RegisterEngineTools();
+            ltjs::agent::agent_control_Init(agent_config);
+        }
+    }
+
     pGlob->m_WndCaption = command_line_args->FindArgDash("windowtitle");
     if (!pGlob->m_WndCaption) {
         pGlob->m_WndCaption = "LithTech";
@@ -1339,7 +1357,8 @@ int RunClientApp(LTJS_InstanceHandle hInstance) {
 #endif // LTJS_SDL_BACKEND
 
     bPrevHighPriority = LTFALSE;
-    if (StartClient(pGlob)) 
+    bStartClientSucceeded = StartClient(pGlob);
+    if (bStartClientSucceeded)
 	{
 #ifdef LTJS_SDL_BACKEND
 		bool is_mouse_relative_mode = false;
@@ -1412,6 +1431,49 @@ int RunClientApp(LTJS_InstanceHandle hInstance) {
                 DispatchMessage(&msg);
             }
 #endif // LTJS_SDL_BACKEND
+        }
+    }
+
+    // If the game failed to start but an agent control surface was requested,
+    // stay alive in a bounded idle loop so an agent can attach and diagnose the
+    // failure (console/cvars/object lists work; rendering-dependent tools do not).
+    // Exits on window close or after a 5-minute backstop. Normal boots skip this.
+    if (!bStartClientSucceeded && ltjs::agent::agent_control_IsRunning()) {
+        dsi_ConsolePrint("[agent] StartClient failed; entering diagnostic idle loop "
+                         "(close the window or wait 5 minutes to exit).");
+        const uint32 diag_start_ms = timeGetTime();
+        for (;;) {
+#ifdef LTJS_SDL_BACKEND
+            g_system_event_mgr->poll_events();
+            if (g_system_event_mgr->was_quit_event()) {
+                break;
+            }
+            g_system_event_mgr->handle_events();
+#else
+            bool diag_quit = false;
+            while (PeekMessage(&msg, LTNULL, 0, 0, PM_REMOVE)) {
+                if (msg.message == WM_QUIT) {
+                    diag_quit = true;
+                    break;
+                }
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+            if (diag_quit) {
+                break;
+            }
+#endif // LTJS_SDL_BACKEND
+            ltjs::agent::agent_control_PumpFrame(8);
+
+            if (timeGetTime() - diag_start_ms > 300000u) {
+                break;
+            }
+
+#ifdef LTJS_SDL_BACKEND
+            SDL_Delay(16);
+#elif defined(_WIN32)
+            Sleep(16);
+#endif
         }
     }
 

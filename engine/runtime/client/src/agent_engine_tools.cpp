@@ -49,7 +49,16 @@ void CaptureConsoleLine(const char *message) {
   }
 }
 
+// True once the client console state has been initialized (cc_InitState). When a
+// game fails to boot before that point the console hash tables are null and
+// touching them would crash, so the console tools guard with this and return a
+// clean error instead (relevant in the failed-boot diagnostic loop).
+bool ConsoleReady() { return g_ClientConsoleState.m_VarHash != nullptr; }
+
 AgentResponse ConsoleExec(const AgentRequest &request) {
+  if (!ConsoleReady()) {
+    return AgentResponse::Err("console not initialized (game has not finished booting)");
+  }
   if (!request.params.contains("command") || !request.params.at("command").is_string()) {
     return AgentResponse::Err("console_exec requires a string 'command'");
   }
@@ -73,6 +82,9 @@ AgentResponse ConsoleExec(const AgentRequest &request) {
 }
 
 AgentResponse GetCvar(const AgentRequest &request) {
+  if (!ConsoleReady()) {
+    return AgentResponse::Err("console not initialized (game has not finished booting)");
+  }
   if (!request.params.contains("name") || !request.params.at("name").is_string()) {
     return AgentResponse::Err("get_cvar requires a string 'name'");
   }
@@ -91,6 +103,9 @@ AgentResponse GetCvar(const AgentRequest &request) {
 }
 
 AgentResponse SetCvar(const AgentRequest &request) {
+  if (!ConsoleReady()) {
+    return AgentResponse::Err("console not initialized (game has not finished booting)");
+  }
   if (!request.params.contains("name") || !request.params.at("name").is_string()) {
     return AgentResponse::Err("set_cvar requires a string 'name'");
   }
