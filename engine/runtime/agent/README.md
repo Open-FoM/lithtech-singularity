@@ -44,14 +44,15 @@ No port → the server never binds and `PumpFrame()` is a cheap per-frame no-op.
 | `__list_tools` | Enumerate all registered tools + parameter schema. |
 | `console_exec` | Run a client console command (output capture best-effort). |
 | `get_cvar` / `set_cvar` | Read / write a console variable. |
-| `query_objects` | List live client objects (optional `type` filter) with pos/dims/radius/flags. |
+| `query_objects` | List live objects (`source`: `client` default / `server`; optional `type` filter) with pos/dims/radius/flags, plus name+class for server objects. |
+| `get_object` | Find a named server object → type/class/pos/dims (single-player/host). |
 | `capture_screenshot` | Capture the backbuffer to a PNG (returns path + dimensions). |
 | `send_key` | Inject a keyboard event via SDL (`state`: down/up/tap) — hold movement keys or tap actions. |
 | `send_mouse` | Inject relative mouse motion (turn the view). |
 
-Planned next: object names/classes via the server interface (and a `get_object`-by-name),
-plus starting the listener before `StartClient` so an agent can attach to a game that fails
-to boot.
+The server is started before `StartClient`, so an agent can also attach to a game that
+**fails to boot** and inspect it via a bounded diagnostic loop (console/cvar tools return a
+clean "not initialized" error in that state rather than crashing).
 
 ## Extending from game code
 
