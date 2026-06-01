@@ -20,7 +20,9 @@
 
 #include "clientmgr.h"
 #include "de_objects.h"
+#include "iltserver.h"
 #include "objectmgr.h"
+#include "servermgr.h"
 
 #include "diligent_screenshot.h"
 
@@ -32,6 +34,11 @@
 // same interface in this TU does not clash with the one in client.cpp.
 static ICommandLineArgs *g_agent_command_line_args = nullptr;
 define_holder(ICommandLineArgs, g_agent_command_line_args);
+
+// In-process server interface (single-player/host). Used to resolve object names
+// and class names. Null in client-only network mode; callers must guard.
+static ILTServer *g_agent_lt_server = nullptr;
+define_holder(ILTServer, g_agent_lt_server);
 
 namespace ltjs::agent {
 
@@ -160,11 +167,57 @@ int ObjectTypeFromName(const std::string &name) {
   return -1;
 }
 
-// Lists live client-side objects (those the client tracks/renders), optionally
-// filtered by type. Walks CClientMgr's per-type object lists directly.
+// Builds the JSON description of an object. Adds name + class when the object is
+// server-backed (sd != null) and the in-process server interface is available;
+// client-only objects (e.g. renderdemo ModelAdd, id 65535) carry neither.
+Json ObjectToJson(LTObject *object) {
+  const LTVector &pos = object->GetPos();
+  const LTVector &dims = object->GetDims();
+  Json obj = Json{{"type", ObjectTypeName(object->m_ObjectType)},
+                  {"id", object->m_ObjectID},
+                  {"pos", {pos.x, pos.y, pos.z}},
+                  {"dims", {dims.x, dims.y, dims.z}},
+                  {"radius", object->GetRadius()},
+                  {"flags", object->m_Flags}};
+
+  if (object->sd != nullptr && g_agent_lt_server != nullptr) {
+    auto handle = static_cast<HOBJECT>(object);
+    char name_buf[256] = {0};
+    if (g_agent_lt_server->GetObjectName(handle, name_buf, sizeof(name_buf)) == LT_OK && name_buf[0] != '\0') {
+      obj["name"] = std::string(name_buf);
+    }
+    if (HCLASS hclass = g_agent_lt_server->GetObjectClass(handle)) {
+      char class_buf[256] = {0};
+      if (g_agent_lt_server->GetClassName(hclass, class_buf, sizeof(class_buf)) == LT_OK && class_buf[0] != '\0') {
+        obj["class"] = std::string(class_buf);
+      }
+    }
+  }
+  return obj;
+}
+
+// Lists live objects with position/dims/flags (plus name/class for server
+// objects). `source`: "client" (default; what the client renders) or "server"
+// (the in-process server's game objects, which carry names/classes).
 AgentResponse QueryObjects(const AgentRequest &request) {
-  if (g_pClientMgr == nullptr) {
-    return AgentResponse::Err("client manager not initialized");
+  std::string source = "client";
+  if (request.params.contains("source") && request.params.at("source").is_string()) {
+    source = request.params.at("source").get<std::string>();
+  }
+
+  ObjectMgr *object_mgr = nullptr;
+  if (source == "server") {
+    if (g_pServerMgr == nullptr) {
+      return AgentResponse::Err("server not running (source 'server' needs single-player/host)");
+    }
+    object_mgr = &g_pServerMgr->m_ObjectMgr;
+  } else if (source == "client") {
+    if (g_pClientMgr == nullptr) {
+      return AgentResponse::Err("client manager not initialized");
+    }
+    object_mgr = &g_pClientMgr->m_ObjectMgr;
+  } else {
+    return AgentResponse::Err("source must be 'client' or 'server'");
   }
 
   int type_filter = -1; // -1 == all types
@@ -186,13 +239,12 @@ AgentResponse QueryObjects(const AgentRequest &request) {
 
   Json objects = Json::array();
   bool truncated = false;
-  ObjectMgr &object_mgr = g_pClientMgr->m_ObjectMgr;
 
   for (int type = 0; type < NUM_OBJECTTYPES && !truncated; ++type) {
     if (type_filter >= 0 && type != type_filter) {
       continue;
     }
-    LTList &list = object_mgr.m_ObjectLists[type];
+    LTList &list = object_mgr->m_ObjectLists[type];
     for (LTLink *cur = list.m_Head.m_pNext; cur != &list.m_Head; cur = cur->m_pNext) {
       if (objects.size() >= max_objects) {
         truncated = true;
@@ -202,22 +254,46 @@ AgentResponse QueryObjects(const AgentRequest &request) {
       if (object == nullptr) {
         continue;
       }
-      const LTVector &pos = object->GetPos();
-      const LTVector &dims = object->GetDims();
-      objects.push_back(Json{{"type", ObjectTypeName(object->m_ObjectType)},
-                             {"id", object->m_ObjectID},
-                             {"pos", {pos.x, pos.y, pos.z}},
-                             {"dims", {dims.x, dims.y, dims.z}},
-                             {"radius", object->GetRadius()},
-                             {"flags", object->m_Flags}});
+      objects.push_back(ObjectToJson(object));
     }
   }
 
   Json result;
+  result["source"] = source;
   result["count"] = objects.size();
   result["truncated"] = truncated;
   result["objects"] = std::move(objects);
   return AgentResponse::Ok(std::move(result));
+}
+
+// Finds a named server object and returns its details. Object names live on the
+// server's game objects, so this requires a running server (single-player/host).
+AgentResponse GetObject(const AgentRequest &request) {
+  if (!request.params.contains("name") || !request.params.at("name").is_string()) {
+    return AgentResponse::Err("get_object requires a string 'name'");
+  }
+  const std::string name = request.params.at("name").get<std::string>();
+
+  if (g_pServerMgr == nullptr || g_agent_lt_server == nullptr) {
+    return AgentResponse::Err("object names require a running server (single-player/host)");
+  }
+
+  ObjectMgr &object_mgr = g_pServerMgr->m_ObjectMgr;
+  for (int type = 0; type < NUM_OBJECTTYPES; ++type) {
+    LTList &list = object_mgr.m_ObjectLists[type];
+    for (LTLink *cur = list.m_Head.m_pNext; cur != &list.m_Head; cur = cur->m_pNext) {
+      auto *object = static_cast<LTObject *>(cur->m_pData);
+      if (object == nullptr || object->sd == nullptr) {
+        continue;
+      }
+      char name_buf[256] = {0};
+      if (g_agent_lt_server->GetObjectName(static_cast<HOBJECT>(object), name_buf, sizeof(name_buf)) == LT_OK &&
+          name == name_buf) {
+        return AgentResponse::Ok(ObjectToJson(object));
+      }
+    }
+  }
+  return AgentResponse::Err("no server object named: " + name);
 }
 
 // Captures the current backbuffer to a PNG the agent can open. Runs on the main
@@ -362,11 +438,18 @@ void agent_RegisterEngineTools() {
                           {"value", "string", "New value (string, number or boolean)", true}},
                          &SetCvar));
 
-  agent_AddTool(MakeTool(
-      "query_objects", "List live client objects (optionally filtered by type) with position, dims, radius and flags.",
-      {{"type", "string", "Optional type filter: model, sprite, worldmodel, light, camera, etc.", false},
-       {"limit", "integer", "Max objects to return (default 256, cap 4096)", false}},
-      &QueryObjects));
+  agent_AddTool(
+      MakeTool("query_objects",
+               "List live objects with position/dims/flags (plus name/class for server objects). "
+               "source: 'client' (default, rendered objects) or 'server' (game objects with names).",
+               {{"source", "string", "'client' (default) or 'server'", false},
+                {"type", "string", "Optional type filter: model, sprite, worldmodel, light, camera, etc.", false},
+                {"limit", "integer", "Max objects to return (default 256, cap 4096)", false}},
+               &QueryObjects));
+
+  agent_AddTool(MakeTool("get_object",
+                         "Find a named server object and return its type/class/pos/dims (single-player/host only).",
+                         {{"name", "string", "Object name to look up", true}}, &GetObject));
 
   agent_AddTool(MakeTool(
       "capture_screenshot", "Capture the current rendered backbuffer to a PNG file; returns its path and dimensions.",
