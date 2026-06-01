@@ -64,6 +64,10 @@
 #include "setupobject.h"
 #include "systimer.h"
 #include "ltobjectcreate.h"
+
+#include "agent_control.h"
+#include "agent_engine_tools.h"
+
 #include "particlesystem.h"
 #include "client_ticks.h"
 #include "iltdrawprim.h"
@@ -1075,6 +1079,23 @@ LTRESULT CClientMgr::Update()
 	{
         CountAdder cntAdd(&g_Ticks_Input);
         ProcessAllInput(false);
+    }
+
+    {
+        // Agent control surface. Always compiled in; it only *runs* when the
+        // operator requested it (--mcp-port / LTJS_AGENT_PORT). Started lazily on
+        // the first frame, then drained here on the main thread so tool handlers
+        // can safely touch engine state. PumpFrame is a no-op when not started.
+        static const bool s_agent_started = []() {
+            ltjs::agent::AgentControlConfig config;
+            if (ltjs::agent::agent_GetMcpServerConfig(config)) {
+                ltjs::agent::agent_RegisterEngineTools();
+                ltjs::agent::agent_control_Init(config);
+            }
+            return true;
+        }();
+        (void)s_agent_started;
+        ltjs::agent::agent_control_PumpFrame(4);
     }
 
     GetClientNetworking().Update();
