@@ -1,0 +1,19 @@
+{
+  "name": "ltjs-mcp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP stdio <-> LTJS engine TCP control channel bridge.",
+  "bin": {
+    "ltjs-mcp-bridge": "src/bridge.mjs"
+  },
+  "scripts": {
+    "start": "node src/bridge.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -137,6 +137,19 @@ target_link_libraries (
 		${libs}
 )
 
+# Agent control surface (always built; gated at runtime by --mcp-port). The
+# engine-free agent library (PUBLIC) brings the agent headers and the vendored
+# nlohmann/json include with it. The engine-coupled built-in tools
+# (console_exec/get_cvar/set_cvar) are compiled into the exe so they can reach
+# client globals.
+target_link_libraries (${PROJECT_NAME} PRIVATE ltjs_lib_agent)
+target_sources (
+	${PROJECT_NAME}
+	PRIVATE
+		../../client/src/agent_engine_tools.h
+		../../client/src/agent_engine_tools.cpp
+)
+
 target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
