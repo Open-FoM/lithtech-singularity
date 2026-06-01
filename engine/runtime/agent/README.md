@@ -44,10 +44,12 @@ No port → the server never binds and `PumpFrame()` is a cheap per-frame no-op.
 | `__list_tools` | Enumerate all registered tools + parameter schema. |
 | `console_exec` | Run a client console command (output capture best-effort). |
 | `get_cvar` / `set_cvar` | Read / write a console variable. |
+| `query_objects` | List live client objects (optional `type` filter) with pos/dims/radius/flags. |
+| `capture_screenshot` | Capture the backbuffer to a PNG (returns path + dimensions). |
 
-Planned next increment: `query_objects` / `get_object` (object introspection) and
-`capture_screenshot` (Diligent backbuffer readback — the `diligent_MakeScreenShot` stub is
-the entry point).
+Planned next: object names/classes via the server interface (and a `get_object`-by-name),
+plus starting the listener before `StartClient` so an agent can attach to a game that fails
+to boot.
 
 ## Extending from game code
 

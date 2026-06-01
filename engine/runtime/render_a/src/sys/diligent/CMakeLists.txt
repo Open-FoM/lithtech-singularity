@@ -26,6 +26,7 @@ target_include_directories (
 		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngine/interface
 		../../../../../../libs/diligent/DiligentCore/Graphics/GraphicsEngineVulkan/interface
 		../../../../../../libs/diligent/DiligentFX
+		../../../../../../libs/diligent/DiligentTools/ThirdParty/stb
 		../../../../../../libs/stdlith
 		../../../../../sdk/inc
 		../../../../../sdk/inc/physics
@@ -151,6 +152,7 @@ target_sources (
 		diligent_scene_collect.cpp
 		diligent_shadow_draw.cpp
 		diligent_render_api.cpp
+		diligent_screenshot.cpp
 		diligent_renderer_lifecycle.cpp
 		diligent_world_api.cpp
 		diligent_output_targets.cpp

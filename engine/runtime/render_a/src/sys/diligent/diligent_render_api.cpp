@@ -4,6 +4,7 @@
 #include "diligent_device.h"
 #include "diligent_postfx.h"
 #include "diligent_render.h"
+#include "diligent_screenshot.h"
 #include "diligent_state.h"
 #include "diligent_model_draw.h"
 #include "diligent_texture_cache.h"
@@ -126,8 +127,11 @@ void diligent_UnlockScreen()
 {
 }
 
-void diligent_MakeScreenShot(const char*)
+void diligent_MakeScreenShot(const char* pFilename)
 {
+	int width = 0;
+	int height = 0;
+	diligent_CaptureBackbufferToPng(pFilename, &width, &height);
 }
 
 void diligent_MakeCubicEnvMap(const char*, uint32, const SceneDesc&)
