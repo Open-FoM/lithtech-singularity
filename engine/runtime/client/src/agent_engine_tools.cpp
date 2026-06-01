@@ -1,11 +1,15 @@
 #include "bdefs.h"
 
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <system_error>
 #include <vector>
+
+#include "SDL3/SDL_events.h"
+#include "SDL3/SDL_keyboard.h"
 
 #include "agent_engine_tools.h"
 
@@ -229,6 +233,87 @@ AgentResponse CaptureScreenshot(const AgentRequest &request) {
   return AgentResponse::Ok(std::move(result));
 }
 
+// Injects a synthetic keyboard event through the real SDL pipeline (event ->
+// binding -> action), so the game sees it exactly like physical input. Pushed
+// here on the main thread; the engine picks it up on the next frame's poll.
+AgentResponse SendKey(const AgentRequest &request) {
+  if (!request.params.contains("key") || !request.params.at("key").is_string()) {
+    return AgentResponse::Err("send_key requires a string 'key' (SDL key name, e.g. 'W','Up','Space')");
+  }
+  const std::string key_name = request.params.at("key").get<std::string>();
+
+  std::string state = "tap";
+  if (request.params.contains("state") && request.params.at("state").is_string()) {
+    state = request.params.at("state").get<std::string>();
+  }
+  if (state != "down" && state != "up" && state != "tap") {
+    return AgentResponse::Err("send_key 'state' must be 'down', 'up' or 'tap'");
+  }
+
+  SDL_Keycode keycode = SDL_GetKeyFromName(key_name.c_str());
+  if (keycode == SDLK_UNKNOWN && key_name.size() == 1 && std::isalpha(static_cast<unsigned char>(key_name[0]))) {
+    const std::string upper(1, static_cast<char>(std::toupper(static_cast<unsigned char>(key_name[0]))));
+    keycode = SDL_GetKeyFromName(upper.c_str());
+  }
+  if (keycode == SDLK_UNKNOWN) {
+    return AgentResponse::Err("unknown key name: " + key_name +
+                              " (use SDL key names, e.g. 'W','Up','Left','Space','Return','1')");
+  }
+
+  const SDL_Scancode scancode = SDL_GetScancodeFromKey(keycode, nullptr);
+  const auto push = [&](bool down) {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+    event.key.scancode = scancode;
+    event.key.key = keycode;
+    event.key.mod = SDL_KMOD_NONE;
+    event.key.down = down;
+    event.key.repeat = false;
+    SDL_PushEvent(&event);
+  };
+
+  if (state == "down") {
+    push(true);
+  } else if (state == "up") {
+    push(false);
+  } else {
+    push(true);
+    push(false);
+  }
+
+  Json result;
+  result["key"] = key_name;
+  result["state"] = state;
+  result["keycode"] = static_cast<std::uint32_t>(keycode);
+  return AgentResponse::Ok(std::move(result));
+}
+
+// Injects relative mouse motion (for turning the view).
+AgentResponse SendMouse(const AgentRequest &request) {
+  float dx = 0.0f;
+  float dy = 0.0f;
+  if (request.params.contains("dx") && request.params.at("dx").is_number()) {
+    dx = request.params.at("dx").get<float>();
+  }
+  if (request.params.contains("dy") && request.params.at("dy").is_number()) {
+    dy = request.params.at("dy").get<float>();
+  }
+  if (dx == 0.0f && dy == 0.0f) {
+    return AgentResponse::Err("send_mouse requires a non-zero 'dx' and/or 'dy' (relative motion)");
+  }
+
+  SDL_Event event{};
+  event.type = SDL_EVENT_MOUSE_MOTION;
+  event.motion.xrel = dx;
+  event.motion.yrel = dy;
+  SDL_PushEvent(&event);
+
+  Json result;
+  result["dx"] = dx;
+  result["dy"] = dy;
+  return AgentResponse::Ok(std::move(result));
+}
+
 AgentTool MakeTool(std::string name, std::string description, std::vector<AgentParamDesc> params, AgentToolFn handler) {
   AgentTool tool;
   tool.name = std::move(name);
@@ -271,6 +356,19 @@ void agent_RegisterEngineTools() {
   agent_AddTool(MakeTool(
       "capture_screenshot", "Capture the current rendered backbuffer to a PNG file; returns its path and dimensions.",
       {{"path", "string", "Optional output PNG path (defaults to a temp file)", false}}, &CaptureScreenshot));
+
+  agent_AddTool(
+      MakeTool("send_key",
+               "Inject a keyboard event (SDL key name). state: down|up|tap (default tap). Use down/up to hold "
+               "movement keys, tap for discrete actions.",
+               {{"key", "string", "SDL key name, e.g. 'W','S','A','D','Up','Left','Space','Return','1'", true},
+                {"state", "string", "'down', 'up', or 'tap' (default 'tap')", false}},
+               &SendKey));
+
+  agent_AddTool(MakeTool(
+      "send_mouse", "Inject relative mouse motion (for turning the view).",
+      {{"dx", "number", "Relative X motion in pixels", false}, {"dy", "number", "Relative Y motion in pixels", false}},
+      &SendMouse));
 }
 
 bool agent_GetMcpServerConfig(AgentControlConfig &out) {
