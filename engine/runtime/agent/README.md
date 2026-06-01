@@ -46,6 +46,8 @@ No port → the server never binds and `PumpFrame()` is a cheap per-frame no-op.
 | `get_cvar` / `set_cvar` | Read / write a console variable. |
 | `query_objects` | List live client objects (optional `type` filter) with pos/dims/radius/flags. |
 | `capture_screenshot` | Capture the backbuffer to a PNG (returns path + dimensions). |
+| `send_key` | Inject a keyboard event via SDL (`state`: down/up/tap) — hold movement keys or tap actions. |
+| `send_mouse` | Inject relative mouse motion (turn the view). |
 
 Planned next: object names/classes via the server interface (and a `get_object`-by-name),
 plus starting the listener before `StartClient` so an agent can attach to a game that fails
