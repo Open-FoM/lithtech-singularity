@@ -80,12 +80,15 @@ cmake --preset engine && cmake --build --preset engine
 # smoke test the raw channel:
 echo '{"id":"1","tool":"ping","params":{}}' | nc 127.0.0.1 27182
 
-# wire up the MCP bridge:
+# wire up the MCP bridge (one-time): install the SDK dependency (Node >= 18)
 cd tools/mcp_bridge && npm install
-# then add to .mcp.json:
-#   { "mcpServers": { "ltjs": {
-#       "command": "node", "args": ["tools/mcp_bridge/src/bridge.mjs","--port","27182"] } } }
 ```
+
+The repo ships a project `.mcp.json` registering the bridge as the `ltjs` stdio MCP
+server (`node tools/mcp_bridge/src/bridge.mjs --port 27182`). After `npm install`,
+open the project in Claude Code, approve the `ltjs` server, launch the game with
+`--mcp-port 27182`, and the engine tools are callable directly as MCP tools.
+Verified end-to-end: MCP `initialize` → `tools/list` (all tools) → `tools/call`.
 
 ## Tests
 

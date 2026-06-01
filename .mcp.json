@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ltjs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["tools/mcp_bridge/src/bridge.mjs", "--port", "27182"]
+    }
+  }
+}
