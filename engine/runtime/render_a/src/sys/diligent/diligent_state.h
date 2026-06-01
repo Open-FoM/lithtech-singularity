@@ -83,4 +83,13 @@ struct DiligentRenderState
 /// Global renderer state for the Diligent backend.
 extern DiligentRenderState g_diligent_state;
 
+/// Optional shutdown hook invoked at the start of diligent_Term().
+///
+/// The Dear ImGui host (engine main module, see diligent_imgui.cpp) holds
+/// references to Diligent device objects (font texture, buffers, pipeline).
+/// Those must be released before the render device is torn down. The host sets
+/// this hook during lazy initialization so render_a can release it without a
+/// backward link dependency on the host translation unit. Null when unused.
+extern void (*g_diligent_imgui_term_hook)();
+
 #endif

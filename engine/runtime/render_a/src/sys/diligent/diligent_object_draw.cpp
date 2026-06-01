@@ -7,6 +7,7 @@
 #include "diligent_utils.h"
 #include "diligent_world_data.h"
 #include "diligent_world_draw.h"
+#include "diligent_model_draw.h"
 
 #include "bdefs.h"
 #include "de_objects.h"
@@ -264,6 +265,23 @@ bool diligent_draw_sky_objects(SceneDesc* desc, const ViewParams& sky_params, bo
 		return true;
 	}
 
+	// Sky model objects (skybox/clouds) draw fullbright (the sky box has no world
+	// lighting, so the lit path renders them black) and depth-disabled (so the
+	// stacked sky layers paint back-to-front without Z-fighting / flickering).
+	struct SkyModelDrawScope
+	{
+		SkyModelDrawScope()
+		{
+			g_diligent_force_fullbright_models = true;
+			g_diligent_force_depthless_models = true;
+		}
+		~SkyModelDrawScope()
+		{
+			g_diligent_force_fullbright_models = false;
+			g_diligent_force_depthless_models = false;
+		}
+	} sky_model_draw_scope;
+
 	std::vector<WorldModelInstance*> solid_world_models;
 	std::vector<WorldModelInstance*> translucent_world_models;
 	std::vector<SpriteInstance*> translucent_sprites;
@@ -294,6 +312,30 @@ bool diligent_draw_sky_objects(SceneDesc* desc, const ViewParams& sky_params, bo
 				solid_world_models.push_back(instance);
 			}
 
+			continue;
+		}
+
+		// Model sky objects (OT_MODEL, e.g. FoM's skybox.ltb / clouds.ltb). The
+		// sky view params are already active (set by diligent_draw_sky), so draw
+		// the model instance directly here, mirroring the normal model path. The
+		// sky pass clears depth afterward, so the world still renders on top.
+		if (sky_object->m_ObjectType == OT_MODEL && g_CV_DrawModels.m_Val)
+		{
+			auto* model_instance = sky_object->ToModel();
+			if (model_instance)
+			{
+				out_drew = true;
+				// Cloud layers (RS\SkyTranslucent, no FLAG2_FORCETRANSLUCENT) composite
+				// with alpha blending so the cloud texture is soft/translucent; the
+				// opaque cube skybox (FLAG2_FORCETRANSLUCENT) keeps the NOBLEND default.
+				g_diligent_force_alphablend_models = (sky_object->m_Flags2 & FLAG2_FORCETRANSLUCENT) == 0;
+				const bool ok = diligent_draw_model_instance(model_instance);
+				g_diligent_force_alphablend_models = false;
+				if (!ok)
+				{
+					return false;
+				}
+			}
 			continue;
 		}
 
@@ -398,7 +440,13 @@ bool diligent_draw_sky(SceneDesc* desc)
 lt_InitViewBoxFromParams(&view_box, 0.01f, g_CV_SkyFarZ.m_Val, g_diligent_state.view_params, min_x, min_y, max_x, max_y);
 
 	LTMatrix mat = g_diligent_state.view_params.m_mInvView;
-	mat.SetTranslation(g_diligent_state.view_params.m_SkyViewPos);
+	// Place the sky camera at the SkyDef box center so the skybox model (created at
+	// that center) surrounds it; only the player's rotation (from m_mInvView) then
+	// applies, giving an infinitely-far sky. ViewParams::m_SkyViewPos is never
+	// populated by this engine build, so derive the position from the received
+	// SkyDef (desc->m_SkyDef, set on the client by the server's SetSkyDef).
+	const LTVector sky_view_pos = (desc->m_SkyDef.m_Min + desc->m_SkyDef.m_Max) * 0.5f;
+	mat.SetTranslation(sky_view_pos);
 
 	ViewParams sky_params;
 	if (!lt_InitFrustrum(

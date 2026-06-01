@@ -36,6 +36,21 @@
 #include <unordered_map>
 #include <utility>
 
+// When true, model instances are drawn fullbright (unlit) — used for sky objects
+// (FLAG2_SKYOBJECT), which have no world lighting at the sky box and would render
+// black under the normal lit path. Set around the sky model loop.
+bool g_diligent_force_fullbright_models = false;
+
+// When true, model instances are drawn with depth test+write disabled (NOZ) —
+// used for sky objects so the stacked sky layers paint back-to-front without
+// Z-fighting as the sky frustum's depth range shifts each frame.
+bool g_diligent_force_depthless_models = false;
+
+// When true, model instances are drawn alpha-blended (src-alpha over) — used for
+// the sky cloud layers to approximate RS\SkyTranslucent so the cloud texture
+// composites softly instead of as opaque/cutout dark chunks.
+bool g_diligent_force_alphablend_models = false;
+
 struct DiligentModelConstants
 {
 	std::array<float, 16> mvp{};
@@ -1825,7 +1840,11 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 		light_add = hook_data.m_LightAdd;
 	}
 
-	if (!g_CV_LightModels.m_Val)
+	// Sky objects (forced) and FLAG_NOLIGHT models draw fullbright: there is no
+	// world lighting at the sky box, so the normal lit path renders them black.
+	const bool force_fullbright = g_diligent_force_fullbright_models || (instance->m_Flags & FLAG_NOLIGHT) != 0;
+
+	if (!g_CV_LightModels.m_Val || force_fullbright)
 	{
 		object_color.Init(255.0f, 255.0f, 255.0f);
 		light_add.Init(0.0f, 0.0f, 0.0f);
@@ -1839,9 +1858,9 @@ bool diligent_update_model_constants(ModelInstance* instance, const LTMatrix& mv
 	constants.color[1] = final_color.y / 255.0f;
 	constants.color[2] = final_color.z / 255.0f;
 	constants.color[3] = static_cast<float>(instance->m_ColorA) / 255.0f;
-	constants.model_params[0] = g_CV_LightModels.m_Val != 0 ? 1.0f : 0.0f;
-	constants.model_params[1] = g_CV_ModelApplyAmbient.m_Val != 0 ? 1.0f : 0.0f;
-	constants.model_params[2] = g_CV_ModelApplySun.m_Val != 0 ? 1.0f : 0.0f;
+	constants.model_params[0] = (g_CV_LightModels.m_Val != 0 && !force_fullbright) ? 1.0f : 0.0f;
+	constants.model_params[1] = (g_CV_ModelApplyAmbient.m_Val != 0 && !force_fullbright) ? 1.0f : 0.0f;
+	constants.model_params[2] = (g_CV_ModelApplySun.m_Val != 0 && !force_fullbright) ? 1.0f : 0.0f;
 	constants.model_params[3] = static_cast<float>(pass.AlphaTestMode);
 	constants.camera_pos[0] = g_diligent_state.view_params.m_Pos.x;
 	constants.camera_pos[1] = g_diligent_state.view_params.m_Pos.y;
@@ -2233,6 +2252,18 @@ bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance,
 				{
 					stage.TextureParam = RENDERSTYLE_NOTEXTURE;
 				}
+			}
+
+			// Sky objects render depth-disabled so the stacked sky layers paint
+			// back-to-front without Z-fighting / flickering as the sky frustum's
+			// depth range shifts each frame (reference draws all sky objects NOZ).
+			if (g_diligent_force_depthless_models)
+			{
+				pass.ZBufferMode = RENDERSTYLE_NOZ;
+			}
+			if (g_diligent_force_alphablend_models && pass.BlendMode == RENDERSTYLE_NOBLEND)
+			{
+				pass.BlendMode = RENDERSTYLE_BLEND_MOD_SRCALPHA;
 			}
 
 			DiligentTextureArray textures = diligent_resolve_textures(pass, piece_textures.data());

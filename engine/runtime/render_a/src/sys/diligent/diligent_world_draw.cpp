@@ -1666,6 +1666,10 @@ bool diligent_draw_render_blocks_with_constants(
 			}
 
 			auto& section = *section_ptr;
+			if (section.is_sky)
+			{
+				continue; // sky/occluder placeholder surface - not drawn as world geometry
+			}
 			const bool placeholder_light_anim =
 				section.light_anim && section.textures[0] && diligent_is_placeholder_texture(section.textures[0]);
 			if (section_filter == DiligentWorldSectionFilter::Normal)
@@ -2127,6 +2131,10 @@ bool diligent_draw_render_blocks_with_constants(
 						}
 
 						auto& section = *section_ptr;
+						if (section.is_sky)
+						{
+							continue; // sky/occluder placeholder surface - not lit/drawn
+						}
 						if (section.fullbright)
 						{
 							continue;

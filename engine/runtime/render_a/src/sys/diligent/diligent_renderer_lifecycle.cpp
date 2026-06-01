@@ -51,6 +51,14 @@ int diligent_Init(RenderStructInit* init)
 
 void diligent_Term(bool)
 {
+	// Release ImGui device objects (if the host was initialized) before tearing
+	// down the render device, so no Diligent objects outlive the device.
+	if (g_diligent_imgui_term_hook)
+	{
+		g_diligent_imgui_term_hook();
+		g_diligent_imgui_term_hook = nullptr;
+	}
+
 	g_diligent_state.swap_chain.Release();
 	g_diligent_state.immediate_context.Release();
 	g_diligent_state.render_device.Release();

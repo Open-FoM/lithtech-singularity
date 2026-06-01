@@ -810,6 +810,37 @@ if (APPLE)
 endif ()
 
 
+# ----------------------------------------------------------------------------
+# Dear ImGui host (engine-owned ImGui context + Diligent/SDL3 backend).
+#
+# Link the existing Diligent-Imgui static library (it already compiles ImGui core
+# + ImGuiDiligentRenderer + ImGuiImplDiligent + ImGuiImplSDL3 and PUBLIC-exports
+# the ImGui include dir and IMGUI_DEFINE_MATH_OPERATORS). Diligent's ImGuiImplSDL3
+# wraps Dear ImGui's SDL3 backend, which Diligent-Imgui does NOT compile, so add
+# imgui_impl_sdl3.cpp here. diligent_imgui.cpp implements the ILTImGui interface.
+# ----------------------------------------------------------------------------
+target_link_libraries (
+	${PROJECT_NAME}
+	PRIVATE
+		Diligent-Imgui
+)
+
+target_include_directories (
+	${PROJECT_NAME}
+	PRIVATE
+		${CMAKE_SOURCE_DIR}/libs/imgui
+		${CMAKE_SOURCE_DIR}/libs/imgui/backends
+		${CMAKE_SOURCE_DIR}/libs/diligent/DiligentTools/Imgui/interface
+		../../render_b/src/sys/diligent
+)
+
+target_sources (
+	${PROJECT_NAME}
+	PRIVATE
+		../../render_b/src/sys/diligent/diligent_imgui.cpp
+		${CMAKE_SOURCE_DIR}/libs/imgui/backends/imgui_impl_sdl3.cpp
+)
+
 install (
 	TARGETS
 		${PROJECT_NAME}

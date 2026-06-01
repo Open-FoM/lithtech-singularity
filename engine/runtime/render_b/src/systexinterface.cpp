@@ -99,7 +99,15 @@ static ERawTextureFormat GetRawTextureFormat(const char* pFilename)
 	return ERawTextureFormat::None;
 }
 
-static bool ConvertLoadedBitmapToArgb8888(LoadedBitmap& bitmap, bool bForceOpaqueAlpha, std::vector<uint32>& pixels)
+// Converts a decoded TGA/PCX bitmap to ARGB8888.
+//
+// PCX (bIsPcx) carries no alpha channel. The original FoM UI keyed pure black
+// (SETRGB(0,0,0)) as the transparent color when blitting these palettized
+// bitmaps as surfaces (see CInterfaceResMgr::LoadSurface ->
+// ILTClient::OptimizeSurface). When the same .pcx is loaded as a *texture*
+// (e.g. item / skill icons drawn through ImGui), apply the identical color key
+// so icons render with transparent backgrounds instead of opaque black.
+static bool ConvertLoadedBitmapToArgb8888(LoadedBitmap& bitmap, bool bIsPcx, std::vector<uint32>& pixels)
 {
 	if (bitmap.m_Width == 0 || bitmap.m_Height == 0 || bitmap.m_Data.GetArray() == LTNULL)
 		return false;
@@ -116,7 +124,8 @@ static bool ConvertLoadedBitmapToArgb8888(LoadedBitmap& bitmap, bool bForceOpaqu
 			for (uint32 x = 0; x < bitmap.m_Width; ++x)
 			{
 				const RPaletteColor& color = bitmap.m_Palette[pSrcRow[x]];
-				pDstRow[x] = PValue_Set(0xFF, color.rgb.r, color.rgb.g, color.rgb.b);
+				const bool bKeyed = bIsPcx && color.rgb.r == 0 && color.rgb.g == 0 && color.rgb.b == 0;
+				pDstRow[x] = PValue_Set(bKeyed ? 0x00 : 0xFF, color.rgb.r, color.rgb.g, color.rgb.b);
 			}
 		}
 		else if (bitmap.m_Format.GetType() == BPP_32)
@@ -125,7 +134,7 @@ static bool ConvertLoadedBitmapToArgb8888(LoadedBitmap& bitmap, bool bForceOpaqu
 			{
 				uint32 pixel;
 				memcpy(&pixel, pSrcRow + (x * sizeof(uint32)), sizeof(pixel));
-				pDstRow[x] = bForceOpaqueAlpha ? ((pixel & 0x00FFFFFF) | 0xFF000000) : pixel;
+				pDstRow[x] = bIsPcx ? ((pixel & 0x00FFFFFF) | 0xFF000000) : pixel;
 			}
 		}
 		else

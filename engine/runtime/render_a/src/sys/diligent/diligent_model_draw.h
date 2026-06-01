@@ -198,6 +198,20 @@ private:
 /// if (!diligent_draw_model_instance(instance)) { /* handle error */ }
 /// \endcode
 bool diligent_draw_model_instance(ModelInstance* instance);
+/// \brief When true, model instances are drawn fullbright (unlit). Set around
+/// sky-object drawing (FLAG2_SKYOBJECT), which has no world lighting context and
+/// would otherwise render black. Also honored per-object via FLAG_NOLIGHT.
+extern bool g_diligent_force_fullbright_models;
+/// \brief When true, model instances render with depth test AND write disabled
+/// (RENDERSTYLE_NOZ). Set around sky-object drawing so the stacked sky layers
+/// (skybox cube + cloud layers) don't Z-fight / flicker as the per-frame sky
+/// frustum shifts the projected depth range with camera movement.
+extern bool g_diligent_force_depthless_models;
+/// \brief When true, model instances render alpha-blended (src-alpha over) instead
+/// of the opaque NOBLEND default. Set per sky cloud-layer object to approximate the
+/// RS\\SkyTranslucent render style so cloud textures composite softly rather than as
+/// opaque/cutout chunks.
+extern bool g_diligent_force_alphablend_models;
 /// \brief Draws a model instance using an explicit render-style map.
 /// \details Used by glow passes or editor overrides to remap render styles.
 bool diligent_draw_model_instance_with_render_style_map(ModelInstance* instance, const CRenderStyleMap* render_style_map);

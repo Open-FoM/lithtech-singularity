@@ -827,6 +827,10 @@ void diligent_draw_shadow_projection_blocks(const std::vector<DiligentRenderBloc
 			}
 
 			auto& section = *section_ptr;
+			if (section.is_sky)
+			{
+				continue; // sky/occluder placeholder surface - excluded from shadow casters
+			}
 			switch (static_cast<DiligentPCShaderType>(section.shader_code))
 			{
 				case kPcShaderSkypan:
