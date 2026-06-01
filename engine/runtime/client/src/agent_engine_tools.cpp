@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "agent_engine_tools.h"
@@ -11,6 +13,12 @@
 #include "console.h"
 #include "consolecommands.h"
 #include "icommandlineargs.h"
+
+#include "clientmgr.h"
+#include "de_objects.h"
+#include "objectmgr.h"
+
+#include "diligent_screenshot.h"
 
 #include "agent_registry.h"
 #include "agent_tool.h"
@@ -105,6 +113,122 @@ AgentResponse SetCvar(const AgentRequest &request) {
   return AgentResponse::Ok(std::move(result));
 }
 
+const char *ObjectTypeName(uint8 type) {
+  switch (type) {
+  case OT_NORMAL: return "normal";
+  case OT_MODEL: return "model";
+  case OT_WORLDMODEL: return "worldmodel";
+  case OT_SPRITE: return "sprite";
+  case OT_LIGHT: return "light";
+  case OT_CAMERA: return "camera";
+  case OT_PARTICLESYSTEM: return "particlesystem";
+  case OT_POLYGRID: return "polygrid";
+  case OT_LINESYSTEM: return "linesystem";
+  case OT_CONTAINER: return "container";
+  case OT_CANVAS: return "canvas";
+  case OT_VOLUMEEFFECT: return "volumeeffect";
+  default: return "unknown";
+  }
+}
+
+// Maps a type-name string to an OT_ value, or -1 if unrecognized.
+int ObjectTypeFromName(const std::string &name) {
+  for (uint8 type = 0; type < NUM_OBJECTTYPES; ++type) {
+    if (name == ObjectTypeName(type)) {
+      return static_cast<int>(type);
+    }
+  }
+  return -1;
+}
+
+// Lists live client-side objects (those the client tracks/renders), optionally
+// filtered by type. Walks CClientMgr's per-type object lists directly.
+AgentResponse QueryObjects(const AgentRequest &request) {
+  if (g_pClientMgr == nullptr) {
+    return AgentResponse::Err("client manager not initialized");
+  }
+
+  int type_filter = -1; // -1 == all types
+  if (request.params.contains("type") && request.params.at("type").is_string()) {
+    const std::string type_name = request.params.at("type").get<std::string>();
+    type_filter = ObjectTypeFromName(type_name);
+    if (type_filter < 0) {
+      return AgentResponse::Err("unknown object type: " + type_name);
+    }
+  }
+
+  std::size_t max_objects = 256;
+  if (request.params.contains("limit") && request.params.at("limit").is_number_integer()) {
+    const long long requested = request.params.at("limit").get<long long>();
+    if (requested > 0) {
+      max_objects = static_cast<std::size_t>(requested > 4096 ? 4096 : requested);
+    }
+  }
+
+  Json objects = Json::array();
+  bool truncated = false;
+  ObjectMgr &object_mgr = g_pClientMgr->m_ObjectMgr;
+
+  for (int type = 0; type < NUM_OBJECTTYPES && !truncated; ++type) {
+    if (type_filter >= 0 && type != type_filter) {
+      continue;
+    }
+    LTList &list = object_mgr.m_ObjectLists[type];
+    for (LTLink *cur = list.m_Head.m_pNext; cur != &list.m_Head; cur = cur->m_pNext) {
+      if (objects.size() >= max_objects) {
+        truncated = true;
+        break;
+      }
+      auto *object = static_cast<LTObject *>(cur->m_pData);
+      if (object == nullptr) {
+        continue;
+      }
+      const LTVector &pos = object->GetPos();
+      const LTVector &dims = object->GetDims();
+      objects.push_back(Json{{"type", ObjectTypeName(object->m_ObjectType)},
+                             {"id", object->m_ObjectID},
+                             {"pos", {pos.x, pos.y, pos.z}},
+                             {"dims", {dims.x, dims.y, dims.z}},
+                             {"radius", object->GetRadius()},
+                             {"flags", object->m_Flags}});
+    }
+  }
+
+  Json result;
+  result["count"] = objects.size();
+  result["truncated"] = truncated;
+  result["objects"] = std::move(objects);
+  return AgentResponse::Ok(std::move(result));
+}
+
+// Captures the current backbuffer to a PNG the agent can open. Runs on the main
+// thread, so the Diligent immediate context is safe to use here.
+AgentResponse CaptureScreenshot(const AgentRequest &request) {
+  std::string path;
+  if (request.params.contains("path") && request.params.at("path").is_string()) {
+    path = request.params.at("path").get<std::string>();
+  } else {
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::temp_directory_path(ec);
+    if (ec) {
+      dir = std::filesystem::path(".");
+    }
+    path = (dir / "ltjs_agent_screenshot.png").string();
+  }
+
+  int width = 0;
+  int height = 0;
+  if (!diligent_CaptureBackbufferToPng(path.c_str(), &width, &height)) {
+    return AgentResponse::Err("screenshot capture failed (no swapchain or write error): " + path);
+  }
+
+  Json result;
+  result["path"] = path;
+  result["width"] = width;
+  result["height"] = height;
+  return AgentResponse::Ok(std::move(result));
+}
+
 AgentTool MakeTool(std::string name, std::string description, std::vector<AgentParamDesc> params, AgentToolFn handler) {
   AgentTool tool;
   tool.name = std::move(name);
@@ -137,6 +261,16 @@ void agent_RegisterEngineTools() {
                          {{"name", "string", "Console variable name", true},
                           {"value", "string", "New value (string, number or boolean)", true}},
                          &SetCvar));
+
+  agent_AddTool(MakeTool(
+      "query_objects", "List live client objects (optionally filtered by type) with position, dims, radius and flags.",
+      {{"type", "string", "Optional type filter: model, sprite, worldmodel, light, camera, etc.", false},
+       {"limit", "integer", "Max objects to return (default 256, cap 4096)", false}},
+      &QueryObjects));
+
+  agent_AddTool(MakeTool(
+      "capture_screenshot", "Capture the current rendered backbuffer to a PNG file; returns its path and dimensions.",
+      {{"path", "string", "Optional output PNG path (defaults to a temp file)", false}}, &CaptureScreenshot));
 }
 
 bool agent_GetMcpServerConfig(AgentControlConfig &out) {
